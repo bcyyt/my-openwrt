@@ -50,6 +50,8 @@ https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/versi
 
 `version.json` 中的 `url` 指向同目录 APK。LuCI「运行状态与日志」页可检测并热更新。
 
+仓库当前为 private 时，raw.githubusercontent.com 会返回 404。需要在 GitHub 仓库 Settings 把仓库设为 Public，路由器才能拉取 OTA。
+
 重新打包后修改 `packages/iptv-auth/version.json` 的 `version` 字段即可触发 OTA。
 
 ## 签名密钥
