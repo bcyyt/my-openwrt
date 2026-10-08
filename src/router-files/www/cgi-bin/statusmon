@@ -1,5 +1,5 @@
 #!/bin/sh
-# statusmon v4.22 — OpenWrt 系统状态数据采集 CGI
+# statusmon v4.23 — OpenWrt 系统状态数据采集 CGI
 # 部署到 /www/cgi-bin/statusmon
 # v4.1 修复：ip neigh 字段解析（MAC=$5/状态=末字段）、CPU 采样公式、
 #           conntrack 双向归并 + IPv6 地址规范化匹配、活跃客户端过滤（REACHABLE/DELAY/PROBE）
@@ -1538,38 +1538,52 @@ for svc in uhttpd dnsmasq iptv-auth rtp2httpd cron firewall; do
 done
 [ -n "$svc_lines" ] && svc_lines=$(echo "$svc_lines" | sed 's/,$//') && services="[$svc_lines]"
 
-# ===== 快捷入口：仅返回已开启的可选服务（文件管理由前端固定显示）=====
+# ===== 快捷入口：仅返回已开启/在跑的用户服务（文件管理由前端固定显示）=====
 lan_ip=$(uci -q get network.lan.ipaddr)
 lan_ip=${lan_ip%%/*}
 [ -z "$lan_ip" ] && lan_ip="192.168.10.1"
 live_port=$(uci -q get iptv-auth.main.live_port)
 live_port=${live_port:-23234}
-iptv_on=0
-[ "$(uci -q get iptv-auth.main.enabled)" = "1" ] && iptv_on=1
-media_on=0
-if [ -x /etc/init.d/mediahub-cms ] && /etc/init.d/mediahub-cms enabled 2>/dev/null; then
-    media_on=1
-elif pgrep -f "mediahub-cms.py" >/dev/null 2>&1 || pgrep -x alist >/dev/null 2>&1; then
-    media_on=1
-fi
-lucky_on=0
-if [ "$(uci -q get lucky.@lucky[0].enabled)" = "1" ]; then
-    lucky_on=1
-elif pgrep -x lucky >/dev/null 2>&1; then
-    lucky_on=1
-fi
-daed_on=0
-if [ "$(uci -q get daed.config.enabled)" = "1" ]; then
-    daed_on=1
-elif pgrep -x daed >/dev/null 2>&1 || pgrep -x dae >/dev/null 2>&1; then
-    daed_on=1
-fi
+_sc_alive() {
+    local p pat
+    for p in "$@"; do
+        case "$p" in
+            *.py|*/*)
+                pat="[${p%${p#?}}]${p#?}"
+                pgrep -f "$pat" >/dev/null 2>&1 && return 0
+                ;;
+            *)
+                pidof "$p" >/dev/null 2>&1 && return 0
+                pgrep -x "$p" >/dev/null 2>&1 && return 0
+                ;;
+        esac
+    done
+    return 1
+}
+_sc_on() {
+    [ "$1" = "1" ] && return 0
+    shift
+    _sc_alive "$@"
+}
+sc_add() { sc_lines="${sc_lines}{\"id\":\"$1\",\"label\":\"$2\",\"href\":\"$3\"},"; }
 sc_lines=""
-[ "$iptv_on" = "1" ] && sc_lines="${sc_lines}{\"id\":\"iptv\",\"label\":\"IPTV 代理\",\"href\":\"/cgi-bin/luci/admin/services/iptv_auth/status\"},"
-[ "$media_on" = "1" ] && sc_lines="${sc_lines}{\"id\":\"mediahub\",\"label\":\"影视中心\",\"href\":\"/cgi-bin/luci/admin/services/mediahub\"},"
-[ "$iptv_on" = "1" ] && sc_lines="${sc_lines}{\"id\":\"rtp2httpd\",\"label\":\"rtp2httpd\",\"href\":\"http://${lan_ip}:${live_port}/st\"},"
-[ "$lucky_on" = "1" ] && sc_lines="${sc_lines}{\"id\":\"lucky\",\"label\":\"Lucky\",\"href\":\"/cgi-bin/luci/admin/services/lucky\"},"
-[ "$daed_on" = "1" ] && sc_lines="${sc_lines}{\"id\":\"daed\",\"label\":\"Daed\",\"href\":\"/cgi-bin/luci/admin/services/daede/config\"},"
+if _sc_on "$(uci -q get iptv-auth.main.enabled)" iptv-auth.py rtp2httpd; then
+    sc_add iptv "IPTV 代理" "/cgi-bin/luci/admin/services/iptv_auth/status"
+    sc_add rtp2httpd "rtp2httpd" "http://${lan_ip}:${live_port}/st"
+fi
+if _sc_on "" mediahub-cms.py alist; then
+    sc_add mediahub "影视中心" "/cgi-bin/luci/admin/services/mediahub"
+elif [ -x /etc/init.d/mediahub-cms ] && /etc/init.d/mediahub-cms enabled 2>/dev/null; then
+    sc_add mediahub "影视中心" "/cgi-bin/luci/admin/services/mediahub"
+fi
+_sc_on "$(uci -q get lucky.@lucky[0].enabled)" lucky && sc_add lucky "Lucky" "/cgi-bin/luci/admin/services/lucky"
+_sc_on "$(uci -q get daed.config.enabled)" daed dae && sc_add daed "Daed" "/cgi-bin/luci/admin/services/daede/config"
+_sc_on "$(uci -q get natfrp.main.enabled)" natfrp-service && sc_add natfrp "Sakura Frp" "/cgi-bin/luci/admin/services/natfrp"
+if _sc_on "" dockerd || { [ -x /etc/init.d/dockerd ] && /etc/init.d/dockerd enabled 2>/dev/null; }; then
+    sc_add docker "Docker" "/cgi-bin/luci/admin/services/dockerman/overview"
+fi
+_sc_on "" ttyd && sc_add ttyd "终端" "/cgi-bin/luci/admin/system/ttyd/ttyd"
+_sc_on "$(uci -q get upnpd.config.enabled)" miniupnpd && sc_add upnp "UPnP" "/cgi-bin/luci/admin/services/upnp"
 [ -n "$sc_lines" ] && sc_lines=$(echo "$sc_lines" | sed 's/,$//')
 shortcuts="[$sc_lines]"
 
