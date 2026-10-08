@@ -11,7 +11,7 @@ APK="${APK:-/tmp/apk-tools/build/src/apk}"
 SIGN_KEY="$KEYS/my-openwrt.rsa"
 PUB_KEY="$KEYS/my-openwrt.rsa.pub"
 
-IPTV_VER="${IPTV_VER:-2.3.10-r0}"
+IPTV_VER="${IPTV_VER:-2.3.11-r0}"
 MEDIA_VER="${MEDIA_VER:-1.5.4-r0}"
 STATUS_VER="${STATUS_VER:-4.23}"
 DATE_STR="$(date +%Y-%m-%d)"
@@ -56,6 +56,7 @@ IPTV_ROOT="$(mktemp -d /tmp/pkg-iptv.XXXXXX)"
 trap 'rm -rf "$IPTV_ROOT" "$MEDIA_ROOT" "$STATUS_ROOT"' EXIT
 
 install -d "$IPTV_ROOT/etc/config" "$IPTV_ROOT/etc/init.d" "$IPTV_ROOT/etc/uci-defaults" \
+	"$IPTV_ROOT/etc/hotplug.d/iface" \
 	"$IPTV_ROOT/usr/bin" \
 	"$IPTV_ROOT/usr/lib/lua/luci/controller" \
 	"$IPTV_ROOT/usr/lib/lua/luci/model/cbi/iptv_auth" \
@@ -64,6 +65,7 @@ install -d "$IPTV_ROOT/etc/config" "$IPTV_ROOT/etc/init.d" "$IPTV_ROOT/etc/uci-d
 
 install -m 644 "$PACK/iptv-auth/files/etc/config/iptv-auth" "$IPTV_ROOT/etc/config/iptv-auth"
 install -m 755 "$SRC/etc/init.d/iptv-auth" "$IPTV_ROOT/etc/init.d/iptv-auth"
+install -m 755 "$SRC/etc/hotplug.d/iface/99-iptv-auth" "$IPTV_ROOT/etc/hotplug.d/iface/99-iptv-auth"
 install -m 755 "$PACK/iptv-auth/files/etc/uci-defaults/iptv-auth-setup" "$IPTV_ROOT/etc/uci-defaults/iptv-auth-setup"
 install -m 755 "$SRC/usr/bin/iptv-auth.py" "$IPTV_ROOT/usr/bin/iptv-auth.py"
 install -m 755 "$SRC/usr/bin/iptv-auth-ota.sh" "$IPTV_ROOT/usr/bin/iptv-auth-ota.sh"
@@ -89,7 +91,7 @@ cat > "$OUT/iptv-auth/version.json" <<EOF
 {
   "version": "${IPTV_VER}",
   "date": "${DATE_STR}",
-  "changelog": "回退到 2.3.8；仅修复 LAN 地址带掩码导致 M3U 写成 192.168.10.1/24。",
+	"changelog": "选上游接口后自动把鉴权/回看/rtp2httpd 出站绑到该口 DHCP 网关（专用策略表，不改主路由、不加静态路由）。",
   "url": "${OTA_URL_BASE}/iptv-auth/iptv-auth-${IPTV_VER}.apk",
   "ipk_url": ""
 }

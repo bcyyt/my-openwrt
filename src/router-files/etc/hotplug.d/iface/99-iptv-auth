@@ -1,0 +1,7 @@
+#!/bin/sh
+[ "$ACTION" = ifup ] || [ "$ACTION" = ifupdate ] || exit 0
+[ -x /usr/bin/iptv-auth.py ] || exit 0
+UPSTREAM=$(uci -q get iptv-auth.main.upstream_interface)
+[ -n "$UPSTREAM" ] || exit 0
+[ "$DEVICE" = "$UPSTREAM" ] || [ "$INTERFACE" = "$UPSTREAM" ] || exit 0
+python3 /usr/bin/iptv-auth.py --apply-route >/dev/null 2>&1 || true

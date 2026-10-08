@@ -1,7 +1,7 @@
 {
-  "version": "2.3.10-r0",
+  "version": "2.3.11-r0",
   "date": "2026-10-08",
-  "changelog": "回退到 2.3.8；仅修复 LAN 地址带掩码导致 M3U 写成 192.168.10.1/24。",
-  "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth-2.3.10-r0.apk",
+  "changelog": "选上游接口后自动把鉴权/回看/rtp2httpd 出站绑到该口 DHCP 网关（专用策略表，不改主路由、不加静态路由）。",
+  "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth-2.3.11-r0.apk",
   "ipk_url": ""
 }

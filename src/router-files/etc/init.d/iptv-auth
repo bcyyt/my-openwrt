@@ -76,6 +76,11 @@ start_service() {
     # 首次启动自检（rtp2httpd 下载 + uhttpd 2000 端口）
     ensure_runtime || return 1
 
+    # 选了上游接口则写入专用策略表（不改主表、不加静态路由）
+    # 专线 DHCP 可能尚未拿到网关，短重试；后续 ifup 由 hotplug 再套一次
+    python3 /usr/bin/iptv-auth.py --apply-route >/dev/null 2>&1 || true
+    ( sleep 8; python3 /usr/bin/iptv-auth.py --apply-route >/dev/null 2>&1 ) &
+
     # 直接从 UCI 读取 rtp2httpd 参数（单一数据源，避免中转文件陈旧或缺失）
     local port iface workers rcvbuf bufpool if_mcast if_fcc if_rtsp if_http extra
     port=$(uci -q get iptv-auth.main.live_port); port=${port:-23234}
@@ -86,7 +91,8 @@ start_service() {
 
     # 上游接口（与原版 rtp2httpd 参数语义一致）：
     # 全局 -i 与细分 -r 组播 / -f FCC / -t RTSP / -y HTTP 全部可留空；
-    # 留空 = 不传参数 = rtp2httpd 按系统路由表（含静态路由）选出口
+    # 留空 = 不传参数 = rtp2httpd 按系统主路由选出口
+    # 选了接口则 iptv-auth.py --apply-route 写 table 100，不改主表
     if_mcast=$(uci -q get iptv-auth.main.rtp2h_if_multicast)
     if_fcc=$(uci -q get iptv-auth.main.rtp2h_if_fcc)
     if_rtsp=$(uci -q get iptv-auth.main.rtp2h_if_rtsp)
@@ -131,7 +137,7 @@ start_service() {
 }
 
 stop_service() {
-    :
+    python3 /usr/bin/iptv-auth.py --clear-route >/dev/null 2>&1 || true
 }
 
 reload_service() {

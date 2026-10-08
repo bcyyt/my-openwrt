@@ -20,7 +20,7 @@ local s2 = m:section(TypedSection, "main", translate("网络配置"))
 s2.addremove = false
 s2:option(Value, "live_port", translate("直播端口")).datatype = "port"
 s2:option(Value, "replay_port", translate("回看端口")).datatype = "port"
-s2:option(Value, "upstream_interface", translate("上游接口"))
+s2:option(Value, "upstream_interface", translate("上游接口（选后自动走该口，不改主路由）"))
 
 local s3 = m:section(TypedSection, "main", translate("频道过滤"))
 s3.addremove = false

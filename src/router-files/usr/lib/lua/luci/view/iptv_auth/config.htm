@@ -69,7 +69,7 @@ function loadConfig() {
 // ===== 上游接口下拉：加载本机网络接口列表（全局 + 细分专用，全部可留空） =====
 // 留空 = 不传参数 = rtp2httpd 按系统路由表（含静态路由）选出口；细分留空则跟随全局
 var IF_SELECTS = [
-    { id: 'cfg-upstream_interface', lead: [['留空（走系统静态路由）', '']] },
+    { id: 'cfg-upstream_interface', lead: [['留空（走系统主路由）', '']] },
     { id: 'cfg-rtp2h_if_multicast', lead: [['留空（跟随全局上游接口）', '']] },
     { id: 'cfg-rtp2h_if_fcc',       lead: [['留空（跟随全局上游接口）', '']] },
     { id: 'cfg-rtp2h_if_rtsp',      lead: [['留空（跟随全局上游接口）', '']] },
@@ -163,7 +163,7 @@ function saveConfig() {
 
     // 基本校验
     if (!data.upstream_interface) {
-        if (!confirm('上游接口留空：rtp2httpd 将不传 -i，按系统路由表（含静态路由）选出口，确定保存？')) return;
+        if (!confirm('上游接口留空：不绑专线策略表，rtp2httpd 按系统主路由选出口，确定保存？')) return;
     }
     if (data.live_port && (parseInt(data.live_port) < 1 || parseInt(data.live_port) > 65535)) {
         alert('直播端口必须在 1-65535 之间'); return;
@@ -494,7 +494,7 @@ if (document.readyState === 'loading') {
                 <select id="cfg-upstream_interface">
                     <option value="">正在读取接口列表…</option>
                 </select>
-                <div class="iptv-if-hint">选择 IPTV 专线所在接口；留空则不传参数，由系统路由表（静态路由）决定出口</div>
+                <div class="iptv-if-hint">选 IPTV 专线后，鉴权/回看/rtp2httpd 出站自动走该口 DHCP 网关（专用策略表，不改主路由、不加静态路由）</div>
             </div>
         </div>
         <div class="iptv-field">

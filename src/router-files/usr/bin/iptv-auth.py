@@ -34,10 +34,14 @@ _last_history_cleanup = 0.0
 # ===================== 全局状态 =====================
 config = {}
 upstream_iface = 'eth1'
+upstream_src_ip = ''
 rtsp_source_ip = ''     # 原始 RTSP 源站 IP
 rtsp_source_port = 554
 proxy_listening = False
 _log_lock = threading.Lock()   # 日志线程锁：RTSP 代理线程与任务线程并发写保护
+IPTV_RT_TABLE = '100'
+IPTV_RT_PREF_SRC = '10000'
+IPTV_RT_PREF_OIF = '10001'
 
 def log(msg, error=False):
     """日志：控制台 + 活跃日志(最近500条) + 按天历史日志(持久化)
@@ -99,8 +103,82 @@ def save_status(**kwargs):
         pass
 
 # ===================== UCI 配置读取 =====================
+def _iface_src_ip(iface):
+    if not iface:
+        return ''
+    try:
+        out = subprocess.run(['ip', '-4', '-o', 'addr', 'show', 'dev', iface],
+                             capture_output=True, text=True, timeout=3)
+        m = re.search(r'inet (\d+\.\d+\.\d+\.\d+)', out.stdout or '')
+        return m.group(1) if m else ''
+    except Exception:
+        return ''
+
+def _resolve_l3_device(iface):
+    if not iface:
+        return ''
+    try:
+        out = subprocess.run(['ubus', 'call', f'network.interface.{iface}', 'status'],
+                             capture_output=True, text=True, timeout=5)
+        data = json.loads(out.stdout or '{}')
+        return data.get('l3_device') or data.get('device') or iface
+    except Exception:
+        return iface
+
+def _iface_gateway(iface):
+    if not iface:
+        return ''
+    try:
+        listing = subprocess.run(['ubus', 'list'], capture_output=True, text=True, timeout=5)
+        for line in (listing.stdout or '').splitlines():
+            if not line.startswith('network.interface.'):
+                continue
+            name = line.split('.', 2)[-1]
+            out = subprocess.run(['ubus', 'call', f'network.interface.{name}', 'status'],
+                                 capture_output=True, text=True, timeout=5)
+            data = json.loads(out.stdout or '{}')
+            l3 = data.get('l3_device') or data.get('device') or ''
+            if l3 != iface and data.get('device') != iface:
+                continue
+            for block in (data, data.get('inactive') or {}):
+                if not isinstance(block, dict):
+                    continue
+                for rt in block.get('route') or []:
+                    if str(rt.get('target')) == '0.0.0.0' and rt.get('nexthop'):
+                        return str(rt['nexthop'])
+    except Exception:
+        pass
+    return ''
+
+def clear_upstream_policy():
+    for pref in (IPTV_RT_PREF_SRC, IPTV_RT_PREF_OIF):
+        subprocess.run(['ip', 'rule', 'del', 'pref', pref], capture_output=True, timeout=5)
+    subprocess.run(['ip', 'route', 'flush', 'table', IPTV_RT_TABLE], capture_output=True, timeout=5)
+
+def ensure_upstream_policy():
+    if not upstream_iface or upstream_iface in ('br-lan', 'lan', 'docker0'):
+        clear_upstream_policy()
+        return
+    src = upstream_src_ip or _iface_src_ip(upstream_iface)
+    gw = _iface_gateway(upstream_iface)
+    if not src or not gw:
+        log(f"上游策略：{upstream_iface} 未拿到地址或网关 (src={src} gw={gw})，跳过", error=True)
+        return
+    try:
+        subprocess.run(['ip', 'route', 'replace', 'default', 'via', gw, 'dev', upstream_iface,
+                        'table', IPTV_RT_TABLE], capture_output=True, timeout=5)
+        subprocess.run(['ip', 'rule', 'del', 'pref', IPTV_RT_PREF_SRC], capture_output=True, timeout=5)
+        subprocess.run(['ip', 'rule', 'add', 'pref', IPTV_RT_PREF_SRC, 'from', src,
+                        'lookup', IPTV_RT_TABLE], capture_output=True, timeout=5)
+        subprocess.run(['ip', 'rule', 'del', 'pref', IPTV_RT_PREF_OIF], capture_output=True, timeout=5)
+        subprocess.run(['ip', 'rule', 'add', 'pref', IPTV_RT_PREF_OIF, 'oif', upstream_iface,
+                        'lookup', IPTV_RT_TABLE], capture_output=True, timeout=5)
+        log(f"上游策略：源 {src} / oif {upstream_iface} via {gw} table {IPTV_RT_TABLE}")
+    except Exception as e:
+        log(f"上游策略失败: {e}", error=True)
+
 def load_config():
-    global config, upstream_iface
+    global config, upstream_iface, upstream_src_ip
     c = {}
     try:
         out = subprocess.run(['uci', 'show', 'iptv-auth'], capture_output=True, text=True, timeout=5)
@@ -130,7 +208,10 @@ def load_config():
             'wan_domain': g('wan_domain', ''),
             'ota_url': g('ota_url', ''),
         }
-        upstream_iface = g('upstream_interface', 'eth1')
+        raw_iface = g('upstream_interface', 'eth1')
+        upstream_iface = _resolve_l3_device(raw_iface) if raw_iface else ''
+        upstream_src_ip = _iface_src_ip(upstream_iface) if upstream_iface else ''
+        ensure_upstream_policy()
     except Exception as e:
         log(f"读取 UCI 配置失败: {e}", error=True)
 
@@ -147,6 +228,8 @@ def create_session():
         class _IfaceAdapter(requests.adapters.HTTPAdapter):
             def init_poolmanager(self, *a, **kw):
                 kw['socket_options'] = _iface_opts
+                if upstream_src_ip:
+                    kw['source_address'] = (upstream_src_ip, 0)
                 super().init_poolmanager(*a, **kw)
         session.mount('http://', _IfaceAdapter())
         session.mount('https://', _IfaceAdapter())
@@ -607,6 +690,11 @@ def _tune_socket(sock):
         pass
 
 def _bind_upstream(sock):
+    if upstream_src_ip:
+        try:
+            sock.bind((upstream_src_ip, 0))
+        except Exception:
+            pass
     if upstream_iface:
         try:
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_BINDTODEVICE, (upstream_iface + '\0').encode())
@@ -998,4 +1086,10 @@ def main_loop():
             time.sleep(5)
 
 if __name__ == '__main__':
+    if len(sys.argv) > 1 and sys.argv[1] == '--apply-route':
+        load_config()
+        sys.exit(0)
+    if len(sys.argv) > 1 and sys.argv[1] == '--clear-route':
+        clear_upstream_policy()
+        sys.exit(0)
     main_loop()
