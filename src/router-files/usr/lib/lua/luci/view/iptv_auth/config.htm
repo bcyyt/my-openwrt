@@ -61,6 +61,8 @@ function loadConfig() {
             if (pip) pip.checked = d.filter_pip == '1' || d.filter_pip == 1;
             var epg = document.getElementById('cfg-epg_enabled');
             if (epg) epg.checked = d.epg_enabled == '1' || d.epg_enabled == 1;
+            var bw = document.getElementById('cfg-bind_wan2');
+            if (bw) bw.checked = d.bind_wan2 == '1' || d.bind_wan2 == 1;
             syncMirrorSelect(d.update_mirror || '');
         })
         .catch(function(e) { alert('加载配置失败: ' + e); });
@@ -160,6 +162,8 @@ function saveConfig() {
     if (pip) data.filter_pip = pip.checked ? '1' : '0';
     var epg = document.getElementById('cfg-epg_enabled');
     if (epg) data.epg_enabled = epg.checked ? '1' : '0';
+    var bw = document.getElementById('cfg-bind_wan2');
+    if (bw) data.bind_wan2 = bw.checked ? '1' : '0';
 
     // 基本校验
     if (!data.upstream_interface) {
@@ -495,6 +499,16 @@ if (document.readyState === 'loading') {
                     <option value="">正在读取接口列表…</option>
                 </select>
                 <div class="iptv-if-hint">选择 IPTV 专线所在接口；留空则不传参数，由系统路由表（静态路由）决定出口</div>
+            </div>
+        </div>
+        <div class="iptv-field">
+            <div class="iptv-field-label">绑定 wan2<small>策略路由</small></div>
+            <div class="iptv-field-input">
+                <div class="iptv-check-row">
+                    <input type="checkbox" id="cfg-bind_wan2" />
+                    <label for="cfg-bind_wan2">鉴权/回看出站走 wan2 的 DHCP 网关（专用策略表，不改主路由）</label>
+                </div>
+                <div class="iptv-if-hint">解决 wan2 关闭默认网关后鉴权 IP 不可达；不向主表添加静态路由</div>
             </div>
         </div>
         <div class="iptv-field">

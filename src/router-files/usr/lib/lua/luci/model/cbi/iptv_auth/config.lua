@@ -48,6 +48,7 @@ o_rp = s2:option(Value, "replay_port", translate("回看端口（RTSP 代理监�
 o_rp.datatype = "port"
 o_rp.placeholder = "554"
 s2:option(Value, "upstream_interface", translate("上游接口（IPTV 线路）")).placeholder = "eth1"
+s2:option(Flag, "bind_wan2", translate("绑定 wan2（策略路由，不改主表）"))
 
 -- ============ rtp2httpd 参数 ============
 local s3 = m:section(NamedSection, "main", "iptv-auth", translate("rtp2httpd 参数"))
