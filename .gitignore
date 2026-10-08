@@ -1,0 +1,4 @@
+src/router-files/mnt/
+src/router-files/tmp/
+*.tar.gz
+/tmp/

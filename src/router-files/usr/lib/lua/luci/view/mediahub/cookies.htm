@@ -1,0 +1,451 @@
+<%# cookies.htm — 影视中心 · 网盘登录（IPTV 风格美化版） %>
+<%+header%>
+
+<script src="<%=resource%>/mediahub/qrcode.js"></script>
+<script type="text/javascript">
+//<![CDATA[
+window.addEventListener('error', function(ev) {
+    var el = document.getElementById('page-err');
+    if (el) el.textContent = '页面脚本错误: ' + (ev.message || ev.type) + (ev.lineno ? ' @line ' + ev.lineno : '');
+});
+
+function byId(id) { return document.getElementById(id); }
+
+function mhAPI(action, params, cb) {
+    var url = '<%=luci.dispatcher.build_url("admin/services/mediahub/api")%>' + '?action=' + action;
+    if (params) {
+        var qs = [];
+        for (var k in params) qs.push(k + '=' + encodeURIComponent(params[k]));
+        url += '&' + qs.join('&');
+    }
+    fetch(url, { credentials: 'same-origin' })
+        .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+        .then(cb)
+        .catch(function(e) { cb({ code: 500, message: e.message }); });
+}
+
+function setBadge(id, text, cls) {
+    var el = byId(id);
+    if (!el) return;
+    el.textContent = text;
+    var badge = el.parentElement;
+    if (badge && badge.classList.contains('mh-badge')) {
+        badge.className = 'mh-badge ' + (cls === 'ok' ? 'mh-badge-ok' : cls === 'err' ? 'mh-badge-err' : '');
+    }
+}
+
+function loadCookies() {
+    mhAPI('get_cookies', null, function(d) {
+        if (!d) return;
+        var badges = [['b-115','cookie_115_len'],['b-quark','cookie_quark_len'],['b-uc','cookie_uc_len'],
+            ['b-aliyun','token_ali_len'],['b-189','token_189_len'],['b-yidong','token_yidong_len'],
+            ['b-123','token_123_len'],['b-baidu','token_baidu_len'],['b-thunder','thunder_auth_len'],['b-pikpak','pikpak_auth_len']];
+        for (var i = 0; i < badges.length; i++) {
+            var len = d[badges[i][1]] || 0;
+            setBadge(badges[i][0], len > 0 ? '已配置 ' + len + ' 字' : '未配置', len > 0 ? 'ok' : 'err');
+        }
+        byId('c115-mask').textContent = d.cookie_115 || '(空)';
+        byId('cq-mask').textContent = d.cookie_quark || '(空)';
+        byId('uc-mask').textContent = d.cookie_uc || '(空)';
+        byId('aliyun-mask').textContent = d.token_ali || '(空)';
+        byId('m-189').textContent = d.token_189 || '(空)';
+        byId('yidong-mask').textContent = d.token_yidong || '(空)';
+        byId('m-123').textContent = d.token_123 || '(空)';
+        byId('baidu-mask').textContent = d.token_baidu || '(空)';
+        byId('m-thunder').textContent = d.thunder_auth || '(空)';
+        byId('m-pikpak').textContent = d.pikpak_auth || '(空)';
+    });
+}
+
+function saveCookies() {
+    if (!confirm('保存并同步到 AList？\n（已填凭证的网盘会自动创建/更新挂载并纳入扫描，正在播放的网盘影片可能中断）')) return;
+    byId('save-result').innerHTML = '<span style="color:#ef6c00">保存中...</span>';
+    var fields = {
+        cookie_115: byId('c115-input').value, cookie_quark: byId('cq-input').value,
+        cookie_uc: byId('uc-input').value, token_ali: byId('aliyun-input').value,
+        token_189: byId('in-189').value, token_yidong: byId('yidong-input').value,
+        token_123: byId('in-123').value, token_baidu: byId('baidu-input').value,
+        thunder_auth: byId('in-thunder').value, pikpak_auth: byId('in-pikpak').value
+    };
+    mhAPI('save_cookies', fields, function(d) {
+        if (d.code === 200) {
+            var r = d.results || {}, okc = 0, failc = 0, fails = [];
+            for (var k in r) {
+                if (r[k] === 'ok') okc++;
+                else { failc++; fails.push(k); }
+            }
+            var msg = '✓ ' + okc + ' 项成功';
+            if (failc) msg += ' · ' + failc + ' 项失败(' + fails.join(',') + ')';
+            byId('save-result').innerHTML = '<span style="color:' + (failc ? '#ef6c00' : '#2e7d32') + '">' + msg + '</span>';
+            loadCookies();
+        } else {
+            byId('save-result').innerHTML = '<span style="color:#c62828">✗ ' + (d.message || '失败') + '</span>';
+        }
+    });
+}
+
+
+/* ===== 115 扫码 ===== */
+var qr115_uid = '';
+function qr115Start() {
+    var area = byId('qr115-area');
+    area.innerHTML = '<div class="mh-qr-loading"><span class="mh-spinner"></span>获取二维码中...</div>';
+    mhAPI('qr_115_start', null, function(d) {
+        if (d.code !== 200) {
+            area.innerHTML = '<div class="mh-qr-fail">✗ ' + (d.message || '获取失败') +
+                '<br><span class="mh-qr-tip">可改用下方手动填入 Cookie（手机浏览器登录 115 网盘后复制）</span></div>';
+            return;
+        }
+        qr115_uid = d.uid;
+        var html = '';
+        if (d.qrcode) {
+            html = '<img src="' + d.qrcode + '" style="width:180px;border-radius:8px">';
+        } else if (d.qrcode_b64) {
+            html = '<img src="data:image/png;base64,' + d.qrcode_b64 + '" style="width:180px;border-radius:8px">';
+        }
+        area.innerHTML = html + '<div class="mh-qr-tip">请用 115 生活 APP 扫码，扫码后请在手机上确认</div>';
+        qr115Poll();
+    });
+}
+function qr115Poll() {
+    if (!qr115_uid) return;
+    mhAPI('qr_115_poll', { uid: qr115_uid }, function(d) {
+        if (d.status === 2) {
+            byId('qr115-area').innerHTML = '<div class="mh-qr-ok">✓ ' + d.message + '</div>';
+            if (d.cookie) byId('c115-input').value = d.cookie;
+            loadCookies();
+        } else if (d.status === 1) {
+            byId('qr115-area').innerHTML = '<img src="data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACwAAAAAAQABAAACAkQBADs=" style="width:180px;height:180px;visibility:hidden">' +
+                '<div class="mh-qr-tip" style="color:#ef6c00">已扫描，请在手机上确认...</div>';
+            setTimeout(qr115Poll, 2000);
+        } else {
+            setTimeout(qr115Poll, 2000);
+        }
+    });
+}
+
+/* ===== 夸克扫码 ===== */
+var qr_token = '';
+function qrQuarkStart() {
+    var area = byId('qrq-area');
+    area.innerHTML = '<div class="mh-qr-loading"><span class="mh-spinner"></span>获取二维码中...</div>';
+    mhAPI('qr_quark_start', null, function(d) {
+        if (d.code !== 200) {
+            area.innerHTML = '<div class="mh-qr-fail">✗ ' + (d.message || '获取失败') +
+                '<br><span class="mh-qr-tip">可改用下方手动填入 Cookie（手机浏览器登录夸克网盘后复制）</span></div>';
+            return;
+        }
+        qr_token = d.token;
+        var html = '';
+        if (d.qrcode) {
+            html = '<img src="' + d.qrcode + '" style="width:180px;border-radius:8px">';
+        } else if (d.qrcode_content) {
+            try {
+                var qr = qrcode(0, 'M');
+                qr.addData(d.qrcode_content);
+                qr.make();
+                html = '<img src="' + qr.createDataURL(8, 0) + '" style="width:180px;border-radius:8px">';
+            } catch (e) {
+                html = '<div class="mh-qr-fail">二维码生成失败: ' + e.message + '</div>';
+            }
+        } else if (d.img) {
+            html = '<img src="' + d.img + '" style="width:180px;border-radius:8px">';
+        }
+        area.innerHTML = html + '<div class="mh-qr-tip">请用夸克网盘 APP 扫码，扫码后请在手机上确认</div>';
+        qrQuarkPoll();
+    });
+}
+function qrQuarkPoll() {
+    if (!qr_token) return;
+    mhAPI('qr_quark_poll', { token: qr_token }, function(d) {
+        if (d.status === 2) {
+            byId('qrq-area').innerHTML = '<div class="mh-qr-ok">✓ ' + d.message + '</div>';
+            if (d.cookie) byId('cq-input').value = d.cookie;
+            loadCookies();
+        } else if (d.status === 1) {
+            setTimeout(qrQuarkPoll, 2000);
+        } else {
+            setTimeout(qrQuarkPoll, 2000);
+        }
+    });
+}
+
+/* ===== UC 扫码（与夸克同账号体系） ===== */
+var qruc_token = '';
+function qrUCStart() {
+    var area = byId('qruc-area');
+    area.innerHTML = '<div class="mh-qr-loading"><span class="mh-spinner"></span>获取二维码中...</div>';
+    mhAPI('qr_uc_start', null, function(d) {
+        if (d.code !== 200) {
+            area.innerHTML = '<div class="mh-qr-fail">✗ ' + (d.message || '获取失败') +
+                '<br><span class="mh-qr-tip">可改用下方手动填入 Cookie（手机浏览器登录 drive.uc.cn 后复制）</span></div>';
+            return;
+        }
+        qruc_token = d.token;
+        var html = '';
+        if (d.qrcode) {
+            html = '<img src="' + d.qrcode + '" style="width:180px;border-radius:8px">';
+        } else if (d.qrcode_content) {
+            try {
+                var qr = qrcode(0, 'M');
+                qr.addData(d.qrcode_content);
+                qr.make();
+                html = '<img src="' + qr.createDataURL(8, 0) + '" style="width:180px;border-radius:8px">';
+            } catch (e) {
+                html = '<div class="mh-qr-fail">二维码生成失败: ' + e.message + '</div>';
+            }
+        } else if (d.img) {
+            html = '<img src="' + d.img + '" style="width:180px;border-radius:8px">';
+        }
+        area.innerHTML = html + '<div class="mh-qr-tip">请用 UC 或夸克 APP 扫码，扫码后请在手机上确认</div>';
+        qrUCPoll();
+    });
+}
+function qrUCPoll() {
+    if (!qruc_token) return;
+    mhAPI('qr_uc_poll', { token: qruc_token }, function(d) {
+        if (d.status === 2) {
+            byId('qruc-area').innerHTML = '<div class="mh-qr-ok">✓ ' + d.message + '</div>';
+            if (d.cookie) byId('uc-input').value = d.cookie;
+            loadCookies();
+        } else {
+            setTimeout(qrUCPoll, 2000);
+        }
+    });
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', loadCookies);
+} else {
+    loadCookies();
+}
+//]]>
+</script>
+
+<style type="text/css">
+:root {
+    --mh-primary: #4a90d9; --mh-primary-dark: #357abd; --mh-primary-bg: #e3f2fd;
+    --mh-success: #2e7d32; --mh-success-bg: #e8f5e9; --mh-success-border: #c8e6c9;
+    --mh-error: #c62828; --mh-error-bg: #ffebee; --mh-error-border: #ffcdd2;
+    --mh-card-bg: #ffffff; --mh-border: #e2e8f0; --mh-text: #334155; --mh-muted: #64748b;
+}
+.mh-page-header { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.mh-page-header h2 { margin: 0; }
+.mh-ver-badge {
+    display: inline-block;
+    background: linear-gradient(135deg, var(--mh-primary), var(--mh-primary-dark));
+    color: #fff; font-size: 12px; font-weight: 600;
+    padding: 3px 12px; border-radius: 12px;
+    box-shadow: 0 2px 6px rgba(74,144,217,.25);
+    line-height: 1.6; vertical-align: middle;
+}
+.mh-header-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+.mh-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 12px; border-radius: 20px;
+    font-size: 13px; font-weight: 600;
+    border: 1px solid #e0e0e0; background: #f5f5f5; color: #888;
+}
+.mh-badge::before {
+    content: ''; display: inline-block; width: 7px; height: 7px;
+    border-radius: 50%; flex-shrink: 0; background: #bbb;
+}
+.mh-badge-ok { background: var(--mh-success-bg); color: var(--mh-success); border-color: var(--mh-success-border); }
+.mh-badge-ok::before { background: #4caf50; animation: mh-pulse 2s ease-in-out infinite; }
+.mh-badge-err { background: var(--mh-error-bg); color: var(--mh-error); border-color: var(--mh-error-border); }
+.mh-badge-err::before { background: #f44336; }
+@keyframes mh-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
+.mh-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+.mh-grid-more { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; align-items: start; }
+.mh-grid-more .span2 { grid-column: span 2; }
+@media (max-width: 1100px) { .mh-grid-more { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 640px) { .mh-grid-more { grid-template-columns: 1fr; } .mh-grid-more .span2 { grid-column: span 1; } }
+
+@media (max-width: 900px) { .mh-grid-2 { grid-template-columns: 1fr; } }
+.mh-card {
+    background: var(--mh-card-bg); border: 1px solid var(--mh-border);
+    border-radius: 12px; padding: 16px 18px;
+}
+.mh-sec-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.mh-sec-icon {
+    flex-shrink: 0; width: 28px; height: 28px; border-radius: 8px;
+    background: var(--mh-primary-bg); color: var(--mh-primary);
+    display: flex; align-items: center; justify-content: center;
+}
+.mh-sec-icon svg { width: 15px; height: 15px; }
+.mh-sec-title { font-size: 15px; font-weight: 600; color: #475569; }
+.mh-sec-note { font-size: 12px; color: #94a3b8; }
+.mh-sec-actions { margin-left: auto; }
+.mh-divider { border: none; border-top: 1px solid var(--mh-border); margin: 14px 0; }
+.mh-sub-title { font-size: 13px; font-weight: 600; color: var(--mh-muted); margin: 10px 0 8px; }
+.mh-cookie-mask {
+    font-family: Consolas, Monaco, 'Courier New', monospace;
+    font-size: 12px; color: #94a3b8; word-break: break-all;
+    background: #f8fafc; border: 1px solid var(--mh-border);
+    border-radius: 8px; padding: 8px 10px; min-height: 20px;
+}
+.mh-qr {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    min-height: 200px; border: 1px dashed #cbd5e1; border-radius: 10px;
+    padding: 14px; background: #fafbfc; gap: 8px;
+}
+.mh-qr img { border-radius: 8px; border: 1px solid var(--mh-border); }
+.mh-qr-tip { font-size: 12px; color: #94a3b8; text-align: center; }
+.mh-qr-loading { display: flex; align-items: center; gap: 8px; color: var(--mh-muted); font-size: 13px; }
+.mh-qr-ok {
+    color: var(--mh-success); font-size: 15px; font-weight: 600;
+    background: var(--mh-success-bg); border: 1px solid var(--mh-success-border);
+    border-radius: 10px; padding: 20px 24px; text-align: center; word-break: break-all;
+}
+.mh-qr-fail {
+    color: var(--mh-error); font-size: 14px; font-weight: 600;
+    background: var(--mh-error-bg); border: 1px solid var(--mh-error-border);
+    border-radius: 10px; padding: 16px 20px; text-align: center;
+}
+.mh-spinner {
+    display: inline-block; width: 14px; height: 14px;
+    border: 2px solid #c8e0f4; border-top-color: var(--mh-primary);
+    border-radius: 50%; animation: mh-spin .8s linear infinite;
+}
+@keyframes mh-spin { to { transform: rotate(360deg); } }
+.mh-textarea {
+    width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 8px;
+    font-size: 12px; font-family: Consolas, Monaco, 'Courier New', monospace;
+    background: #fff; color: var(--mh-text); resize: vertical; box-sizing: border-box;
+}
+.mh-textarea:focus { outline: none; border-color: var(--mh-primary); box-shadow: 0 0 0 3px rgba(74,144,217,.15); }
+.mh-result { font-size: 13px; }
+.mh-page-footer {
+    text-align: center; color: #94a3b8; font-size: 12px;
+    margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--mh-border);
+}
+#page-err { color: var(--mh-error); margin-top: 4px; }
+</style>
+
+<div class="mh-page-header">
+    <h2><a id="content" name="content">网盘登录</a></h2>
+    <span class="mh-ver-badge">10 网盘</span>
+    <div class="mh-header-actions">
+        <input type="button" class="cbi-button cbi-button-apply" value="保存并同步到 AList" onclick="saveCookies()" />
+        <span id="save-result" class="mh-result"></span>
+    </div>
+</div>
+
+<div class="mh-grid-2">
+    <div class="mh-card">
+        <div class="mh-sec-head">
+            <span class="mh-sec-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05"/><path d="M12 22.08V12"/>
+                </svg>
+            </span>
+            <span class="mh-sec-title">115 网盘</span>
+            <span class="mh-sec-actions"><span class="mh-badge"><span id="b-115">读取中...</span></span></span>
+        </div>
+        <div class="mh-cookie-mask" id="c115-mask">(读取中)</div>
+        <hr class="mh-divider">
+        <div class="mh-sub-title">扫码登录</div>
+        <div class="mh-qr" id="qr115-area">
+            <input type="button" class="cbi-button cbi-button-apply" value="获取二维码" onclick="qr115Start()" />
+        </div>
+        <hr class="mh-divider">
+        <div class="mh-sub-title">手动填入 Cookie（扫码失败时使用）</div>
+        <textarea id="c115-input" class="mh-textarea" rows="3" placeholder="UID=...; CID=...; SEID=...; KID=..."></textarea>
+    </div>
+
+    <div class="mh-card">
+        <div class="mh-sec-head">
+            <span class="mh-sec-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M20 16.58A5 5 0 0 0 18 7h-1.26A8 8 0 1 0 4 15.25"/><path d="M8 16h8"/><path d="M8 20h8"/>
+                </svg>
+            </span>
+            <span class="mh-sec-title">夸克网盘</span>
+            <span class="mh-sec-actions"><span class="mh-badge"><span id="b-quark">读取中...</span></span></span>
+        </div>
+        <div class="mh-cookie-mask" id="cq-mask">(读取中)</div>
+        <hr class="mh-divider">
+        <div class="mh-sub-title">扫码登录</div>
+        <div class="mh-qr" id="qrq-area">
+            <input type="button" class="cbi-button cbi-button-apply" value="获取二维码" onclick="qrQuarkStart()" />
+        </div>
+        <hr class="mh-divider">
+        <div class="mh-sub-title">手动填入 Cookie（扫码失败时使用）</div>
+        <textarea id="cq-input" class="mh-textarea" rows="3" placeholder="ctoken=...; __pus=...; __kps=...; __puus=..."></textarea>
+    </div>
+</div>
+
+<div class="mh-sub-title" style="margin:20px 0 10px;font-size:14px;color:#475569">更多网盘（填入凭证保存后自动挂载并纳入影视扫描）</div>
+<div class="mh-grid-more">
+    <div class="mh-card span2">
+        <div class="mh-sec-head">
+            <span class="mh-sec-title">UC 网盘</span>
+            <span class="mh-sec-actions"><span class="mh-badge"><span id="b-uc">读取中...</span></span></span>
+        </div>
+        <div class="mh-cookie-mask" id="uc-mask">(读取中)</div>
+        <hr class="mh-divider">
+        <div class="mh-sub-title">扫码登录（与夸克同账号体系，UC/夸克 APP 均可扫）</div>
+        <div class="mh-qr" id="qruc-area">
+            <input type="button" class="cbi-button cbi-button-apply" value="获取二维码" onclick="qrUCStart()" />
+        </div>
+        <hr class="mh-divider">
+        <div class="mh-sub-title">手动填入 Cookie（扫码失败时使用）</div>
+        <textarea id="uc-input" class="mh-textarea" rows="2" placeholder="__pus=...; __puus=...（手机浏览器登录 drive.uc.cn 后复制 Cookie）"></textarea>
+    </div>
+    <div class="mh-card">
+        <div class="mh-sec-head"><span class="mh-sec-title">阿里云盘</span>
+            <span class="mh-sec-actions"><span class="mh-badge"><span id="b-aliyun">读取中...</span></span></span></div>
+        <div class="mh-cookie-mask" id="aliyun-mask">(读取中)</div>
+        <div class="mh-sub-title" style="margin-top:8px">Open refresh_token</div>
+        <textarea id="aliyun-input" class="mh-textarea" rows="2" placeholder="阿里云盘 Open 的 refresh_token（用 OpenList/网盘精灵等工具获取）"></textarea>
+    </div>
+    <div class="mh-card">
+        <div class="mh-sec-head"><span class="mh-sec-title">天翼云盘</span>
+            <span class="mh-sec-actions"><span class="mh-badge"><span id="b-189">读取中...</span></span></span></div>
+        <div class="mh-cookie-mask" id="m-189">(读取中)</div>
+        <div class="mh-sub-title" style="margin-top:8px">账号:密码</div>
+        <textarea id="in-189" class="mh-textarea" rows="2" placeholder="189邮箱手机号:密码"></textarea>
+    </div>
+    <div class="mh-card">
+        <div class="mh-sec-head"><span class="mh-sec-title">移动云盘</span>
+            <span class="mh-sec-actions"><span class="mh-badge"><span id="b-yidong">读取中...</span></span></span></div>
+        <div class="mh-cookie-mask" id="yidong-mask">(读取中)</div>
+        <div class="mh-sub-title" style="margin-top:8px">authorization Token</div>
+        <textarea id="yidong-input" class="mh-textarea" rows="2" placeholder="移动云盘 authorization（抓包 mcloud.139.com 请求头）"></textarea>
+    </div>
+    <div class="mh-card">
+        <div class="mh-sec-head"><span class="mh-sec-title">123云盘</span>
+            <span class="mh-sec-actions"><span class="mh-badge"><span id="b-123">读取中...</span></span></span></div>
+        <div class="mh-cookie-mask" id="m-123">(读取中)</div>
+        <div class="mh-sub-title" style="margin-top:8px">账号:密码</div>
+        <textarea id="in-123" class="mh-textarea" rows="2" placeholder="123云盘手机号:密码"></textarea>
+    </div>
+    <div class="mh-card">
+        <div class="mh-sec-head"><span class="mh-sec-title">百度网盘</span>
+            <span class="mh-sec-actions"><span class="mh-badge"><span id="b-baidu">读取中...</span></span></span></div>
+        <div class="mh-cookie-mask" id="baidu-mask">(读取中)</div>
+        <div class="mh-sub-title" style="margin-top:8px">refresh_token</div>
+        <textarea id="baidu-input" class="mh-textarea" rows="2" placeholder="百度网盘 Open API 的 refresh_token"></textarea>
+    </div>
+    <div class="mh-card">
+        <div class="mh-sec-head"><span class="mh-sec-title">迅雷云盘</span>
+            <span class="mh-sec-actions"><span class="mh-badge"><span id="b-thunder">读取中...</span></span></span></div>
+        <div class="mh-cookie-mask" id="m-thunder">(读取中)</div>
+        <div class="mh-sub-title" style="margin-top:8px">账号:密码</div>
+        <textarea id="in-thunder" class="mh-textarea" rows="2" placeholder="迅雷手机号:密码"></textarea>
+    </div>
+    <div class="mh-card">
+        <div class="mh-sec-head"><span class="mh-sec-title">PikPak</span>
+            <span class="mh-sec-actions"><span class="mh-badge"><span id="b-pikpak">读取中...</span></span></span></div>
+        <div class="mh-cookie-mask" id="m-pikpak">(读取中)</div>
+        <div class="mh-sub-title" style="margin-top:8px">账号:密码</div>
+        <textarea id="in-pikpak" class="mh-textarea" rows="2" placeholder="PikPak邮箱:密码"></textarea>
+    </div>
+</div>
+
+<div class="mh-page-footer">
+    填入任意网盘凭证保存后自动挂载到 AList 并纳入影视扫描 · 扫码登录支持：115 / 夸克 / UC · TVBox 完整订阅：/sub/pg
+    <div id="page-err"></div>
+</div>
+
+<%+footer%>

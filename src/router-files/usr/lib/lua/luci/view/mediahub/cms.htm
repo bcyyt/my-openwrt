@@ -1,0 +1,685 @@
+<%# cms.htm — 影视中心 · CMS 采集站点配置（IPTV 风格美化版） %>
+<%+header%>
+
+<script type="text/javascript">
+//<![CDATA[
+window.addEventListener('error', function(ev) {
+    var el = document.getElementById('page-err');
+    if (el) el.textContent = '页面脚本错误: ' + (ev.message || ev.type) + (ev.lineno ? ' @line ' + ev.lineno : '');
+});
+
+function byId(id) { return document.getElementById(id); }
+
+function mhAPI(action, params, cb) {
+    var url = '<%=luci.dispatcher.build_url("admin/services/mediahub/api")%>' + '?action=' + action;
+    if (params) {
+        var qs = [];
+        for (var k in params) qs.push(k + '=' + encodeURIComponent(params[k]));
+        url += '&' + qs.join('&');
+    }
+    fetch(url, { credentials: 'same-origin' })
+        .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+        .then(cb)
+        .catch(function(e) { cb({ code: 500, message: e.message }); });
+}
+
+function fmtBytes(b) {
+    if (b > 1048576) return (b / 1048576).toFixed(1) + ' MB';
+    if (b > 1024) return (b / 1024).toFixed(1) + ' KB';
+    return (b || 0) + ' B';
+}
+
+/* ===== 站点列表 ===== */
+var siteBadges = {};   // url -> 延迟徽章元素
+
+function renderSites(sites) {
+    var list = byId('site-list');
+    list.innerHTML = '';
+    siteBadges = {};
+    byId('m-sites').textContent = sites.length;
+    var dis = 0;
+    sites.forEach(function(s) { if (s.disabled) dis++; });
+    byId('m-disabled').textContent = dis;
+    if (!sites.length) {
+        list.innerHTML = '<div class="mh-empty">暂无站点，请在下方添加</div>';
+        return;
+    }
+    sites.forEach(function(s, idx) {
+        var url = s.url;
+        var row = document.createElement('div');
+        row.className = 'mh-site-row' + (s.disabled ? ' mh-site-off' : '');
+        var no = document.createElement('span');
+        no.className = 'mh-site-no';
+        no.textContent = idx + 1;
+        var main = document.createElement('div');
+        main.className = 'mh-site-main';
+        var nm = document.createElement('div');
+        nm.className = 'mh-site-name';
+        nm.textContent = s.name || url;
+        var ul = document.createElement('div');
+        ul.className = 'mh-site-url2';
+        ul.textContent = url;
+        main.appendChild(nm);
+        main.appendChild(ul);
+        var badge = document.createElement('span');
+        badge.className = 'mh-latency mh-latency-wait';
+        badge.title = '访问延时（首字节）';
+        badge.textContent = '待测';
+        if (s.disabled) {
+            var tag = document.createElement('span');
+            tag.className = 'mh-latency mh-latency-wait';
+            tag.textContent = '已禁用';
+            main.appendChild(tag);
+        }
+        var btnT = document.createElement('input');
+        btnT.type = 'button';
+        btnT.className = 'cbi-button ' + (s.disabled ? 'cbi-button-apply' : 'cbi-button-neutral');
+        btnT.value = s.disabled ? '启用' : '禁用';
+        btnT.addEventListener('click', function() { toggleSite(url, s.disabled); });
+        var btn = document.createElement('input');
+        btn.type = 'button';
+        btn.className = 'cbi-button cbi-button-negative mh-site-del';
+        btn.value = '删除';
+        btn.addEventListener('click', function() { delSite(url, row); });
+        row.appendChild(no);
+        row.appendChild(main);
+        row.appendChild(badge);
+        row.appendChild(btnT);
+        row.appendChild(btn);
+        list.appendChild(row);
+        siteBadges[url] = badge;
+    });
+}
+function loadSites() {
+    mhAPI('get_cms_sites', null, function(d) {
+        if (d.code === 200) {
+            renderSites(d.sites || []);
+            speedtest();   // 列表就绪后自动测速
+        }
+        else byId('m-sites').textContent = '0';
+    });
+}
+
+/* ===== 启用/禁用切换 ===== */
+function toggleSite(url, isDisabled) {
+    var act = isDisabled ? '启用' : '禁用';
+    if (!confirm(act + '此站点？\n' + url + '\n（' + (isDisabled ? '启用后将参与采集爬取' : '禁用后不再参与采集，但保留配置可随时恢复') + '，CMS 代理会重启）')) return;
+    mhAPI('toggle_cms_site', { url: url }, function(d) {
+        if (d.code === 200) {
+            setTimeout(loadSites, 1500);   // CMS 重启后刷新列表
+        } else { alert(d.message || '操作失败'); }
+    });
+}
+
+/* ===== 站点测速 ===== */
+function fmtLatency(r) {
+    if (r.code === 0 && r.ttfb === 0) return '超时';
+    if (r.code !== 200) return 'HTTP ' + r.code;
+    if (r.ttfb >= 1000) return (r.ttfb / 1000).toFixed(1) + ' s';
+    return r.ttfb + ' ms';
+}
+function latencyClass(r) {
+    if (r.code !== 200 || r.ttfb === 0) return 'mh-latency-err';
+    if (r.ttfb <= 300) return 'mh-latency-ok';
+    if (r.ttfb <= 1000) return 'mh-latency-info';
+    if (r.ttfb <= 3000) return 'mh-latency-warn';
+    return 'mh-latency-err';
+}
+function speedtest() {
+    var btn = byId('btn-speedtest');
+    if (btn) { btn.disabled = true; btn.value = '测速中...'; }
+    Object.keys(siteBadges).forEach(function(u) {
+        var b = siteBadges[u];
+        b.textContent = '测速中';
+        b.className = 'mh-latency mh-latency-wait';
+    });
+    mhAPI('speedtest_cms_sites', null, function(d) {
+        if (btn) { btn.disabled = false; btn.value = '重新测速'; }
+        if (d.code !== 200) return;
+        var ok = 0, total = 0;
+        (d.results || []).forEach(function(r) {
+            var b = siteBadges[r.url];
+            if (!b) return;
+            total++;
+            if (r.code === 200 && r.ttfb > 0) ok++;
+            b.textContent = fmtLatency(r);
+            b.className = 'mh-latency ' + latencyClass(r);
+        });
+        byId('m-ok').textContent = ok + ' / ' + total;
+        var okEl = byId('m-ok');
+        okEl.style.color = (ok === total && total > 0) ? 'var(--mh-success)' : (ok === 0 ? 'var(--mh-error)' : 'var(--mh-primary)');
+    });
+}
+function addSite() {
+    var url = byId('new-url').value.trim();
+    if (!url) return;
+    if (!url.match(/^https?:\/\//)) { alert('URL 必须以 http:// 或 https:// 开头'); return; }
+    byId('add-result').innerHTML = '<span style="color:#ef6c00">添加中...</span>';
+    mhAPI('add_cms_site', { url: url }, function(d) {
+        if (d.code === 200) {
+            byId('new-url').value = '';
+            byId('add-result').innerHTML = '<span style="color:#2e7d32">✓ 已添加，CMS 代理重启中，2 秒后刷新列表</span>';
+            setTimeout(loadSites, 2000);
+        } else {
+            byId('add-result').innerHTML = '<span style="color:#c62828">✗ ' + (d.message || '添加失败') + '</span>';
+        }
+    });
+}
+function delSite(url, row) {
+    if (!confirm('删除此站点？\n' + url + '\n（删除后 CMS 代理自动重启，爬取中的任务会中断）')) return;
+    mhAPI('delete_cms_site', { url: url }, function(d) {
+        if (d.code === 200) {
+            row.remove();
+            var n = sites_count();
+            byId('m-sites').textContent = n;
+            if (n === 0) loadSites();
+        } else { alert(d.message || '删除失败'); }
+    });
+}
+function sites_count() {
+    return document.querySelectorAll('#site-list .mh-site-row').length;
+}
+
+/* ===== 播放缓存 ===== */
+function loadCache() {
+    mhAPI('get_cache', null, function(d) {
+        if (d.code !== 200) return;
+        byId('m-cache-n').textContent = d.entries;
+        byId('m-cache-b').textContent = fmtBytes(d.bytes || 0);
+        byId('m-files').textContent = (d.cloud_files || 0).toLocaleString();
+        byId('cache-mb').value = d.limit_mb;
+        byId('cache-limit-show').textContent = (d.limit_mb || 0) + ' MB';
+    });
+}
+function saveCache() {
+    var mb = parseInt(byId('cache-mb').value, 10);
+    if (!mb || mb < 4 || mb > 2048) { alert('缓存上限需为 4-2048 MB'); return; }
+    if (!confirm('设置缓存上限为 ' + mb + ' MB？\n（CMS 代理会重启，正在播放的影片可能短暂中断）')) return;
+    byId('cache-result').innerHTML = '<span style="color:#ef6c00">保存中（服务重启）...</span>';
+    mhAPI('set_cache', { mb: mb }, function(d) {
+        if (d.code === 200) {
+            byId('cache-result').innerHTML = '<span style="color:#2e7d32">✓ ' + d.message + '</span>';
+            setTimeout(loadCache, 3000);
+        } else {
+            byId('cache-result').innerHTML = '<span style="color:#c62828">✗ ' + (d.message || '失败') + '</span>';
+        }
+    });
+}
+function clearCache() {
+    if (!confirm('确认清空播放缓存？\n（正在播放的影片不受影响，仅清空 m3u8 列表缓存）')) return;
+    byId('cache-result').innerHTML = '<span style="color:#ef6c00">清理中...</span>';
+    mhAPI('clear_cache', null, function(d) {
+        if (d.code === 200) {
+            byId('cache-result').innerHTML = '<span style="color:#2e7d32">✓ 已清理 ' + d.cleared + ' 条，释放 ' + fmtBytes(d.freed_bytes || 0) + '</span>';
+            loadCache();
+        } else { alert(d.message || '清理失败'); }
+    });
+}
+
+/* ===== 定时爬取 ===== */
+function loadSchedule() {
+    mhAPI('get_crawl_schedule', null, function(d) {
+        if (d.code !== 200) return;
+        byId('crawl-interval').value = String(d.interval);
+        var hint = byId('crawl-hint');
+        if (d.pending_restart) {
+            hint.textContent = '待生效：CMS 重启后新间隔才生效（当前生效 ' + d.live_interval + ' 小时）';
+            hint.style.color = '#ef6c00';
+        } else {
+            hint.textContent = '当前生效：' + (d.live_interval === 0 ? '已关闭定时爬取' : '每 ' + d.live_interval + ' 小时');
+            hint.style.color = '#94a3b8';
+        }
+        var nc = byId('crawl-next');
+        if (d.live_interval === 0) {
+            nc.textContent = '下次爬取：无（已关闭）';
+            nc.style.color = '#94a3b8';
+        } else if (d.next_crawl > 0) {
+            var diff = d.next_crawl - Math.floor(Date.now() / 1000);
+            var left = diff > 0 ? (diff >= 3600 ? (diff / 3600).toFixed(1) + ' 小时后' : Math.max(1, Math.round(diff / 60)) + ' 分钟后') : '即将开始';
+            nc.textContent = '下次爬取：' + new Date(d.next_crawl * 1000).toLocaleString('zh-CN') + '（' + left + '）';
+            nc.style.color = '#2e7d32';
+        } else {
+            nc.textContent = '下次爬取：爬取中或尚未计划';
+            nc.style.color = '#94a3b8';
+        }
+    });
+}
+function saveSchedule() {
+    var iv = parseInt(byId('crawl-interval').value, 10);
+    var txt = iv === 0 ? '关闭定时爬取（仅启动时爬一次）？' : '设置定时全量爬取间隔为 ' + iv + ' 小时？';
+    if (!confirm(txt + '\n（CMS 代理会重启，正在播放的影片可能短暂中断）')) return;
+    byId('schedule-result').innerHTML = '<span style="color:#ef6c00">保存中（服务重启）...</span>';
+    mhAPI('set_crawl_schedule', { interval: iv }, function(d) {
+        if (d.code === 200) {
+            byId('schedule-result').innerHTML = '<span style="color:#2e7d32">✓ ' + d.message + '</span>';
+            setTimeout(loadSchedule, 4000);
+        } else {
+            byId('schedule-result').innerHTML = '<span style="color:#c62828">✗ ' + (d.message || '失败') + '</span>';
+        }
+    });
+}
+
+/* ===== 海报刮削设置 ===== */
+var MODE_LABELS = { strict: '严格', balanced: '均衡', rapid: '急速' };
+function loadScrapeCfg() {
+    mhAPI('get_scrape_config', null, function(d) {
+        if (d.code !== 200) return;
+        byId('scrape-mode').value = d.mode || 'balanced';
+        byId('tmdb-api').value = d.tmdb_api || '';
+        byId('tvdb-api').value = d.tvdb_api || '';
+        byId('tmdb-key').placeholder = d.tmdb_key_set ? '已配置（留空保持不变）' : '填 TMDb API Key 启用刮削';
+        byId('tvdb-key').placeholder = d.tvdb_key_set ? '已配置（留空保持不变）' : '填 TheTVDB API Key 启用刮削';
+        var hint = byId('scrape-hint');
+        if (d.pending_restart) {
+            hint.textContent = '待生效：CMS 重启后新模式才生效（当前生效 ' + (MODE_LABELS[d.live_mode] || d.live_mode) + '）';
+            hint.style.color = '#ef6c00';
+        } else {
+            var src = [];
+            if (d.tmdb_key_set) src.push('TMDb');
+            if (d.tvdb_key_set) src.push('TheTVDB');
+            src.push('豆瓣');
+            hint.textContent = '当前生效：' + (MODE_LABELS[d.live_mode] || d.live_mode) + ' · 刮削源 ' + src.join('→') + ' · 已刮削 ' + (d.poster_extra || 0) + ' 条 · 截帧 ' + (d.thumbs || 0) + ' 张';
+            hint.style.color = '#94a3b8';
+        }
+    });
+}
+function saveScrape() {
+    var mode = byId('scrape-mode').value;
+    var tmdbKey = byId('tmdb-key').value.trim();
+    var tmdbApi = byId('tmdb-api').value.trim();
+    var tvdbKey = byId('tvdb-key').value.trim();
+    var tvdbApi = byId('tvdb-api').value.trim();
+    if (tmdbApi && !tmdbApi.match(/^https?:\/\//)) { alert('TMDb API 地址需以 http:// 或 https:// 开头'); return; }
+    if (tvdbApi && !tvdbApi.match(/^https?:\/\//)) { alert('TheTVDB API 地址需以 http:// 或 https:// 开头'); return; }
+    var txt = '设置海报匹配模式为「' + (MODE_LABELS[mode] || mode) + '」？\n\n（CMS 代理会重启，正在播放的影片可能短暂中断；\n已匹配海报不变，后续未匹配的按新模式刮削）';
+    if (!confirm(txt)) return;
+    byId('scrape-result').innerHTML = '<span style="color:#ef6c00">保存中（服务重启）...</span>';
+    var params = { mode: mode };
+    if (tmdbKey) params.tmdb_key = tmdbKey;
+    if (tmdbApi) params.tmdb_api = tmdbApi;
+    if (tvdbKey) params.tvdb_key = tvdbKey;
+    if (tvdbApi) params.tvdb_api = tvdbApi;
+    mhAPI('set_scrape_config', params, function(d) {
+        if (d.code === 200) {
+            byId('scrape-result').innerHTML = '<span style="color:#2e7d32">✓ ' + d.message + '</span>';
+            setTimeout(loadScrapeCfg, 4000);
+        } else {
+            byId('scrape-result').innerHTML = '<span style="color:#c62828">✗ ' + (d.message || '失败') + '</span>';
+        }
+    });
+}
+function resetScrape() {
+    if (!confirm('清空刮削库并重新刮削？\n\n· 已刮削的海报匹配记录将全部删除（截帧保留可复用）\n· CMS 重启后约 90 秒自动按当前模式重新批量刮削\n· 切换匹配模式后建议执行，清除旧模式下的错误匹配')) return;
+    byId('scrape-reset-result').innerHTML = '<span style="color:#ef6c00">清空中（服务重启）...</span>';
+    mhAPI('reset_scrape', null, function(d) {
+        if (d.code === 200) {
+            byId('scrape-reset-result').innerHTML = '<span style="color:#2e7d32">✓ ' + d.message + '</span>';
+            setTimeout(loadScrapeCfg, 5000);
+        } else {
+            byId('scrape-reset-result').innerHTML = '<span style="color:#c62828">✗ ' + (d.message || '失败') + '</span>';
+        }
+    });
+}
+
+/* ===== BT/磁力离线下载 ===== */
+function submitOffline() {
+    var url = byId('offline-url').value.trim();
+    var dir = byId('offline-dir').value.trim() || '/115';
+    if (!url) { alert('请输入磁力链接或BT种子URL'); return; }
+    if (!(url.startsWith('magnet:') || url.startsWith('http'))) {
+        alert('仅支持磁力链接（magnet:?...）或HTTP/HTTPS种子URL'); return;
+    }
+    byId('offline-result').innerHTML = '<span style="color:#ef6c00">提交中...</span>';
+    var p = { url: url, dir: dir };
+    mhAPI('add_offline_download', p, function(d) {
+        if (d.code === 200) {
+            byId('offline-result').innerHTML = '<span style="color:#2e7d32">✓ ' + d.message + '</span>';
+            byId('offline-url').value = '';
+            setTimeout(loadOfflineTasks, 3000);
+        } else {
+            byId('offline-result').innerHTML = '<span style="color:#c62828">✗ ' + (d.message || '提交失败') + '</span>';
+        }
+    });
+}
+function loadOfflineTasks() {
+    mhAPI('get_offline_tasks', null, function(d) {
+        if (d.code !== 200) return;
+        var el = byId('offline-tasks');
+        if (!el) return;
+        var html = '';
+        try {
+            var undone = d.undone ? JSON.parse(d.undone) : null;
+            var done = d.done ? JSON.parse(d.done) : null;
+            if (undone && undone.data && undone.data.length > 0) {
+                html += '<div style="margin-bottom:8px;"><b style="color:#ef6c00;">进行中：</b></div>';
+                for (var i = 0; i < Math.min(undone.data.length, 5); i++) {
+                    var t = undone.data[i];
+                    html += '<div style="font-size:12px;padding:3px 0;">' +
+                            '· ' + (t.name || '').substring(0, 60) +
+                            ' <span style="color:#94a3b8;">(' + Math.round(t.progress || 0) + '%)</span></div>';
+                }
+            }
+            if (done && done.data && done.data.length > 0) {
+                html += '<div style="margin:8px 0 4px;"><b style="color:#2e7d32;">已完成：</b></div>';
+                for (var i = 0; i < Math.min(done.data.length, 5); i++) {
+                    var t = done.data[i];
+                    html += '<div style="font-size:12px;padding:3px 0;">✓ ' + (t.name || '').substring(0, 60) + '</div>';
+                }
+            }
+        } catch(e) {}
+        el.innerHTML = html || '<div style="font-size:12px;color:#94a3b8;">暂无离线下载任务</div>';
+    });
+}
+
+function start() { loadSites(); loadCache(); loadSchedule(); loadScrapeCfg(); loadOfflineTasks(); }
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', start);
+} else {
+    start();
+}
+//]]>
+</script>
+
+<style type="text/css">
+:root {
+    --mh-primary: #4a90d9; --mh-primary-dark: #357abd; --mh-primary-bg: #e3f2fd;
+    --mh-success: #2e7d32; --mh-success-bg: #e8f5e9; --mh-success-border: #c8e6c9;
+    --mh-error: #c62828; --mh-error-bg: #ffebee; --mh-error-border: #ffcdd2;
+    --mh-card-bg: #ffffff; --mh-border: #e2e8f0; --mh-text: #334155; --mh-muted: #64748b;
+}
+.mh-page-header { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.mh-page-header h2 { margin: 0; }
+.mh-ver-badge {
+    display: inline-block;
+    background: linear-gradient(135deg, var(--mh-primary), var(--mh-primary-dark));
+    color: #fff; font-size: 12px; font-weight: 600;
+    padding: 3px 12px; border-radius: 12px;
+    box-shadow: 0 2px 6px rgba(74,144,217,.25);
+    line-height: 1.6; vertical-align: middle;
+}
+.mh-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 4px; }
+.mh-metric {
+    background: var(--mh-card-bg); border: 1px solid var(--mh-border);
+    border-radius: 12px; padding: 14px 18px; text-align: center;
+    transition: box-shadow .2s, border-color .2s;
+}
+.mh-metric:hover { box-shadow: 0 2px 12px rgba(0,0,0,.06); border-color: #cbd5e1; }
+.mh-metric-num { font-size: 22px; font-weight: 700; color: var(--mh-primary); line-height: 1.3; word-break: break-all; }
+.mh-metric-num .mh-metric-unit { font-size: 12px; font-weight: 400; color: #94a3b8; margin-left: 2px; }
+.mh-metric-label { font-size: 12px; color: var(--mh-muted); margin-top: 4px; letter-spacing: .3px; }
+.mh-sec { margin-top: 24px; }
+.mh-sec-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.mh-sec-icon {
+    flex-shrink: 0; width: 28px; height: 28px; border-radius: 8px;
+    background: var(--mh-primary-bg); color: var(--mh-primary);
+    display: flex; align-items: center; justify-content: center;
+}
+.mh-sec-icon svg { width: 15px; height: 15px; }
+.mh-sec-title { font-size: 15px; font-weight: 600; color: #475569; }
+.mh-sec-note { font-size: 12px; color: #94a3b8; }
+.mh-sec-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+.mh-card {
+    background: var(--mh-card-bg); border: 1px solid var(--mh-border);
+    border-radius: 12px; padding: 16px 18px;
+}
+.mh-site-row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 14px; border: 1px solid var(--mh-border); border-radius: 10px;
+    background: #fff; margin-bottom: 8px; transition: all .2s;
+}
+.mh-site-row:hover { border-color: #cbd5e1; box-shadow: 0 2px 8px rgba(0,0,0,.04); }
+.mh-site-off { background: #f8fafc; opacity: .75; }
+.mh-site-off .mh-site-name { color: #94a3b8; text-decoration: line-through; }
+.mh-site-off:hover { opacity: 1; }
+.mh-site-no {
+    flex-shrink: 0; width: 24px; height: 24px; border-radius: 6px;
+    background: var(--mh-primary-bg); color: var(--mh-primary);
+    font-size: 12px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+}
+.mh-site-main { flex: 1; min-width: 0; }
+.mh-site-name { font-size: 13.5px; font-weight: 600; color: var(--mh-text); line-height: 1.5; word-break: break-all; }
+.mh-site-url2 {
+    font-family: Consolas, Monaco, 'Courier New', monospace;
+    font-size: 11.5px; color: #94a3b8; line-height: 1.4; word-break: break-all;
+}
+.mh-site-url {
+    font-family: Consolas, Monaco, 'Courier New', monospace;
+    font-size: 12.5px; color: var(--mh-text); flex: 1; word-break: break-all;
+}
+.mh-site-del { flex-shrink: 0; }
+.mh-latency {
+    flex-shrink: 0; min-width: 64px; text-align: center;
+    font-size: 12px; font-weight: 600; font-family: Consolas, Monaco, monospace;
+    padding: 4px 10px; border-radius: 999px; line-height: 1.4;
+    border: 1px solid transparent; white-space: nowrap;
+}
+.mh-latency-ok   { background: var(--mh-success-bg); color: var(--mh-success); border-color: var(--mh-success-border); }
+.mh-latency-info { background: var(--mh-primary-bg); color: var(--mh-primary-dark); border-color: #bbdefb; }
+.mh-latency-warn { background: #fff3e0; color: #ef6c00; border-color: #ffe0b2; }
+.mh-latency-err  { background: var(--mh-error-bg); color: var(--mh-error); border-color: var(--mh-error-border); }
+.mh-latency-wait { background: #f1f5f9; color: #94a3b8; border-color: var(--mh-border); }
+.mh-empty {
+    color: #94a3b8; text-align: center; padding: 22px;
+    font-size: 13px; border: 1px dashed var(--mh-border); border-radius: 10px;
+    background: #fafbfc;
+}
+.mh-input {
+    width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 8px;
+    font-size: 13px; font-family: Consolas, Monaco, 'Courier New', monospace;
+    background: #fff; color: var(--mh-text); box-sizing: border-box;
+}
+.mh-input:focus { outline: none; border-color: var(--mh-primary); box-shadow: 0 0 0 3px rgba(74,144,217,.15); }
+.mh-inline-form { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.mh-inline-form .mh-input { flex: 1; min-width: 240px; }
+.mh-num-input {
+    width: 90px; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 8px;
+    font-size: 13px; background: #fff; color: var(--mh-text);
+}
+.mh-num-input:focus { outline: none; border-color: var(--mh-primary); box-shadow: 0 0 0 3px rgba(74,144,217,.15); }
+.mh-result { font-size: 13px; }
+.mh-info { font-size: 12px; color: #94a3b8; margin-top: 8px; line-height: 1.7; }
+.mh-page-footer {
+    text-align: center; color: #94a3b8; font-size: 12px;
+    margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--mh-border);
+}
+#page-err { color: var(--mh-error); margin-top: 4px; }
+</style>
+
+<div class="mh-page-header">
+    <h2><a id="content" name="content">CMS 采集站点</a></h2>
+    <span class="mh-ver-badge">苹果CMS 聚合</span>
+</div>
+
+<div class="mh-metrics">
+    <div class="mh-metric">
+        <div class="mh-metric-num"><span id="m-sites">0</span><span class="mh-metric-unit">个</span></div>
+        <div class="mh-metric-label">已配置站点</div>
+    </div>
+    <div class="mh-metric">
+        <div class="mh-metric-num"><span id="m-disabled" style="color:#94a3b8">0</span><span class="mh-metric-unit">个</span></div>
+        <div class="mh-metric-label">已禁用（不采集）</div>
+    </div>
+    <div class="mh-metric">
+        <div class="mh-metric-num" id="m-ok">-</div>
+        <div class="mh-metric-label">可用站点（测速后更新）</div>
+    </div>
+    <div class="mh-metric">
+        <div class="mh-metric-num"><span id="m-cache-n">0</span><span class="mh-metric-unit">条</span></div>
+        <div class="mh-metric-label">播放缓存条目</div>
+    </div>
+    <div class="mh-metric">
+        <div class="mh-metric-num" id="m-cache-b">0 B</div>
+        <div class="mh-metric-label">缓存当前占用</div>
+    </div>
+    <div class="mh-metric">
+        <div class="mh-metric-num"><span id="m-files">0</span><span class="mh-metric-unit">个</span></div>
+        <div class="mh-metric-label">网盘文件索引</div>
+    </div>
+</div>
+
+<div class="mh-sec">
+    <div class="mh-sec-head">
+        <span class="mh-sec-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h10M7 12h10M7 16h6"/>
+            </svg>
+        </span>
+        <span class="mh-sec-title">站点列表</span>
+        <span class="mh-sec-note">启用站点参与采集 · 禁用不采集但保留配置 · 变更后 CMS 代理自动重启</span>
+        <span class="mh-sec-actions">
+            <input type="button" class="cbi-button cbi-button-apply" id="btn-speedtest" value="重新测速" onclick="speedtest()" />
+        </span>
+    </div>
+    <div id="site-list"><div class="mh-empty">加载中...</div></div>
+</div>
+
+<div class="mh-sec">
+    <div class="mh-sec-head">
+        <span class="mh-sec-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+            </svg>
+        </span>
+        <span class="mh-sec-title">定时全量爬取</span>
+        <span class="mh-sec-note">到点自动重新采集所有启用站点</span>
+    </div>
+    <div class="mh-card">
+        <div class="mh-inline-form">
+            <span style="font-size:13px;color:var(--mh-muted)">爬取间隔：</span>
+            <select id="crawl-interval" class="mh-num-input" style="width:130px">
+                <option value="1">每 1 小时</option>
+                <option value="2">每 2 小时</option>
+                <option value="3">每 3 小时</option>
+                <option value="6" selected>每 6 小时（默认）</option>
+                <option value="12">每 12 小时</option>
+                <option value="24">每天一次</option>
+                <option value="48">每 2 天</option>
+                <option value="72">每 3 天</option>
+                <option value="0">关闭定时爬取</option>
+            </select>
+            <input type="button" class="cbi-button cbi-button-apply" value="保存" onclick="saveSchedule()" />
+            <span id="schedule-result" class="mh-result"></span>
+        </div>
+        <p class="mh-info"><span id="crawl-hint">-</span><br><span id="crawl-next">-</span></p>
+        <p class="mh-info">全量爬取约 1-2 分钟（12+ 站点并行），期间搜索仍可用（旧库）；间隔越小片源越新鲜，但对采集源站点压力越大，建议不小于 3 小时。修改后 CMS 代理自动重启。</p>
+    </div>
+</div>
+
+<div class="mh-sec">
+    <div class="mh-sec-head">
+        <span class="mh-sec-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>
+            </svg>
+        </span>
+        <span class="mh-sec-title">海报刮削设置</span>
+        <span class="mh-sec-note">刮削源：TMDb → TheTVDB → 豆瓣 → 采集站 · 不论哪种模式，未匹配的都用片源截帧兜底</span>
+    </div>
+    <div class="mh-card">
+        <div class="mh-inline-form">
+            <span style="font-size:13px;color:var(--mh-muted)">匹配模式：</span>
+            <select id="scrape-mode" class="mh-num-input" style="width:250px">
+                <option value="strict">严格（片名+年份须一致）</option>
+                <option value="balanced" selected>均衡（推荐 · 片名须一致）</option>
+                <option value="rapid">急速（首个结果直接用，可能不准）</option>
+            </select>
+            <input type="button" class="cbi-button cbi-button-apply" value="保存" onclick="saveScrape()" />
+            <span id="scrape-result" class="mh-result"></span>
+        </div>
+        <div class="mh-inline-form">
+            <span style="font-size:13px;color:var(--mh-muted)">TMDb Key：</span>
+            <input type="password" id="tmdb-key" class="mh-input" style="width:160px" placeholder="填 TMDb API Key 启用刮削">
+            <span style="font-size:13px;color:var(--mh-muted)">API 地址：</span>
+            <input type="text" id="tmdb-api" class="mh-input" style="width:240px" placeholder="https://api.themoviedb.org/3（留空用官方）">
+        </div>
+        <div class="mh-inline-form">
+            <span style="font-size:13px;color:var(--mh-muted)">TheTVDB Key：</span>
+            <input type="password" id="tvdb-key" class="mh-input" style="width:160px" placeholder="填 TheTVDB API Key 启用刮削">
+            <span style="font-size:13px;color:var(--mh-muted)">API 地址：</span>
+            <input type="text" id="tvdb-api" class="mh-input" style="width:240px" placeholder="https://api.thetvdb.com（留空用官方）">
+        </div>
+        <div class="mh-inline-form">
+            <input type="button" class="cbi-button cbi-button-negative" value="清空刮削库并重新刮削" onclick="resetScrape()" />
+            <span id="scrape-reset-result" class="mh-result"></span>
+        </div>
+        <p class="mh-info"><span id="scrape-hint">-</span></p>
+        <p class="mh-info">刮削顺序：TMDb（电影+剧集）→ TheTVDB（剧集特长）→ 豆瓣（无需配置）→ 采集站，候选片名与源文件名校验一致才采用，校验不过一律用片源截帧做海报；严格模式额外校验年份。切换模式后建议点「清空刮削库」重刮。TMDb/TheTVDB 官方 API 国内被墙，需在 API 地址填反向代理。</p>
+    </div>
+</div>
+
+<div class="mh-sec">
+    <div class="mh-sec-head">
+        <span class="mh-sec-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+        </span>
+        <span class="mh-sec-title">离线下载到115网盘</span>
+        <span class="mh-sec-note">磁力链接 / BT种子 → 115 云端离线下载，不占路由器带宽</span>
+    </div>
+    <div class="mh-card">
+        <div class="mh-inline-form">
+            <span style="font-size:13px;color:var(--mh-muted)">链接：</span>
+            <input type="text" id="offline-url" class="mh-input" style="width:420px" placeholder="magnet:?xt=urn:btih:... 或 https://...torrent">
+        </div>
+        <div class="mh-inline-form">
+            <span style="font-size:13px;color:var(--mh-muted)">保存到：</span>
+            <input type="text" id="offline-dir" class="mh-input" style="width:240px" value="/115" placeholder="/115 或 /115/电影">
+            <input type="button" class="cbi-button cbi-button-apply" value="提交离线下载" onclick="submitOffline()" />
+            <span id="offline-result" class="mh-result"></span>
+        </div>
+        <div id="offline-tasks" style="margin-top:10px;"></div>
+        <p class="mh-info">磁力/BT种子由115网盘云端离线下载，下载完成后自动保存到指定目录，不占路由器带宽和存储。下载完成后的影片会自动出现在网盘影视中（下次爬取/扫描后）。状态页可查看进度。</p>
+    </div>
+</div>
+
+<div class="mh-sec">
+    <div class="mh-sec-head">
+        <span class="mh-sec-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
+            </svg>
+        </span>
+        <span class="mh-sec-title">播放缓存管理</span>
+        <span class="mh-sec-note">当前上限 <span id="cache-limit-show">-</span></span>
+    </div>
+    <div class="mh-card">
+        <div class="mh-inline-form">
+            <span style="font-size:13px;color:var(--mh-muted)">缓存上限：</span>
+            <input type="number" id="cache-mb" class="mh-num-input" min="4" max="2048" placeholder="64">
+            <span style="font-size:13px;color:var(--mh-muted)">MB</span>
+            <input type="button" class="cbi-button cbi-button-apply" value="保存" onclick="saveCache()" />
+            <input type="button" class="cbi-button cbi-button-negative" value="清空播放缓存" onclick="clearCache()" />
+            <span id="cache-result" class="mh-result"></span>
+        </div>
+        <p class="mh-info">m3u8 播放列表缓存 60 秒，超限自动淘汰最旧条目；网盘文件索引缓存 30 分钟（网盘片源搜索用）。修改上限后 CMS 代理自动重启。</p>
+    </div>
+</div>
+
+<div class="mh-sec">
+    <div class="mh-sec-head">
+        <span class="mh-sec-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"/><path d="M12 8v8"/><path d="M8 12h8"/>
+            </svg>
+        </span>
+        <span class="mh-sec-title">添加新站点</span>
+        <span class="mh-sec-note">格式：苹果CMS API 接口地址（需含 /provide/vod/）</span>
+    </div>
+    <div class="mh-card">
+        <div class="mh-inline-form">
+            <input type="text" id="new-url" class="mh-input" placeholder="https://api.example.com/api.php/provide/vod/">
+            <input type="button" class="cbi-button cbi-button-apply" value="添加站点" onclick="addSite()" />
+            <span id="add-result" class="mh-result"></span>
+        </div>
+        <p class="mh-info">添加后 CMS 代理自动重启并重新全量爬取（约 1-2 分钟），存量片源会与新站点聚合。</p>
+    </div>
+</div>
+
+<div class="mh-page-footer">
+    影视中心 · CMS 站点变更会触发自动重启与全量重爬
+    <div id="page-err"></div>
+</div>
+
+<%+footer%>

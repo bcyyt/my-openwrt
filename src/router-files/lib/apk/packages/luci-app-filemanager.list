@@ -1,0 +1,6 @@
+/usr/share/luci/menu.d/luci-app-filemanager.json
+/usr/share/rpcd/acl.d/luci-app-filemanager.json
+/www/luci-static/resources/view/system/filemanager.js
+/www/luci-static/resources/view/system/filemanager/HexEditor.js
+/www/luci-static/resources/view/system/filemanager/md.js
+/www/luci-static/resources/view/system/filemanager/md_help.js

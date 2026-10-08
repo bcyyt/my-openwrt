@@ -1,0 +1,1112 @@
+<%# status.htm — IPTV 运行状态与日志页（美化版 v2：分区布局）%>
+<%+header%>
+
+<%
+local http = require "luci.http"
+local sys = require "luci.sys"
+local host = (http.getenv("HTTP_HOST") or ""):match("^([^:]+)") or "192.168.10.1"
+local live_port = sys.exec("uci -q get iptv-auth.main.live_port 2>/dev/null") or "23234"
+live_port = live_port:match("^%s*(.-)%s*$") or "23234"
+local pkg_ver_raw = sys.exec("apk list --installed 2>/dev/null | grep '^iptv-auth-' | head -1") or ""
+local pkg_ver = pkg_ver_raw:match("^iptv%-auth%-(%S+)%s") or ""
+if pkg_ver == "" then
+    pkg_ver_raw = sys.exec("opkg list-installed 2>/dev/null | grep '^iptv-auth ' | head -1") or ""
+    pkg_ver = pkg_ver_raw:match("%-%s+(%S+)") or "unknown"
+end
+local wan_domain = sys.exec("uci -q get iptv-auth.main.wan_domain 2>/dev/null") or ""
+wan_domain = wan_domain:match("^%s*(.-)%s*$") or ""
+
+-- rtp2httpd 更新提醒数据（cron 每 12 小时由 rtp2httpd-ota-check.sh 抓缓存到 /tmp）
+local rtp2_cur_v = sys.exec("/usr/bin/rtp2httpd --help 2>&1 | grep -oE '[0-9]+[.][0-9]+[.][0-9]+' | head -1") or ""
+rtp2_cur_v = rtp2_cur_v:gsub("%s+", "")
+local rtp2_latest_v = ""
+local rtp2_cache = io.open("/tmp/rtp2httpd-version.json", "r")
+if rtp2_cache then
+    local rtp2_raw = rtp2_cache:read("*a") or ""
+    rtp2_cache:close()
+    rtp2_latest_v = rtp2_raw:match('"latest"%s*:%s*"([^"]+)"') or ""
+end
+local rtp2_last_check = sys.exec("uci -q get iptv-auth.main.rtp2_last_check 2>/dev/null") or ""
+rtp2_last_check = rtp2_last_check:match("^%s*(.-)%s*$") or ""
+local ota_last_check = sys.exec("uci -q get iptv-auth.main.ota_last_check 2>/dev/null") or ""
+ota_last_check = ota_last_check:match("^%s*(.-)%s*$") or ""
+local function ver_gt(a, b)
+    local ta, tb = {0, 0, 0}, {0, 0, 0}
+    local i = 0
+    for seg in (a or ""):gmatch("%d+") do i = i + 1; if i < 4 then ta[i] = tonumber(seg) or 0 end end
+    i = 0
+    for seg in (b or ""):gmatch("%d+") do i = i + 1; if i < 4 then tb[i] = tonumber(seg) or 0 end end
+    for j = 1, 3 do
+        if ta[j] ~= tb[j] then return ta[j] > tb[j] end
+    end
+    return false
+end
+local rtp2_alert = (rtp2_latest_v ~= "" and rtp2_cur_v ~= "" and ver_gt(rtp2_latest_v, rtp2_cur_v))
+%>
+
+<script type="text/javascript">
+//<![CDATA[
+window.addEventListener('error', function(ev) {
+    var el = document.getElementById('page-err');
+    if (el) el.textContent = '页面脚本错误: ' + (ev.message || ev.type) + (ev.lineno ? ' @line ' + ev.lineno : '');
+});
+
+function setBadge(elId, text, isOk) {
+    var el = document.getElementById(elId);
+    if (!el) return;
+    el.textContent = text;
+    var badge = el.parentElement;
+    if (badge && badge.classList.contains('iptv-badge')) {
+        badge.className = 'iptv-badge ' + (isOk ? 'iptv-badge-ok' : 'iptv-badge-err');
+    } else {
+        el.style.color = isOk ? '#2e7d32' : '#c62828';
+    }
+}
+
+function iptvRefresh() {
+    fetch("<%=luci.dispatcher.build_url('admin/services/iptv_auth/info')%>", { credentials: 'same-origin' })
+        .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+        .then(function(d) {
+            d = d || {};
+            setBadge('auth-status', d.iptv_auth_running ? '运行中' : '已停止', d.iptv_auth_running);
+            setBadge('rtp-status', d.rtp2httpd_running ? '运行中' : '已停止', d.rtp2httpd_running);
+            setBadge('auth-ok', d.auth_ok ? '成功' : '失败/未执行', d.auth_ok);
+            var lr = document.getElementById('last-run');
+            if (lr) lr.textContent = d.last_run || '尚未执行';
+            var nr = document.getElementById('next-run');
+            if (nr) nr.textContent = d.next_run || '未设置';
+            var ch = document.getElementById('channels');
+            if (ch) ch.textContent = d.channels || 0;
+            var sw = document.getElementById('svc-switch');
+            var swt = document.getElementById('svc-switch-text');
+            if (sw) sw.checked = !!d.enabled;
+            if (swt) { swt.textContent = d.enabled ? '已开启' : '已关闭'; swt.style.color = d.enabled ? '#2e7d32' : '#c62828'; }
+        })
+        .catch(function() {
+            var swt = document.getElementById('svc-switch-text');
+            if (swt) { swt.textContent = '会话过期或加载失败'; swt.style.color = '#c62828'; }
+        });
+    fetch("<%=luci.dispatcher.build_url('admin/services/iptv_auth/log')%>", { credentials: 'same-origin' })
+        .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+        .then(function(t) {
+            var log = document.getElementById('log-area');
+            if (log && t) {
+                var atBottom = (log.scrollHeight - log.scrollTop - log.clientHeight) < 40;
+                var lines = t.split('\n');
+                var start = Math.max(0, lines.length - 500);
+                log.textContent = lines.slice(start).join('\n');
+                if (atBottom) log.scrollTop = log.scrollHeight;
+            }
+        })
+        .catch(function(e) {
+            var log = document.getElementById('log-area');
+            if (log) log.textContent = '日志加载失败: ' + (e && e.message ? e.message : e) + '，请刷新页面或检查登录会话';
+        });
+}
+
+function historyRefresh() {
+    fetch("<%=luci.dispatcher.build_url('admin/services/iptv_auth/history_list')%>", { credentials: 'same-origin' })
+        .then(function(r) { return r.json(); })
+        .then(function(dates) {
+            var sel = document.getElementById('history-date');
+            if (!sel || !dates || !dates.length) return;
+            var cur = sel.value;
+            sel.innerHTML = '';
+            for (var i = 0; i < dates.length; i++) {
+                var o = document.createElement('option');
+                o.value = dates[i];
+                o.textContent = dates[i];
+                sel.appendChild(o);
+            }
+            if (cur) sel.value = cur;
+        })
+        .catch(function() {});
+}
+
+function viewHistory() {
+    var date = document.getElementById('history-date').value;
+    if (!date) return;
+    document.getElementById('history-area').textContent = '加载中...';
+    fetch("<%=luci.dispatcher.build_url('admin/services/iptv_auth/history_log')%>?date=" + encodeURIComponent(date), { credentials: 'same-origin' })
+        .then(function(r) { return r.text(); })
+        .then(function(t) {
+            var el = document.getElementById('history-area');
+            if (el && t) { el.textContent = t; el.scrollTop = el.scrollHeight; }
+        })
+        .catch(function() { document.getElementById('history-area').textContent = '加载失败'; });
+}
+
+function restartAll() {
+    if (!confirm('确定重启全部服务？\n（iptv-auth 鉴权 + rtp2httpd 直播代理，正在播放的直播/回看会中断数秒）')) return;
+    var btn = document.getElementById('restart-btn');
+    if (btn) { btn.disabled = true; btn.value = '重启中...'; }
+    fetch("<%=luci.dispatcher.build_url('admin/services/iptv_auth/restart_services')%>", { credentials: 'same-origin' })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            alert(d.message || '操作完成');
+            if (btn) { btn.disabled = false; btn.value = '重启所有服务'; }
+            setTimeout(iptvRefresh, 3000);
+        })
+        .catch(function() {
+            alert('请求失败');
+            if (btn) { btn.disabled = false; btn.value = '重启所有服务'; }
+        });
+}
+
+function toggleService(cb) {
+    var turnOn = cb.checked;
+    if (!confirm(turnOn ? '确定开启全部服务？' : '确定关闭全部服务？\n（iptv-auth 鉴权 + rtp2httpd 直播代理将停止，关闭后开机不会自动启动）')) {
+        cb.checked = !turnOn;
+        return;
+    }
+    var swt = document.getElementById('svc-switch-text');
+    if (swt) swt.textContent = turnOn ? '正在开启...' : '正在关闭...';
+    fetch("<%=luci.dispatcher.build_url('admin/services/iptv_auth/service_switch')%>?op=" + (turnOn ? 'on' : 'off'), { credentials: 'same-origin' })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            alert(d.message || '操作完成');
+            setTimeout(iptvRefresh, 3000);
+        })
+        .catch(function() {
+            alert('请求失败');
+            cb.checked = !turnOn;
+            iptvRefresh();
+        });
+}
+
+function runNow() {
+    if (!confirm('立即执行一次鉴权 + 频道获取？\n（会重新抓取频道并生成播放列表，EPG 节目单抓取需数分钟）')) return;
+    var btn = document.getElementById('runnow-btn');
+    if (btn) { btn.disabled = true; btn.value = '执行中...'; }
+    fetch("<%=luci.dispatcher.build_url('admin/services/iptv_auth/run_now')%>", { credentials: 'same-origin' })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            alert(d.message || '已触发');
+            if (btn) { btn.disabled = false; btn.value = '立即执行'; }
+            setTimeout(iptvRefresh, 6000);
+        })
+        .catch(function() {
+            alert('请求失败');
+            if (btn) { btn.disabled = false; btn.value = '立即执行'; }
+        });
+}
+
+function clearLog() {
+    if (!confirm('确定清除实时日志？')) return;
+    fetch("<%=luci.dispatcher.build_url('admin/services/iptv_auth/clear_log')%>", { credentials: 'same-origin' })
+        .then(function(r) { return r.json(); })
+        .then(function(d) { alert(d.message || '操作完成'); iptvRefresh(); })
+        .catch(function() { alert('请求失败'); });
+}
+
+function clearHistory() {
+    var date = document.getElementById('history-date').value;
+    if (!date) { alert('请先选择日期'); return; }
+    if (!confirm('确定清除 ' + date + ' 的历史日志？')) return;
+    fetch("<%=luci.dispatcher.build_url('admin/services/iptv_auth/clear_history')%>?date=" + encodeURIComponent(date), { credentials: 'same-origin' })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            alert(d.message || '操作成功');
+            document.getElementById('history-area').textContent = '已清除';
+            historyRefresh();
+        })
+        .catch(function() { alert('请求失败'); });
+}
+
+function escHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
+        return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+}
+
+var CTYPE_CLASS = { '直播': 'live', '回看': 'replay', '网页': 'web' };
+
+function clientsRefresh() {
+    fetch("<%=luci.dispatcher.build_url('admin/services/iptv_auth/clients')%>", { credentials: 'same-origin' })
+        .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+        .then(function(d) {
+            var el = document.getElementById('clients-area');
+            if (!el) return;
+            if (!d || d.ok === false) { el.textContent = '加载失败'; return; }
+            var list = (d && d.clients) || [];
+            if (!list.length) {
+                el.innerHTML = '<div class="iptv-clients-empty">当前无客户端连接</div>';
+                return;
+            }
+            var html = '<table class="iptv-clients-table"><thead><tr>' +
+                '<th>客户端 IP</th><th>设备标识</th><th>用途</th><th style="text-align:right;">连接数</th><th>MAC 地址</th><th>最近回看</th>' +
+                '</tr></thead><tbody>';
+            for (var i = 0; i < list.length; i++) {
+                var c = list[i];
+                var ident = c.ua || c.vendor || (c.mac ? c.mac.substring(0, 8) : '—');
+                var types = '';
+                var tarr = c.types || [];
+                for (var j = 0; j < tarr.length; j++) {
+                    types += '<span class="iptv-ctype iptv-ctype-' + (CTYPE_CLASS[tarr[j]] || 'live') + '">' + escHtml(tarr[j]) + '</span>';
+                }
+                var lastTxt = '—';
+                if (c.last && c.last > 0) {
+                    var dt = new Date(c.last * 1000);
+                    lastTxt = ('0' + dt.getHours()).slice(-2) + ':' + ('0' + dt.getMinutes()).slice(-2);
+                }
+                var chTxt = c.channel ? ' · ' + escHtml(c.channel.substring(0, 10)) : '';
+                html += '<tr>' +
+                    '<td class="iptv-cip">' + escHtml(c.ip) + '</td>' +
+                    '<td class="iptv-cident">' + escHtml(ident) + (c.ua && c.vendor ? '<span class="iptv-csub">' + escHtml(c.vendor) + '</span>' : '') + '</td>' +
+                    '<td>' + types + '</td>' +
+                    '<td style="text-align:right;font-weight:600;">' + c.conns + '</td>' +
+                    '<td class="iptv-cmac">' + escHtml(c.mac || '—') + '</td>' +
+                    '<td>' + lastTxt + chTxt + '</td>' +
+                    '</tr>';
+            }
+            el.innerHTML = html + '</tbody></table>';
+        })
+        .catch(function(e) {
+            var el = document.getElementById('clients-area');
+            if (el) el.textContent = '客户端列表加载失败: ' + (e && e.message ? e.message : e);
+        });
+}
+
+// ===== OTA 在线更新（服务器地址在配置页设置）=====
+var OTA_BASE = '<%=luci.dispatcher.build_url("admin/services/iptv_auth")%>/';
+var _otaPollTimer = null;
+
+function otaMsg(html, cls) {
+    var result = document.getElementById('ota-result');
+    if (result) result.innerHTML = '<span class="ota-msg ' + (cls || 'ota-note') + '">' + html + '</span>';
+}
+
+function otaCheck() {
+    var btn = document.getElementById('ota-check-btn');
+    if (btn) { btn.disabled = true; btn.value = '检测中...'; }
+    _otaBusy = true;
+    otaMsg('<span class="ota-spinner"></span>正在检测新版本...', 'ota-note');
+    fetch(OTA_BASE + 'ota_check', { credentials: 'same-origin' })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (btn) { btn.disabled = false; btn.value = '检查更新'; }
+            _otaBusy = false;
+            fetch(OTA_BASE + 'ota_auto_check', { credentials: 'same-origin' }).catch(function() {});
+            var result = document.getElementById('ota-result');
+            if (!result) return;
+            if (!d || d.ok === false) {
+                otaMsg(escHtml((d && d.error) || '检测失败'), 'ota-err');
+                return;
+            }
+            if (!d.has_update) {
+                otaMsg('已是最新版本 <b>' + escHtml(d.current) + '</b>', 'ota-ok');
+                return;
+            }
+            var html = '<div class="ota-new-card">' +
+                '<div class="ota-new-title">发现新版本 <span class="ota-new-ver">' + escHtml(d.latest) + '</span>' +
+                '<span class="ota-new-old">当前 ' + escHtml(d.current) + '</span></div>';
+            if (d.date) html += '<div class="ota-new-date">发布日期：' + escHtml(d.date) + '</div>';
+            if (d.changelog) html += '<div class="ota-changelog">' + escHtml(d.changelog) + '</div>';
+            html += '<input type="button" class="cbi-button cbi-button-apply" id="ota-do-btn" value="立即更新到 ' + escHtml(d.latest) + '" style="margin-top:4px;" />';
+            html += '</div>';
+            result.innerHTML = html;
+            var doBtn = document.getElementById('ota-do-btn');
+            if (doBtn) {
+                doBtn.onclick = function() { otaDo(d.url, d.ipk_url || '', d.latest); };
+            }
+        })
+        .catch(function(e) {
+            if (btn) { btn.disabled = false; btn.value = '检查更新'; }
+            _otaBusy = false;
+            otaMsg('检测失败: ' + escHtml(e.message || e), 'ota-err');
+        });
+}
+
+function otaDo(url, ipkUrl, ver) {
+    if (!confirm('确定更新到 ' + ver + '？\n更新过程中服务会短暂中断（约10秒），直播/回看将暂时断开。')) return;
+    _otaBusy = true;
+    otaMsg('<span class="ota-spinner"></span>正在更新 ' + escHtml(ver) + '，请勿离开本页...', 'ota-note');
+    var formData = new FormData();
+    formData.append('url', url);
+    formData.append('ipk_url', ipkUrl);
+    formData.append('version', ver);
+    fetch(OTA_BASE + 'ota_do', { method: 'POST', body: formData, credentials: 'same-origin' })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (!d || d.ok === false) {
+                otaMsg(escHtml((d && d.error) || '启动更新失败'), 'ota-err');
+                return;
+            }
+            otaPollStatus();
+        })
+        .catch(function(e) {
+            otaMsg('请求失败: ' + escHtml(e.message || e), 'ota-err');
+        });
+}
+
+function otaPollStatus() {
+    if (_otaPollTimer) clearInterval(_otaPollTimer);
+    _otaPollTimer = setInterval(function() {
+        fetch(OTA_BASE + 'ota_status', { credentials: 'same-origin' })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                if (!d) return;
+                var state = d.state || 'idle';
+                var msg = d.message || '';
+                var cls = 'ota-note';
+                if (state === 'done') cls = 'ota-ok';
+                if (state === 'failed') cls = 'ota-err';
+                var spinner = (state === 'running') ? '<span class="ota-spinner"></span>' : '';
+                otaMsg(spinner + escHtml(msg), cls);
+                if (state === 'done' || state === 'failed' || state === 'idle') {
+                    clearInterval(_otaPollTimer);
+                    _otaPollTimer = null;
+                    if (state !== 'running') _otaBusy = false;
+                    if (state === 'done') {
+                        setTimeout(function() { window.location.reload(); }, 2000);
+                    }
+                }
+            })
+            .catch(function() {});
+    }, 3000);
+}
+
+// ===== rtp2httpd 更新提醒（升级按钮：POST + 轮询，与 OTA 更新同模式）=====
+var _rtp2PollTimer = null;
+
+function rtp2UpdateNow() {
+    if (!confirm('确定升级 rtp2httpd 到最新版本？\n（升级过程中直播/回看会短暂中断，请确认当前无人观看）')) return;
+    var btn = document.getElementById('rtp2-upgrade-btn');
+    if (btn) { btn.disabled = true; btn.value = '升级中...'; }
+    var txt = document.getElementById('rtp2-upd-text');
+    if (txt) txt.textContent = ' · 正在启动升级...';
+    var formData = new FormData();
+    formData.append('version', 'latest');
+    fetch(OTA_BASE + 'rtp2httpd_update', { method: 'POST', body: formData, credentials: 'same-origin' })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (!d || d.started === false) {
+                if (btn) { btn.disabled = false; btn.value = '立即升级'; }
+                if (txt) txt.textContent = ' · ' + ((d && d.error) || '启动升级失败');
+                return;
+            }
+            rtp2PollStatus();
+        })
+        .catch(function(e) {
+            if (btn) { btn.disabled = false; btn.value = '立即升级'; }
+            if (txt) txt.textContent = ' · 请求失败: ' + (e && e.message ? e.message : e);
+        });
+}
+
+function rtp2PollStatus() {
+    if (_rtp2PollTimer) clearInterval(_rtp2PollTimer);
+    var txt = document.getElementById('rtp2-upd-text');
+    var btn = document.getElementById('rtp2-upgrade-btn');
+    _rtp2PollTimer = setInterval(function() {
+        fetch(OTA_BASE + 'rtp2httpd_update_status', { credentials: 'same-origin' })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                if (!d) return;
+                var state = d.state || 'idle';
+                var msg = d.message || '';
+                if (state === 'running') {
+                    if (txt) txt.textContent = ' · ' + msg;
+                    return;
+                }
+                clearInterval(_rtp2PollTimer);
+                _rtp2PollTimer = null;
+                if (state === 'done') {
+                    if (txt) txt.textContent = ' · ' + msg;
+                    setTimeout(function() { window.location.reload(); }, 2500);
+                } else if (state === 'failed') {
+                    if (btn) { btn.disabled = false; btn.value = '立即升级'; }
+                    if (txt) txt.textContent = ' · ' + msg;
+                } else {
+                    if (txt) txt.textContent = '';
+                }
+            })
+            .catch(function() {});
+    }, 3000);
+}
+
+function startAutoRefresh() {
+    setInterval(iptvRefresh, 5000);
+    setInterval(clientsRefresh, 5000);
+    iptvRefresh();
+    clientsRefresh();
+    historyRefresh();
+}
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', startAutoRefresh);
+} else {
+    startAutoRefresh();
+}
+document.addEventListener('visibilitychange', function() {
+    if (!document.hidden && document.readyState !== 'loading') { iptvRefresh(); clientsRefresh(); historyRefresh(); }
+});
+//]]>
+</script>
+
+<style type="text/css">
+/* ===== IPTV 代理 — 美化样式 v2（分区布局） ===== */
+:root {
+    --iptv-primary: #4a90d9;
+    --iptv-primary-dark: #357abd;
+    --iptv-primary-bg: #e3f2fd;
+    --iptv-success: #2e7d32;
+    --iptv-success-bg: #e8f5e9;
+    --iptv-success-border: #c8e6c9;
+    --iptv-error: #c62828;
+    --iptv-error-bg: #ffebee;
+    --iptv-error-border: #ffcdd2;
+    --iptv-card-bg: #ffffff;
+    --iptv-border: #e2e8f0;
+    --iptv-text: #334155;
+    --iptv-muted: #64748b;
+    --iptv-terminal-bg: #1a1a2e;
+    --iptv-terminal-border: #2d2d44;
+}
+
+/* ===== Page header ===== */
+.iptv-page-header {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+.iptv-page-header h2 { margin: 0; }
+.iptv-ver-badge {
+    display: inline-block;
+    background: linear-gradient(135deg, var(--iptv-primary), var(--iptv-primary-dark));
+    color: #fff;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 3px 12px;
+    border-radius: 12px;
+    box-shadow: 0 2px 6px rgba(74,144,217,0.25);
+    line-height: 1.6;
+    vertical-align: middle;
+}
+.iptv-header-actions { margin-left: auto; display: flex; gap: 8px; }
+
+/* ===== Hero 概览卡：开关 + 三项运行状态 ===== */
+.iptv-hero {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1px;
+    background: var(--iptv-border);
+    border: 1px solid var(--iptv-border);
+    border-radius: 12px;
+    overflow: hidden;
+    margin-bottom: 12px;
+}
+.iptv-hero-cell {
+    background: var(--iptv-card-bg);
+    padding: 14px 18px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 8px;
+    min-height: 64px;
+}
+.iptv-hero-label {
+    font-size: 12px;
+    color: var(--iptv-muted);
+    letter-spacing: 0.3px;
+}
+.iptv-hero-value {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 26px;
+}
+
+/* ===== Toggle switch ===== */
+.iptv-toggle {
+    position: relative;
+    display: inline-block;
+    width: 42px;
+    height: 22px;
+    vertical-align: middle;
+    flex-shrink: 0;
+}
+.iptv-toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
+.iptv-toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: #cbd5e1;
+    border-radius: 22px;
+    transition: 0.3s;
+}
+.iptv-toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 16px;
+    width: 16px;
+    left: 3px;
+    bottom: 3px;
+    background: #fff;
+    border-radius: 50%;
+    transition: 0.3s;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+.iptv-toggle input:checked + .iptv-toggle-slider { background: var(--iptv-primary); }
+.iptv-toggle input:checked + .iptv-toggle-slider:before { transform: translateX(20px); }
+.iptv-switch-text { font-size: 13px; color: #888; }
+
+/* ===== Status badges ===== */
+.iptv-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 600;
+    border: 1px solid #e0e0e0;
+    background: #f5f5f5;
+    color: #888;
+}
+.iptv-badge::before {
+    content: '';
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: #bbb;
+}
+.iptv-badge-ok {
+    background: var(--iptv-success-bg);
+    color: var(--iptv-success);
+    border-color: var(--iptv-success-border);
+}
+.iptv-badge-ok::before {
+    background: #4caf50;
+    animation: iptv-pulse 2s ease-in-out infinite;
+}
+.iptv-badge-err {
+    background: var(--iptv-error-bg);
+    color: var(--iptv-error);
+    border-color: var(--iptv-error-border);
+}
+.iptv-badge-err::before { background: #f44336; }
+@keyframes iptv-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+
+/* ===== 指标卡：频道数 / 上次执行 / 下次执行 ===== */
+.iptv-metrics {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    margin-bottom: 4px;
+}
+.iptv-metric {
+    background: var(--iptv-card-bg);
+    border: 1px solid var(--iptv-border);
+    border-radius: 12px;
+    padding: 14px 18px;
+    text-align: center;
+    transition: box-shadow 0.2s, border-color 0.2s;
+}
+.iptv-metric:hover { box-shadow: 0 2px 12px rgba(0,0,0,0.06); border-color: #cbd5e1; }
+.iptv-metric-num {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--iptv-primary);
+    line-height: 1.3;
+    word-break: break-all;
+}
+.iptv-metric-num .iptv-metric-unit { font-size: 12px; font-weight: 400; color: #94a3b8; margin-left: 2px; }
+.iptv-metric-num.iptv-metric-time { font-size: 14px; font-weight: 500; color: var(--iptv-text); }
+.iptv-metric-label {
+    font-size: 12px;
+    color: var(--iptv-muted);
+    margin-top: 4px;
+    letter-spacing: 0.3px;
+}
+
+/* ===== 区块容器与统一标题 ===== */
+.iptv-sec { margin-top: 24px; }
+.iptv-sec-head {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+.iptv-sec-icon {
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    background: var(--iptv-primary-bg);
+    color: var(--iptv-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.iptv-sec-icon svg { width: 15px; height: 15px; }
+.iptv-sec-title { font-size: 15px; font-weight: 600; color: #475569; }
+.iptv-sec-note { font-size: 12px; color: #94a3b8; }
+.iptv-sec-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+
+/* ===== Quick links ===== */
+.iptv-link-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 10px;
+}
+.iptv-link-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    border: 1px solid var(--iptv-border);
+    border-radius: 10px;
+    text-decoration: none;
+    transition: all 0.2s;
+    background: var(--iptv-card-bg);
+}
+.iptv-link-card:hover {
+    background: #f0f7ff;
+    border-color: var(--iptv-primary);
+    box-shadow: 0 2px 8px rgba(74,144,217,0.1);
+}
+.iptv-link-icon {
+    flex-shrink: 0;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    background: var(--iptv-primary-bg);
+    color: var(--iptv-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.iptv-link-icon.green { color: var(--iptv-success); }
+.iptv-link-icon svg { width: 16px; height: 16px; }
+.iptv-link-title { font-size: 14px; font-weight: 600; color: var(--iptv-text); }
+.iptv-link-url { font-size: 12px; color: #94a3b8; word-break: break-all; }
+
+/* ===== Clients table ===== */
+.iptv-clients-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--iptv-card-bg);
+    border: 1px solid var(--iptv-border);
+    border-radius: 10px;
+    overflow: hidden;
+    font-size: 13px;
+}
+.iptv-clients-table th {
+    background: #f1f5f9;
+    color: var(--iptv-muted);
+    font-weight: 600;
+    text-align: left;
+    padding: 8px 12px;
+    font-size: 12px;
+}
+.iptv-clients-table td {
+    padding: 9px 12px;
+    border-top: 1px solid var(--iptv-border);
+    color: var(--iptv-text);
+    vertical-align: middle;
+}
+.iptv-cip { font-family: Consolas, Monaco, 'Courier New', monospace; font-weight: 600; }
+.iptv-cident { max-width: 300px; word-break: break-all; }
+.iptv-csub { display: block; font-size: 11px; color: #94a3b8; margin-top: 2px; }
+.iptv-cmac { font-family: Consolas, Monaco, 'Courier New', monospace; font-size: 12px; color: var(--iptv-muted); }
+.iptv-ctype {
+    display: inline-block;
+    font-size: 11px;
+    padding: 1px 8px;
+    border-radius: 10px;
+    margin-right: 4px;
+    white-space: nowrap;
+}
+.iptv-ctype-live { background: #e3f2fd; color: #1565c0; }
+.iptv-ctype-replay { background: #fff3e0; color: #ef6c00; }
+.iptv-ctype-web { background: #f3e5f5; color: #7b1fa2; }
+.iptv-clients-empty {
+    background: var(--iptv-card-bg);
+    border: 1px dashed var(--iptv-border);
+    border-radius: 10px;
+    padding: 18px;
+    text-align: center;
+    color: #94a3b8;
+    font-size: 13px;
+}
+
+/* ===== OTA 区块 ===== */
+.iptv-ota-card {
+    background: var(--iptv-card-bg);
+    border: 1px solid var(--iptv-border);
+    border-radius: 12px;
+    padding: 14px 16px;
+}
+.ota-msg { font-size: 13px; }
+.ota-msg b { font-weight: 600; }
+.ota-note { color: var(--iptv-muted); }
+.ota-ok { color: var(--iptv-success); }
+.ota-err { color: var(--iptv-error); }
+.ota-spinner {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    margin-right: 6px;
+    vertical-align: -1px;
+    border: 2px solid #c8e0f4;
+    border-top-color: var(--iptv-primary);
+    border-radius: 50%;
+    animation: ota-spin 0.8s linear infinite;
+}
+@keyframes ota-spin { to { transform: rotate(360deg); } }
+.ota-auto-note {
+    margin-top: 6px;
+    font-size: 12px;
+    color: #888;
+}
+.ota-new-card {
+    background: #f0f7ff;
+    border: 1px solid #c8e0f4;
+    border-radius: 10px;
+    padding: 12px 14px;
+}
+.ota-new-title { font-size: 14px; font-weight: 600; color: #1565c0; }
+.ota-new-ver { font-size: 16px; margin: 0 4px; }
+.ota-new-old { font-size: 12px; font-weight: 400; color: var(--iptv-muted); margin-left: 8px; }
+.ota-new-date { font-size: 12px; color: var(--iptv-muted); margin-top: 4px; }
+.ota-changelog {
+    font-size: 13px;
+    color: var(--iptv-text);
+    white-space: pre-wrap;
+    line-height: 1.6;
+    max-height: 180px;
+    overflow-y: auto;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 8px 10px;
+    margin: 8px 0;
+}
+
+/* ===== 日志区（上下排列） ===== */
+.iptv-log-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 16px;
+    align-items: start;
+}
+.iptv-log-col { min-width: 0; }
+#log-area { max-height: 46vh; }
+#history-area { max-height: 38vh; min-height: 220px; }
+.iptv-log-subhead {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 8px;
+    min-height: 28px;
+}
+.iptv-log-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--iptv-muted);
+    padding-left: 10px;
+    border-left: 3px solid var(--iptv-primary);
+}
+.iptv-log-actions { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+.iptv-history-controls select {
+    min-width: 120px;
+    max-width: 150px;
+    padding: 3px 6px;
+    border-radius: 6px;
+    border: 1px solid var(--iptv-border);
+    background: #fff;
+    font-size: 12px;
+}
+
+/* ===== Terminal ===== */
+.iptv-terminal {
+    background: var(--iptv-terminal-bg);
+    color: #a5f3fc;
+    padding: 14px;
+    border-radius: 10px;
+    max-height: 52vh;
+    min-height: 260px;
+    overflow-y: auto !important;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    font-size: 13px;
+    font-family: Consolas, Monaco, 'Courier New', monospace;
+    white-space: pre-wrap;
+    word-break: break-all;
+    line-height: 1.6;
+    border: 1px solid var(--iptv-terminal-border);
+}
+.iptv-terminal-amber { color: #fcd34d; }
+.iptv-terminal::-webkit-scrollbar, .iptv-terminal-amber::-webkit-scrollbar { width: 10px; }
+.iptv-terminal::-webkit-scrollbar-track, .iptv-terminal-amber::-webkit-scrollbar-track { background: #0f0f1e; border-radius: 5px; }
+.iptv-terminal::-webkit-scrollbar-thumb, .iptv-terminal-amber::-webkit-scrollbar-thumb { background: #4a5a8a; border-radius: 5px; }
+.iptv-terminal::-webkit-scrollbar-thumb:hover, .iptv-terminal-amber::-webkit-scrollbar-thumb:hover { background: #6b7fb0; }
+.iptv-terminal { scrollbar-width: thin; scrollbar-color: #4a5a8a #0f0f1e; }
+
+/* ===== rtp2httpd 更新提醒横幅 ===== */
+.iptv-rtp2-banner {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    border-left: 4px solid #f59e0b;
+    border-radius: 10px;
+    padding: 12px 16px;
+    margin-bottom: 12px;
+}
+.iptv-rtp2-banner-icon {
+    flex-shrink: 0;
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    background: #fef3c7;
+    color: #d97706;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.iptv-rtp2-banner-icon svg { width: 18px; height: 18px; }
+.iptv-rtp2-banner-body { flex: 1; min-width: 220px; }
+.iptv-rtp2-banner-title { font-size: 14px; font-weight: 600; color: #92400e; }
+.iptv-rtp2-banner-title b { font-size: 16px; margin: 0 4px; color: #b45309; }
+.iptv-rtp2-banner-old { font-size: 12px; font-weight: 400; color: #a16207; margin-left: 8px; }
+.iptv-rtp2-banner-sub { font-size: 12px; color: #a16207; margin-top: 2px; }
+.iptv-rtp2-banner-actions { display: flex; gap: 8px; align-items: center; }
+
+/* ===== Page footer ===== */
+.iptv-page-footer {
+    text-align: center;
+    color: #94a3b8;
+    font-size: 12px;
+    margin-top: 18px;
+    padding-top: 12px;
+    border-top: 1px solid var(--iptv-border);
+}
+#page-err { color: var(--iptv-error); margin-top: 4px; }
+
+/* ===== 响应式 ===== */
+@media (max-width: 720px) {
+    .iptv-hero { grid-template-columns: repeat(2, 1fr); }
+    .iptv-header-actions { margin-left: 0; }
+}
+</style>
+
+<div class="iptv-page-header">
+    <h2><a id="content" name="content">运行状态与日志</a></h2>
+    <span class="iptv-ver-badge">v<%=pkg_ver%></span>
+    <div class="iptv-header-actions">
+        <input type="button" id="runnow-btn" class="cbi-button cbi-button-apply" value="立即执行" onclick="runNow()" />
+        <input type="button" id="restart-btn" class="cbi-button cbi-button-negative" value="重启所有服务" onclick="restartAll()" />
+    </div>
+</div>
+
+<% if rtp2_alert then %>
+<div class="iptv-rtp2-banner">
+    <div class="iptv-rtp2-banner-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/>
+        </svg>
+    </div>
+    <div class="iptv-rtp2-banner-body">
+        <div class="iptv-rtp2-banner-title">直播代理 rtp2httpd 有新版本<b><%=rtp2_latest_v%></b><span class="iptv-rtp2-banner-old">当前 <%=rtp2_cur_v%></span></div>
+        <div class="iptv-rtp2-banner-sub">系统每 12 小时自动检测一次 · 上次检测：<%=rtp2_last_check%><span id="rtp2-upd-text"></span></div>
+    </div>
+    <div class="iptv-rtp2-banner-actions">
+        <input type="button" class="cbi-button cbi-button-apply" id="rtp2-upgrade-btn" value="立即升级到 <%=rtp2_latest_v%>" onclick="rtp2UpdateNow()" />
+    </div>
+</div>
+<% end %>
+
+<div class="iptv-hero">
+    <div class="iptv-hero-cell">
+        <div class="iptv-hero-label">服务总开关</div>
+        <div class="iptv-hero-value">
+            <label class="iptv-toggle">
+                <input type="checkbox" id="svc-switch" onchange="toggleService(this)" />
+                <span class="iptv-toggle-slider"></span>
+            </label>
+            <span id="svc-switch-text" class="iptv-switch-text">读取中...</span>
+        </div>
+    </div>
+    <div class="iptv-hero-cell">
+        <div class="iptv-hero-label">鉴权服务 (iptv-auth)</div>
+        <div class="iptv-hero-value"><span class="iptv-badge"><span id="auth-status">检测中...</span></span></div>
+    </div>
+    <div class="iptv-hero-cell">
+        <div class="iptv-hero-label">直播代理 (rtp2httpd)</div>
+        <div class="iptv-hero-value"><span class="iptv-badge"><span id="rtp-status">检测中...</span></span></div>
+    </div>
+    <div class="iptv-hero-cell">
+        <div class="iptv-hero-label">鉴权状态</div>
+        <div class="iptv-hero-value"><span class="iptv-badge"><span id="auth-ok">读取中...</span></span></div>
+    </div>
+</div>
+
+<div class="iptv-metrics">
+    <div class="iptv-metric">
+        <div class="iptv-metric-num"><span id="channels">0</span><span class="iptv-metric-unit">个</span></div>
+        <div class="iptv-metric-label">频道数量</div>
+    </div>
+    <div class="iptv-metric">
+        <div class="iptv-metric-num iptv-metric-time" id="last-run">读取中...</div>
+        <div class="iptv-metric-label">上次执行</div>
+    </div>
+    <div class="iptv-metric">
+        <div class="iptv-metric-num iptv-metric-time" id="next-run">读取中...</div>
+        <div class="iptv-metric-label">下次执行</div>
+    </div>
+</div>
+
+<div class="iptv-sec">
+    <div class="iptv-sec-head">
+        <span class="iptv-sec-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14L21 3"/>
+            </svg>
+        </span>
+        <span class="iptv-sec-title">快速访问</span>
+        <span class="iptv-sec-note">播放列表与状态直链 · 点击在新窗口打开</span>
+    </div>
+    <div class="iptv-link-grid">
+        <a class="iptv-link-card" href="http://<%=host%>:<%=live_port%>/st" target="_blank">
+            <span class="iptv-link-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 6-6"/>
+                </svg>
+            </span>
+            <div>
+                <div class="iptv-link-title">rtp2httpd 状态</div>
+                <div class="iptv-link-url">http://<%=host%>:<%=live_port%>/st</div>
+            </div>
+        </a>
+        <a class="iptv-link-card" href="http://<%=host%>:<%=live_port%>/playlist.m3u" target="_blank">
+            <span class="iptv-link-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h10M7 12h10M7 16h6"/>
+                </svg>
+            </span>
+            <div>
+                <div class="iptv-link-title">直播播放列表</div>
+                <div class="iptv-link-url">http://<%=host%>:<%=live_port%>/playlist.m3u</div>
+            </div>
+        </a>
+        <a class="iptv-link-card" href="http://<%=host%>:2000/LanReplay.m3u" target="_blank">
+            <span class="iptv-link-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 12a9 9 0 1 0 9-9"/><path d="M3 4v5h5"/><path d="M12 8v8l5-4z"/>
+                </svg>
+            </span>
+            <div>
+                <div class="iptv-link-title">回看播放列表</div>
+                <div class="iptv-link-url">http://<%=host%>:2000/LanReplay.m3u</div>
+            </div>
+        </a>
+        <% if wan_domain and wan_domain ~= "" then %>
+        <a class="iptv-link-card" href="http://<%=wan_domain%>:2000/WanPlay.m3u" target="_blank">
+            <span class="iptv-link-icon green">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+                </svg>
+            </span>
+            <div>
+                <div class="iptv-link-title">外网融合播放列表</div>
+                <div class="iptv-link-url">http://<%=wan_domain%>:2000/WanPlay.m3u</div>
+            </div>
+        </a>
+        <a class="iptv-link-card" href="http://<%=wan_domain%>:2000/WanReplay.m3u" target="_blank">
+            <span class="iptv-link-icon green">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 12a9 9 0 1 0 9-9"/><path d="M3 4v5h5"/><path d="M12 8v8l5-4z"/>
+                </svg>
+            </span>
+            <div>
+                <div class="iptv-link-title">外网回看播放列表</div>
+                <div class="iptv-link-url">http://<%=wan_domain%>:2000/WanReplay.m3u</div>
+            </div>
+        </a>
+        <% end %>
+    </div>
+</div>
+
+<div class="iptv-sec">
+    <div class="iptv-sec-head">
+        <span class="iptv-sec-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/>
+            </svg>
+        </span>
+        <span class="iptv-sec-title">连接的客户端</span>
+        <span class="iptv-sec-note">实时活跃连接 · 每 5 秒刷新 · 直播/回看/网页接入都会显示</span>
+    </div>
+    <div id="clients-area">加载中...</div>
+</div>
+
+<div class="iptv-sec">
+    <div class="iptv-sec-head">
+        <span class="iptv-sec-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/>
+            </svg>
+        </span>
+        <span class="iptv-sec-title">在线更新</span>
+        <span class="iptv-sec-note">系统每 12 小时自动检测一次 · 更新服务器地址在配置页设置 · 更新过程服务中断约 10 秒</span>
+        <span class="iptv-sec-actions">
+            <input type="button" class="cbi-button cbi-button-apply" id="ota-check-btn" value="检查更新" onclick="otaCheck()" />
+        </span>
+    </div>
+    <div class="iptv-ota-card">
+        <div id="ota-result"><span class="ota-msg ota-note"><% if ota_last_check ~= "" then %>上次自动检测：<%=ota_last_check%><% else %>尚未自动检测<% end %> · 点击「检查更新」立即检测</span></div>
+    </div>
+</div>
+
+<div class="iptv-sec">
+    <div class="iptv-sec-head">
+        <span class="iptv-sec-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 17l6-6-6-6"/><path d="M12 19h8"/>
+            </svg>
+        </span>
+        <span class="iptv-sec-title">日志</span>
+        <span class="iptv-sec-note">实时日志保留 500 条 · 历史归档于 /mnt/data/iptv-auth/logs（保留 7 天）</span>
+    </div>
+    <div class="iptv-log-grid">
+        <div class="iptv-log-col">
+            <div class="iptv-log-subhead">
+                <span class="iptv-log-name">实时日志</span>
+                <span class="iptv-log-actions">
+                    <input type="button" class="cbi-button cbi-button-negative" value="清除日志" onclick="clearLog()" />
+                </span>
+            </div>
+            <pre id="log-area" class="iptv-terminal">加载中...</pre>
+        </div>
+        <div class="iptv-log-col">
+            <div class="iptv-log-subhead">
+                <span class="iptv-log-name">历史日志</span>
+                <span class="iptv-log-actions iptv-history-controls">
+                    <select id="history-date"></select>
+                    <input type="button" class="cbi-button cbi-button-apply" value="查看" onclick="viewHistory()" />
+                    <input type="button" class="cbi-button cbi-button-negative" value="清除所选" onclick="clearHistory()" />
+                </span>
+            </div>
+            <pre id="history-area" class="iptv-terminal iptv-terminal-amber">选择日期后点击查看</pre>
+        </div>
+    </div>
+</div>
+
+<div class="iptv-page-footer">
+    iptv-auth v<%=pkg_ver%> ｜ 如日志持续显示"加载中"请 Ctrl+F5 强刷并反馈下方错误提示
+    <div id="page-err"></div>
+</div>
+
+<%+footer%>
+

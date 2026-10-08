@@ -1,0 +1,656 @@
+<%# config.htm — IPTV 鉴权与代理配置页（自定义模板，美化版）%>
+<%+header%>
+
+<%
+local sys = require "luci.sys"
+local pkg_ver_raw = sys.exec("apk list --installed 2>/dev/null | grep '^iptv-auth-' | head -1") or ""
+local pkg_ver = pkg_ver_raw:match("^iptv%-auth%-(%S+)%s") or ""
+if pkg_ver == "" then
+    pkg_ver_raw = sys.exec("opkg list-installed 2>/dev/null | grep '^iptv-auth ' | head -1") or ""
+    pkg_ver = pkg_ver_raw:match("%-%s+(%S+)") or "unknown"
+end
+local r2h_cur = sys.exec("/usr/bin/rtp2httpd --help 2>&1 | grep -oE '[0-9]+\\.[0-9]+\\.[0-9]+' | head -1") or ""
+r2h_cur = r2h_cur:gsub("%s+", "")
+%>
+
+<script type="text/javascript">
+//<![CDATA[
+var BASE = '<%=luci.dispatcher.build_url("admin/services/iptv_auth")%>/';
+
+function escHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
+        return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+}
+
+// ===== 加载配置 =====
+function loadConfig() {
+    fetch(BASE + 'get_config', { credentials: 'same-origin' })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (!d || d.ok === false) { alert('加载配置失败'); return; }
+            var fields = [
+                'iptv_server','userid','authenticator','stbip','lasttermno',
+                'usergroupnmb','epggroupnmb','usertoken','stbid','stbinfo',
+                'live_port','replay_port','upstream_interface',
+                'rtp2h_workers','rtp2h_rcvbuf','rtp2h_bufpool',
+                'rtp2h_if_multicast','rtp2h_if_fcc','rtp2h_if_rtsp','rtp2h_if_http',
+            'filter_keywords','interval','update_mirror','ota_url',
+                'wan_domain'
+            ];
+            for (var i = 0; i < fields.length; i++) {
+                var el = document.getElementById('cfg-' + fields[i]);
+                if (!el) continue;
+                var val = d[fields[i]] || '';
+                // 下拉字段：已保存值不在当前选项中时追加一项，避免选中丢失
+                if (el.tagName === 'SELECT' && val !== '') {
+                    var has = false;
+                    for (var k = 0; k < el.options.length; k++) {
+                        if (el.options[k].value === val) { has = true; break; }
+                    }
+                    if (!has) {
+                        var opt = document.createElement('option');
+                        opt.value = val;
+                        opt.textContent = val + '（当前配置，接口当前不存在）';
+                        el.appendChild(opt);
+                    }
+                }
+                el.value = val;
+            }
+            var pip = document.getElementById('cfg-filter_pip');
+            if (pip) pip.checked = d.filter_pip == '1' || d.filter_pip == 1;
+            var epg = document.getElementById('cfg-epg_enabled');
+            if (epg) epg.checked = d.epg_enabled == '1' || d.epg_enabled == 1;
+            syncMirrorSelect(d.update_mirror || '');
+        })
+        .catch(function(e) { alert('加载配置失败: ' + e); });
+}
+
+// ===== 上游接口下拉：加载本机网络接口列表（全局 + 细分专用，全部可留空） =====
+// 留空 = 不传参数 = rtp2httpd 按系统路由表（含静态路由）选出口；细分留空则跟随全局
+var IF_SELECTS = [
+    { id: 'cfg-upstream_interface', lead: [['留空（走系统静态路由）', '']] },
+    { id: 'cfg-rtp2h_if_multicast', lead: [['留空（跟随全局上游接口）', '']] },
+    { id: 'cfg-rtp2h_if_fcc',       lead: [['留空（跟随全局上游接口）', '']] },
+    { id: 'cfg-rtp2h_if_rtsp',      lead: [['留空（跟随全局上游接口）', '']] },
+    { id: 'cfg-rtp2h_if_http',      lead: [['留空（跟随全局上游接口）', '']] }
+];
+function fillInterfaceSelect(sel, lead, list, failText) {
+    while (sel.options.length) sel.remove(0);
+    for (var j = 0; j < lead.length; j++) sel.add(new Option(lead[j][0], lead[j][1]));
+    if (!list || !list.length) {
+        sel.add(new Option(failText, '__fail__'));
+        return;
+    }
+    for (var i = 0; i < list.length; i++) {
+        var it = list[i];
+        var label = it.name;
+        if (it.ip) label += ' — ' + it.ip;
+        if (it.state && it.state !== 'up') label += '（' + it.state + '）';
+        sel.add(new Option(label, it.name));
+    }
+}
+function loadInterfaces() {
+    return fetch(BASE + 'interfaces', { credentials: 'same-origin' })
+        .then(function(r) { return r.json(); })
+        .then(function(list) {
+            for (var k = 0; k < IF_SELECTS.length; k++) {
+                var sel = document.getElementById(IF_SELECTS[k].id);
+                if (sel) fillInterfaceSelect(sel, IF_SELECTS[k].lead, list, '（未获取到接口列表）');
+            }
+        })
+        .catch(function(e) {
+            for (var k = 0; k < IF_SELECTS.length; k++) {
+                var sel = document.getElementById(IF_SELECTS[k].id);
+                if (sel) fillInterfaceSelect(sel, IF_SELECTS[k].lead, null, '（接口列表加载失败）');
+            }
+        });
+}
+
+// ===== 镜像前缀下拉联动 =====
+function syncMirrorSelect(val) {
+    var sel = document.getElementById('cfg-update_mirror-select');
+    var inp = document.getElementById('cfg-update_mirror');
+    if (!sel || !inp) return;
+    var matched = false;
+    for (var i = 0; i < sel.options.length; i++) {
+        if (sel.options[i].value === val) { sel.selectedIndex = i; matched = true; break; }
+    }
+    if (!matched) {
+        // 自定义值：选中“自定义…”并显示输入框
+        for (var j = 0; j < sel.options.length; j++) {
+            if (sel.options[j].value === '__custom__') { sel.selectedIndex = j; break; }
+        }
+        inp.style.display = '';
+    } else {
+        inp.style.display = (val === '') ? 'none' : '';
+        inp.value = val;
+    }
+}
+
+function onMirrorSelectChange(sel) {
+    var inp = document.getElementById('cfg-update_mirror');
+    if (!inp) return;
+    if (sel.value === '__custom__') {
+        inp.style.display = '';
+        inp.focus();
+    } else {
+        inp.value = sel.value;
+        inp.style.display = (sel.value === '') ? 'none' : '';
+    }
+}
+
+// ===== 保存配置 =====
+function saveConfig() {
+    var data = {};
+    var textFields = [
+        'iptv_server','userid','authenticator','stbip','lasttermno',
+        'usergroupnmb','epggroupnmb','usertoken','stbid','stbinfo',
+        'live_port','replay_port','upstream_interface',
+        'rtp2h_workers','rtp2h_rcvbuf','rtp2h_bufpool',
+        'rtp2h_if_multicast','rtp2h_if_fcc','rtp2h_if_rtsp','rtp2h_if_http',
+            'filter_keywords','interval','update_mirror','ota_url',
+                'wan_domain'
+            ];
+    for (var i = 0; i < textFields.length; i++) {
+        var el = document.getElementById('cfg-' + textFields[i]);
+        if (el) data[textFields[i]] = el.value.trim();
+    }
+    var pip = document.getElementById('cfg-filter_pip');
+    if (pip) data.filter_pip = pip.checked ? '1' : '0';
+    var epg = document.getElementById('cfg-epg_enabled');
+    if (epg) data.epg_enabled = epg.checked ? '1' : '0';
+
+    // 基本校验
+    if (!data.upstream_interface) {
+        if (!confirm('上游接口留空：rtp2httpd 将不传 -i，按系统路由表（含静态路由）选出口，确定保存？')) return;
+    }
+    if (data.live_port && (parseInt(data.live_port) < 1 || parseInt(data.live_port) > 65535)) {
+        alert('直播端口必须在 1-65535 之间'); return;
+    }
+    if (data.replay_port && (parseInt(data.replay_port) < 1 || parseInt(data.replay_port) > 65535)) {
+        alert('回看端口必须在 1-65535 之间'); return;
+    }
+    if (data.rtp2h_workers && (parseInt(data.rtp2h_workers) < 1 || parseInt(data.rtp2h_workers) > 16)) {
+        alert('工作线程数必须在 1-16 之间'); return;
+    }
+    if (data.interval && (parseInt(data.interval) < 1 || parseInt(data.interval) > 24)) {
+        alert('执行间隔必须在 1-24 小时之间'); return;
+    }
+    if (!data.iptv_server || !data.userid || !data.authenticator) {
+        if (!confirm('鉴权服务器、UserID、Authenticator 有空值，确定保存？')) return;
+    }
+
+    var btn = document.getElementById('save-btn');
+    if (btn) { btn.disabled = true; btn.value = '保存中...'; }
+
+    var body = Object.keys(data).map(function(k) {
+        return encodeURIComponent(k) + '=' + encodeURIComponent(data[k]);
+    }).join('&');
+
+    fetch(BASE + 'save_config', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: body
+    })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (btn) { btn.disabled = false; btn.value = '保存并应用'; }
+            if (d.ok) {
+                alert('配置已保存，服务正在重启...\n（鉴权+频道获取将在数秒内开始，EPG 抓取需数分钟）');
+            } else {
+                alert('保存失败: ' + (d.message || '未知错误'));
+            }
+        })
+        .catch(function(e) {
+            if (btn) { btn.disabled = false; btn.value = '保存并应用'; }
+            alert('请求失败: ' + e);
+        });
+}
+
+// ===== rtp2httpd 更新 =====
+function r2hEl(id) { return document.getElementById(id); }
+function r2hMsg(t, c) { var el = r2hEl('r2h-msg'); el.textContent = t || ''; el.style.color = c || '#888'; }
+function r2hButtons(check, update) { r2hEl('r2h-btn-check').disabled = !check; r2hEl('r2h-btn-update').disabled = !update; }
+function r2hCmpVer(a, b) {
+    var pa = (a || '0').split('.'), pb = (b || '0').split('.');
+    for (var i = 0; i < 3; i++) {
+        var x = parseInt(pa[i] || '0', 10), y = parseInt(pb[i] || '0', 10);
+        if (x !== y) return x - y;
+    }
+    return 0;
+}
+function r2hCheck() {
+    r2hButtons(false, false);
+    r2hMsg('正在查询最新版本…');
+    fetch(BASE + 'rtp2httpd_check', { credentials: 'same-origin' })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            R2H.current = d.current; R2H.latest = d.latest;
+            if (d.error) { r2hMsg(d.error, '#c62828'); r2hButtons(true, false); return; }
+            r2hButtons(true, true);
+            if (r2hCmpVer(d.latest, d.current) <= 0) {
+                r2hMsg('已是最新版本 v' + d.current + '（如遇异常可点"立即更新"重装修复）', '#2e7d32');
+            } else {
+                r2hMsg('发现新版本 v' + d.latest + '（当前 v' + d.current + '）', '#f0ad4e');
+            }
+        })
+        .catch(function(e) { r2hMsg('查询失败: ' + e, '#c62828'); r2hButtons(true, false); });
+}
+function r2hUpdate() {
+    var same = R2H.latest && r2hCmpVer(R2H.latest, R2H.current) <= 0;
+    var tip = same
+        ? '当前已是最新版本 v' + R2H.current + '，仍要重新下载并安装吗？（用于修复异常，直播约中断 5-8 秒）'
+        : '确认更新 rtp2httpd 到 v' + (R2H.latest || '最新') + '？更新期间直播约中断 5-8 秒';
+    if (!confirm(tip)) return;
+    r2hButtons(false, false);
+    r2hMsg('正在启动更新…');
+    var qs = R2H.latest ? ('?version=' + R2H.latest) : '?version=latest';
+    fetch(BASE + 'rtp2httpd_update' + qs, { credentials: 'same-origin' })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (!d.started) { r2hMsg(d.error || '启动失败', '#c62828'); r2hButtons(true, true); return; }
+            r2hPoll();
+        })
+        .catch(function(e) { r2hMsg('请求失败: ' + e, '#c62828'); r2hButtons(true, true); });
+}
+function r2hPoll() {
+    var idleCount = 0;
+    R2H.timer = setInterval(function() {
+        fetch(BASE + 'rtp2httpd_update_status', { credentials: 'same-origin' })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                r2hEl('r2h-detail').textContent = d.message || '';
+                if (d.state == 'running') {
+                    idleCount = 0;
+                    r2hMsg('更新进行中：' + (d.message || ''), '#888');
+                } else if (d.state == 'idle') {
+                    idleCount++;
+                    if (idleCount >= 3) {
+                        clearInterval(R2H.timer);
+                        r2hButtons(true, true);
+                        r2hMsg('更新失败：任务未能启动', '#c62828');
+                    } else {
+                        r2hMsg('正在启动更新任务…', '#888');
+                    }
+                } else {
+                    clearInterval(R2H.timer);
+                    r2hButtons(true, true);
+                    if (d.state == 'done') {
+                        r2hMsg('更新成功：' + (d.message || ''), '#2e7d32');
+                        setTimeout(function() { location.reload(); }, 1500);
+                    } else {
+                        r2hMsg('更新失败：' + (d.message || ''), '#c62828');
+                    }
+                }
+            })
+            .catch(function(e) {
+                clearInterval(R2H.timer);
+                r2hMsg('状态查询失败: ' + e, '#c62828');
+                r2hButtons(true, true);
+            });
+    }, 2000);
+}
+var R2H = { latest: '', current: '', timer: null };
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function() { loadInterfaces().then(loadConfig); r2hCheck(); });
+} else {
+    loadInterfaces().then(loadConfig); r2hCheck();
+}
+//]]>
+</script>
+
+<style type="text/css">
+:root {
+    --iptv-primary: #4a90d9;
+    --iptv-primary-dark: #357abd;
+    --iptv-success: #2e7d32;
+    --iptv-error: #c62828;
+    --iptv-card-bg: #ffffff;
+    --iptv-border: #e2e8f0;
+    --iptv-text: #334155;
+    --iptv-muted: #64748b;
+    --iptv-label-bg: #f8fafc;
+}
+.iptv-page-header {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 20px;
+}
+.iptv-page-header h2 { margin: 0; }
+.iptv-ver-badge {
+    display: inline-block; background: linear-gradient(135deg, var(--iptv-primary), var(--iptv-primary-dark));
+    color: #fff; font-size: 12px; font-weight: 600; padding: 3px 12px; border-radius: 12px;
+    box-shadow: 0 2px 6px rgba(74,144,217,0.25); line-height: 1.6;
+}
+.iptv-header-actions { margin-left: auto; display: flex; gap: 8px; }
+
+.iptv-section {
+    background: var(--iptv-card-bg);
+    border: 1px solid var(--iptv-border);
+    border-radius: 10px;
+    margin-bottom: 16px;
+    overflow: hidden;
+}
+.iptv-section-title-bar {
+    font-size: 14px; font-weight: 600; color: #475569;
+    padding: 12px 18px; border-bottom: 1px solid var(--iptv-border);
+    background: var(--iptv-label-bg);
+    display: flex; align-items: center; gap: 8px;
+}
+.iptv-section-title-bar::before {
+    content: ''; display: inline-block; width: 4px; height: 14px;
+    background: var(--iptv-primary); border-radius: 2px;
+}
+.iptv-section-body { padding: 14px 18px; }
+
+.iptv-field { display: flex; align-items: flex-start; margin-bottom: 12px; }
+.iptv-field:last-child { margin-bottom: 0; }
+.iptv-field-label {
+    width: 180px; flex-shrink: 0; padding-top: 8px;
+    font-size: 13px; font-weight: 500; color: var(--iptv-muted);
+}
+.iptv-field-label small { display: block; font-weight: 400; color: #94a3b8; font-size: 11px; margin-top: 2px; }
+.iptv-field-input { flex: 1; }
+.iptv-field-input input[type="text"],
+.iptv-field-input input[type="number"] {
+    width: 100%; max-width: 420px;
+    padding: 7px 10px; border: 1px solid var(--iptv-border);
+    border-radius: 6px; font-size: 13px; color: var(--iptv-text);
+    background: #fff; transition: border-color 0.2s, box-shadow 0.2s;
+    box-sizing: border-box;
+}
+.iptv-field-input input[type="text"]:focus,
+.iptv-field-input input[type="number"]:focus {
+    border-color: var(--iptv-primary);
+    box-shadow: 0 0 0 3px rgba(74,144,217,0.1);
+    outline: none;
+}
+.iptv-field-input input[type="text"].iptv-long { max-width: 100%; }
+.iptv-field-input input[type="number"] { max-width: 120px; }
+.iptv-field-input select {
+    width: 100%; max-width: 420px;
+    padding: 7px 10px; border: 1px solid var(--iptv-border);
+    border-radius: 6px; font-size: 13px; color: var(--iptv-text);
+    background: #fff; box-sizing: border-box;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+.iptv-field-input select:focus {
+    border-color: var(--iptv-primary);
+    box-shadow: 0 0 0 3px rgba(74,144,217,0.1);
+    outline: none;
+}
+.iptv-if-hint { font-size: 11px; color: #94a3b8; margin-top: 4px; max-width: 420px; }
+
+.iptv-check-row {
+    display: flex; align-items: center; gap: 8px; padding-top: 6px;
+}
+.iptv-check-row input[type="checkbox"] {
+    width: 16px; height: 16px; cursor: pointer;
+    accent-color: var(--iptv-primary);
+}
+.iptv-check-row label { font-size: 13px; color: var(--iptv-text); cursor: pointer; }
+
+.iptv-info-note {
+    background: #f0f7ff; border: 1px solid #d0e3fa; border-radius: 8px;
+    padding: 10px 14px; margin-bottom: 16px; font-size: 13px; color: #475569; line-height: 1.6;
+}
+
+.iptv-r2h-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.iptv-r2h-ver {
+    display: inline-block; background: #e3f2fd; color: #1565c0;
+    font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 6px;
+}
+.iptv-btn {
+    padding: 6px 16px; border-radius: 6px; border: 1px solid var(--iptv-border);
+    font-size: 13px; cursor: pointer; transition: all 0.2s; background: #fff; color: var(--iptv-text);
+}
+.iptv-btn-primary { background: var(--iptv-primary); color: #fff; border-color: var(--iptv-primary); }
+.iptv-btn-primary:hover { background: var(--iptv-primary-dark); }
+.iptv-btn-danger { background: #fff; color: var(--iptv-error); border-color: #ffcdd2; }
+.iptv-btn-danger:hover { background: #ffebee; }
+.iptv-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+#r2h-msg { font-size: 13px; }
+#r2h-detail { margin-top: 8px; font-size: 12px; color: #94a3b8; }
+
+.iptv-footer-actions {
+    display: flex; gap: 8px; justify-content: flex-end;
+    margin-top: 8px; padding: 12px 0;
+}
+</style>
+
+<div class="iptv-page-header">
+    <h2><a id="content" name="content">鉴权与代理配置</a></h2>
+    <span class="iptv-ver-badge">v<%=pkg_ver%></span>
+    <div class="iptv-header-actions">
+        <input type="button" id="save-btn" class="iptv-btn iptv-btn-primary" value="保存并应用" onclick="saveConfig()" style="padding:7px 20px;font-size:13px;" />
+    </div>
+</div>
+
+<div class="iptv-info-note">
+    中兴 IPTV 鉴权 + 频道抓取 + M3U 生成 + rtp2httpd 直播/回看/FCC 代理。所有设置在此页面统一配置，保存后自动重启服务并执行一次鉴权与频道获取。
+</div>
+
+<div class="iptv-section">
+    <div class="iptv-section-title-bar">鉴权信息</div>
+    <div class="iptv-section-body">
+        <div class="iptv-field">
+            <div class="iptv-field-label">IPTV 鉴权服务器</div>
+            <div class="iptv-field-input"><input type="text" id="cfg-iptv_server" placeholder="http://182.137.9.86:8080" /></div>
+        </div>
+        <div class="iptv-field">
+            <div class="iptv-field-label">UserID</div>
+            <div class="iptv-field-input"><input type="text" id="cfg-userid" /></div>
+        </div>
+        <div class="iptv-field">
+            <div class="iptv-field-label">Authenticator</div>
+            <div class="iptv-field-input"><input type="text" id="cfg-authenticator" class="iptv-long" /></div>
+        </div>
+        <div class="iptv-field">
+            <div class="iptv-field-label">StbIP</div>
+            <div class="iptv-field-input"><input type="text" id="cfg-stbip" placeholder="10.144.99.186" /></div>
+        </div>
+        <div class="iptv-field">
+            <div class="iptv-field-label">LastTermno</div>
+            <div class="iptv-field-input"><input type="text" id="cfg-lasttermno" placeholder="0" /></div>
+        </div>
+        <div class="iptv-field">
+            <div class="iptv-field-label">UserGroupNMB</div>
+            <div class="iptv-field-input"><input type="text" id="cfg-usergroupnmb" placeholder="24" /></div>
+        </div>
+        <div class="iptv-field">
+            <div class="iptv-field-label">EPGGroupNMB</div>
+            <div class="iptv-field-input"><input type="text" id="cfg-epggroupnmb" /></div>
+        </div>
+        <div class="iptv-field">
+            <div class="iptv-field-label">UserToken</div>
+            <div class="iptv-field-input"><input type="text" id="cfg-usertoken" /></div>
+        </div>
+        <div class="iptv-field">
+            <div class="iptv-field-label">STBID</div>
+            <div class="iptv-field-input"><input type="text" id="cfg-stbid" /></div>
+        </div>
+        <div class="iptv-field">
+            <div class="iptv-field-label">stbinfo</div>
+            <div class="iptv-field-input"><input type="text" id="cfg-stbinfo" placeholder="undefined" /></div>
+        </div>
+    </div>
+</div>
+
+<div class="iptv-section">
+    <div class="iptv-section-title-bar">网络与代理配置</div>
+    <div class="iptv-section-body">
+        <div class="iptv-field">
+            <div class="iptv-field-label">直播端口<small>rtp2httpd 监听</small></div>
+            <div class="iptv-field-input"><input type="number" id="cfg-live_port" placeholder="23234" min="1" max="65535" /></div>
+        </div>
+        <div class="iptv-field">
+            <div class="iptv-field-label">回看端口<small>RTSP 代理监听</small></div>
+            <div class="iptv-field-input"><input type="number" id="cfg-replay_port" placeholder="554" min="1" max="65535" /></div>
+        </div>
+        <div class="iptv-field">
+            <div class="iptv-field-label">上游接口<small>IPTV 线路</small></div>
+            <div class="iptv-field-input">
+                <select id="cfg-upstream_interface">
+                    <option value="">正在读取接口列表…</option>
+                </select>
+                <div class="iptv-if-hint">选择 IPTV 专线所在接口；留空则不传参数，由系统路由表（静态路由）决定出口</div>
+            </div>
+        </div>
+        <div class="iptv-field">
+            <div class="iptv-field-label">组播上游接口<small>RTP/UDP 专用</small></div>
+            <div class="iptv-field-input">
+                <select id="cfg-rtp2h_if_multicast"><option value="">正在读取接口列表…</option></select>
+                <div class="iptv-if-hint">细分优先于全局；留空不传参数（跟随全局，全局留空则走系统路由）</div>
+            </div>
+        </div>
+        <div class="iptv-field">
+            <div class="iptv-field-label">FCC 上游接口<small>快速换台专用</small></div>
+            <div class="iptv-field-input">
+                <select id="cfg-rtp2h_if_fcc"><option value="">正在读取接口列表…</option></select>
+                <div class="iptv-if-hint">细分优先于全局；留空不传参数（跟随全局，全局留空则走系统路由）</div>
+            </div>
+        </div>
+        <div class="iptv-field">
+            <div class="iptv-field-label">RTSP 上游接口<small>回看代理专用</small></div>
+            <div class="iptv-field-input">
+                <select id="cfg-rtp2h_if_rtsp"><option value="">正在读取接口列表…</option></select>
+                <div class="iptv-if-hint">留空跟随全局；注意：全局为外网口（如 eth1）时，本机回看代理需显式选 br-lan</div>
+            </div>
+        </div>
+        <div class="iptv-field">
+            <div class="iptv-field-label">HTTP 上游接口<small>HTTP 代理专用</small></div>
+            <div class="iptv-field-input">
+                <select id="cfg-rtp2h_if_http"><option value="">正在读取接口列表…</option></select>
+                <div class="iptv-if-hint">细分优先于全局；留空不传参数（跟随全局，全局留空则走系统路由）</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="iptv-section">
+    <div class="iptv-section-title-bar">rtp2httpd 参数</div>
+    <div class="iptv-section-body">
+        <div class="iptv-field">
+            <div class="iptv-field-label">工作线程数<small>1 ~ 16</small></div>
+            <div class="iptv-field-input"><input type="number" id="cfg-rtp2h_workers" placeholder="4" min="1" max="16" /></div>
+        </div>
+        <div class="iptv-field">
+            <div class="iptv-field-label">UDP 接收缓冲<small>字节</small></div>
+            <div class="iptv-field-input"><input type="number" id="cfg-rtp2h_rcvbuf" placeholder="1572864" /></div>
+        </div>
+        <div class="iptv-field">
+            <div class="iptv-field-label">缓冲池大小</div>
+            <div class="iptv-field-input"><input type="number" id="cfg-rtp2h_bufpool" placeholder="32768" /></div>
+        </div>
+    </div>
+</div>
+
+<div class="iptv-section">
+    <div class="iptv-section-title-bar">频道过滤</div>
+    <div class="iptv-section-body">
+        <div class="iptv-field">
+            <div class="iptv-field-label">过滤 PIP 频道</div>
+            <div class="iptv-field-input">
+                <div class="iptv-check-row">
+                    <input type="checkbox" id="cfg-filter_pip" />
+                    <label for="cfg-filter_pip">开启后过滤画中画频道</label>
+                </div>
+            </div>
+        </div>
+        <div class="iptv-field">
+            <div class="iptv-field-label">过滤关键词<small>逗号分隔</small></div>
+            <div class="iptv-field-input"><input type="text" id="cfg-filter_keywords" class="iptv-long" placeholder="家庭理财,本地频道,导视..." /></div>
+        </div>
+    </div>
+</div>
+
+<div class="iptv-section">
+    <div class="iptv-section-title-bar">定时任务与节目单</div>
+    <div class="iptv-section-body">
+        <div class="iptv-field">
+            <div class="iptv-field-label">执行间隔<small>1 ~ 24 小时</small></div>
+            <div class="iptv-field-input"><input type="number" id="cfg-interval" placeholder="10" min="1" max="24" /></div>
+        </div>
+        <div class="iptv-field">
+            <div class="iptv-field-label">获取节目单 (EPG)</div>
+            <div class="iptv-field-input">
+                <div class="iptv-check-row">
+                    <input type="checkbox" id="cfg-epg_enabled" />
+                    <label for="cfg-epg_enabled">开启后自动抓取节目单并生成 EPG</label>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="iptv-section">
+    <div class="iptv-section-title-bar">外网播放</div>
+    <div class="iptv-section-body">
+        <div class="iptv-field">
+            <div class="iptv-field-label">外网域名/IP<small>留空则不生成外网 M3U</small></div>
+            <div class="iptv-field-input"><input type="text" id="cfg-wan_domain" class="iptv-long" placeholder="如 myddns.com 或 125.67.151.185" /></div>
+        </div>
+        <div class="iptv-info-note" style="margin-top:8px;">
+            外网需映射端口 <b>554</b>（RTSP 回看）和 <b>2000</b>（HTTP M3U/EPG 下载）。端口与内网同步，无需单独配置。
+        </div>
+    </div>
+</div>
+
+<div class="iptv-section">
+    <div class="iptv-section-title-bar">rtp2httpd 在线更新</div>
+    <div class="iptv-section-body">
+        <div class="iptv-field">
+            <div class="iptv-field-label">当前版本</div>
+            <div class="iptv-field-input"><span class="iptv-r2h-ver">v<%=r2h_cur%></span></div>
+        </div>
+        <div class="iptv-field">
+            <div class="iptv-field-label">下载镜像前缀<small>选择常用代理或自定义</small></div>
+            <div class="iptv-field-input">
+                <select id="cfg-update_mirror-select" onchange="onMirrorSelectChange(this)" style="width:100%;max-width:420px;padding:7px 10px;border:1px solid var(--iptv-border);border-radius:6px;font-size:13px;color:var(--iptv-text);background:#fff;margin-bottom:8px;box-sizing:border-box;">
+                    <option value="">留空 — 直连 GitHub（国内可能无法访问）</option>
+                    <option value="https://gh-proxy.com/">https://gh-proxy.com/</option>
+                    <option value="https://ghproxy.net/">https://ghproxy.net/</option>
+                    <option value="https://ghfast.top/">https://ghfast.top/</option>
+                    <option value="https://gh-proxy.link/">https://gh-proxy.link/</option>
+                    <option value="__custom__">自定义…</option>
+                </select>
+                <input type="text" id="cfg-update_mirror" class="iptv-long" placeholder="如 https://gh-proxy.com/，留空直连" style="display:none;" />
+            </div>
+        </div>
+        <div class="iptv-field">
+            <div class="iptv-field-label">检查并更新</div>
+            <div class="iptv-field-input">
+                <div class="iptv-r2h-row">
+                    <button type="button" class="iptv-btn iptv-btn-primary" id="r2h-btn-check" disabled>检查更新</button>
+                    <button type="button" class="iptv-btn" id="r2h-btn-update" onclick="r2hUpdate()" disabled>立即更新</button>
+                    <span id="r2h-msg">正在检查版本…</span>
+                </div>
+                <div id="r2h-detail"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="iptv-section">
+    <div class="iptv-section-title-bar">iptv-auth 在线热更新</div>
+    <div class="iptv-section-body">
+        <div class="iptv-field">
+            <div class="iptv-field-label">OTA 更新地址<small>指向 version.json 的完整 URL</small></div>
+            <div class="iptv-field-input">
+                <input type="text" id="cfg-ota_url" class="iptv-long" placeholder="如 https://your-server.com/iptv-auth/version.json（留空不检测）" />
+                <div style="font-size:12px;color:#94a3b8;margin-top:4px;line-height:1.5;">
+                    在文件服务器放一个 version.json（含 version/url/date/changelog 字段），路由器检测到新版本后提示更新<br/>
+                    APK 下载后经签名验证安装（公钥已部署），更新过程服务中断约 10 秒<br/>
+                    <b>检测更新与安装操作请到「运行状态与日志」页</b>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="iptv-footer-actions">
+    <input type="button" id="save-btn-2" class="iptv-btn iptv-btn-primary" value="保存并应用" onclick="saveConfig()" style="padding:7px 20px;font-size:13px;" />
+</div>
+
+<%+footer%>

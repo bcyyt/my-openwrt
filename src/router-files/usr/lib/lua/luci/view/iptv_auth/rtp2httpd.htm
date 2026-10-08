@@ -1,0 +1,50 @@
+<%# rtp2httpd.htm — rtp2httpd 状态页（美化版）%>
+<%+header%>
+
+<%
+local http = require "luci.http"
+local sys = require "luci.sys"
+local host = (http.getenv("HTTP_HOST") or ""):match("^([^:]+)") or "192.168.10.1"
+local live_port = sys.exec("uci -q get iptv-auth.main.live_port 2>/dev/null") or "23234"
+live_port = live_port:match("^%s*(.-)%s*$") or "23234"
+local pkg_ver_raw = sys.exec("apk list --installed 2>/dev/null | grep '^iptv-auth-' | head -1") or ""
+local pkg_ver = pkg_ver_raw:match("^iptv%-auth%-(%S+)%s") or ""
+if pkg_ver == "" then
+    pkg_ver_raw = sys.exec("opkg list-installed 2>/dev/null | grep '^iptv-auth ' | head -1") or ""
+    pkg_ver = pkg_ver_raw:match("%-%s+(%S+)") or "unknown"
+end
+%>
+
+<style type="text/css">
+.iptv-page-header { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:16px; }
+.iptv-page-header h2 { margin:0; }
+.iptv-ver-badge {
+    display:inline-block; background:linear-gradient(135deg,#4a90d9,#357abd); color:#fff;
+    font-size:12px; font-weight:600; padding:3px 12px; border-radius:12px;
+    box-shadow:0 2px 6px rgba(74,144,217,0.25); line-height:1.6;
+}
+.iptv-info-note {
+    background:#f0f7ff; border:1px solid #d0e3fa; border-radius:8px;
+    padding:10px 14px; margin-bottom:14px; font-size:13px; color:#475569; line-height:1.6;
+}
+.iptv-info-note a { color:#4a90d9; text-decoration:none; }
+.iptv-info-note a:hover { text-decoration:underline; }
+#rtp2httpd-frame {
+    width:100%; height:calc(100vh - 160px); min-height:600px;
+    border:1px solid #e2e8f0; border-radius:10px; display:block;
+}
+</style>
+
+<div class="iptv-page-header">
+    <h2><a id="content" name="content">rtp2httpd 状态</a></h2>
+    <span class="iptv-ver-badge">v<%=pkg_ver%></span>
+</div>
+
+<div class="iptv-info-note">
+    下方为 rtp2httpd 内置状态页，展示线程池、缓冲池、当前连接等实时信息。也可直接访问
+    <a href="http://<%=host%>:<%=live_port%>/st" target="_blank">http://<%=host%>:<%=live_port%>/st</a>
+</div>
+
+<iframe id="rtp2httpd-frame" src="http://<%=host%>:<%=live_port%>/st" loading="eager"></iframe>
+
+<%+footer%>

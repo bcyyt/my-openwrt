@@ -1,0 +1,1339 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenWrt 状态监控</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%232563eb'/%3E%3Cpath d='M4.8 14.4h3l2.4-7.2 3 10.8 2.4-7.2h3.6' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<style>
+:root {
+  --primary: #2563eb;
+  --primary-light: #60a5fa;
+  --primary-bg: #eff6ff;
+  --accent: #06b6d4;
+  --success: #16a34a;
+  --success-bg: #f0fdf4;
+  --warn: #d97706;
+  --warn-bg: #fffbeb;
+  --danger: #dc2626;
+  --danger-bg: #fef2f2;
+  --gray-50: #f8fafc;
+  --gray-100: #f1f5f9;
+  --gray-200: #e2e8f0;
+  --gray-300: #cbd5e1;
+  --gray-400: #94a3b8;
+  --gray-500: #64748b;
+  --gray-600: #475569;
+  --gray-700: #334155;
+  --gray-800: #1e293b;
+  --gray-900: #0f172a;
+  --radius: 16px;
+  --radius-sm: 10px;
+  --shadow: 0 1px 2px rgba(16,24,40,.04), 0 1px 3px rgba(16,24,40,.05);
+  --shadow-lg: 0 8px 24px -4px rgba(16,24,40,.10), 0 2px 8px -2px rgba(16,24,40,.05);
+  --glow: 0 0 0 3px rgba(37,99,235,.08);
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+html { zoom: 1; }
+@media (min-width: 1100px) { html { zoom: 1.08; } }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", Roboto, sans-serif;
+  background: #f6f8fc;
+  color: var(--gray-800);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+}
+/* 科技感背景网格 */
+body::before {
+  content: ''; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  background:
+    linear-gradient(rgba(37,99,235,.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(37,99,235,.03) 1px, transparent 1px);
+  background-size: 44px 44px; pointer-events: none; z-index: 0;
+  mask-image: radial-gradient(ellipse at 50% 0%, black 20%, transparent 75%);
+}
+.bg-glow {
+  position: fixed; top: -140px; left: 50%; transform: translateX(-50%);
+  width: 960px; height: 340px; z-index: 0; pointer-events: none;
+  background: radial-gradient(ellipse at center, rgba(37,99,235,.10), transparent 70%);
+}
+.container { position: relative; z-index: 1; max-width: 1400px; margin: 0 auto; padding: 0 20px 8px; width: 100%; }
+.scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+.scroll::-webkit-scrollbar-thumb { background: var(--gray-200); border-radius: 4px; }
+.scroll::-webkit-scrollbar-thumb:hover { background: var(--gray-300); }
+.scroll::-webkit-scrollbar-track { background: transparent; }
+
+/* ===== 毛玻璃吸顶栏 ===== */
+.topbar {
+  position: sticky; top: 0; z-index: 100;
+  background: rgba(255,255,255,.72);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid rgba(226,232,240,.8);
+}
+.topbar::after {
+  content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px;
+  background: linear-gradient(90deg, var(--primary), var(--accent) 42%, rgba(6,182,212,0) 92%);
+  opacity: .5; pointer-events: none;
+}
+.tb-inner {
+  max-width: 1400px; margin: 0 auto; padding: 12px 20px;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+}
+.tb-left { display: flex; align-items: center; gap: 13px; min-width: 0; }
+.logo {
+  width: 42px; height: 42px; border-radius: 12px; flex-shrink: 0;
+  background: linear-gradient(135deg, var(--primary), var(--accent));
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 4px 12px rgba(37,99,235,.30);
+  position: relative;
+}
+.logo::after { content: ''; position: absolute; inset: 3px; border-radius: 9px; border: 1.5px solid rgba(255,255,255,.28); pointer-events: none; }
+.logo svg { width: 22px; height: 22px; color: #fff; }
+.tb-title { min-width: 0; }
+.tb-title h1 { font-size: 17px; font-weight: 700; color: var(--gray-900); letter-spacing: -0.3px; line-height: 1.25; white-space: nowrap; }
+.tb-sub { font-size: 11px; color: var(--gray-400); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.tb-right { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+.live { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--gray-500); }
+.live-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: var(--success);
+  animation: pulse 2s infinite;
+}
+@keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(22,163,74,.25)} 70%{box-shadow:0 0 0 7px rgba(22,163,74,0)} 100%{box-shadow:0 0 0 0 rgba(22,163,74,0)} }
+.tb-time { font-size: 12px; color: var(--gray-400); font-variant-numeric: tabular-nums; min-width: 62px; text-align: right; }
+.toolbar { display: flex; gap: 6px; }
+.btn {
+  padding: 6px 13px; border-radius: 9px; border: 1px solid var(--gray-200);
+  background: #fff; font-size: 12px; cursor: pointer; color: var(--gray-500);
+  transition: all .18s; display: flex; align-items: center; gap: 5px;
+}
+.btn:hover { border-color: var(--primary); color: var(--primary); box-shadow: var(--glow); }
+.btn.active { border-color: var(--primary); color: #fff; background: var(--primary); box-shadow: 0 2px 8px rgba(37,99,235,.25); }
+.btn svg { width: 13px; height: 13px; }
+
+/* ===== 快捷入口 ===== */
+.shortcuts { display: flex; gap: 8px; flex-wrap: wrap; padding: 16px 0 14px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 8px 14px; border-radius: 999px;
+  border: 1px solid var(--gray-200); background: #fff;
+  text-decoration: none; color: var(--gray-600); font-size: 12.5px; font-weight: 500;
+  transition: all .18s; cursor: pointer; box-shadow: var(--shadow);
+}
+.chip svg { width: 14px; height: 14px; color: var(--primary); }
+.chip:hover { border-color: var(--primary); color: var(--primary); box-shadow: var(--glow); transform: translateY(-1px); }
+
+/* ===== 卡片 ===== */
+.card {
+  background: #fff; border: 1px solid var(--gray-200); border-radius: var(--radius);
+  box-shadow: var(--shadow); overflow: hidden; transition: box-shadow .2s, transform .2s, border-color .2s;
+  position: relative;
+}
+.card:hover { box-shadow: var(--shadow-lg); border-color: var(--gray-200); transform: translateY(-1px); }
+/* 科技感角线 */
+.card::before {
+  content: ''; position: absolute; top: 0; left: 0; width: 22px; height: 22px;
+  border-top: 2px solid var(--primary); border-left: 2px solid var(--primary);
+  border-radius: var(--radius) 0 0 0; opacity: .18; pointer-events: none;
+}
+.card::after {
+  content: ''; position: absolute; bottom: 0; right: 0; width: 22px; height: 22px;
+  border-bottom: 2px solid var(--primary); border-right: 2px solid var(--primary);
+  border-radius: 0 0 var(--radius) 0; opacity: .18; pointer-events: none;
+}
+.card-header {
+  padding: 13px 18px; border-bottom: 1px solid var(--gray-100);
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+}
+.card-header h2 { font-size: 13.5px; font-weight: 600; color: var(--gray-800); display: flex; align-items: center; gap: 9px; }
+.card-header h2 .h-ic {
+  width: 28px; height: 28px; border-radius: 9px; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--primary-bg); color: var(--primary);
+}
+.card-header h2 .h-ic.green { background: var(--success-bg); color: var(--success); }
+.card-header h2 .h-ic.amber { background: var(--warn-bg); color: var(--warn); }
+.card-header h2 .h-ic.cyan { background: #ecfeff; color: var(--accent); }
+.card-header h2 .h-ic svg { width: 15px; height: 15px; }
+.card-header .meta { font-size: 11px; color: var(--gray-400); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.card-body { padding: 18px; }
+
+/* ===== Grid ===== */
+.grid { display: grid; gap: 14px; margin-bottom: 14px; }
+.grid-4 { grid-template-columns: repeat(4, 1fr); }
+.grid-2 { grid-template-columns: repeat(2, 1fr); }
+.grid-stat { grid-template-columns: repeat(4, 1fr); }
+.grid-clients { display: grid; grid-template-columns: 2fr 1fr; gap: 14px; margin-bottom: 14px; }
+
+/* ===== 统计卡片（横向布局）===== */
+.stat { display: flex; align-items: center; gap: 14px; padding: 18px; }
+.stat-icon {
+  width: 46px; height: 46px; border-radius: 13px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+.stat-icon svg { width: 22px; height: 22px; }
+.stat-icon.blue { background: var(--primary-bg); color: var(--primary); }
+.stat-icon.green { background: var(--success-bg); color: var(--success); }
+.stat-icon.amber { background: var(--warn-bg); color: var(--warn); }
+.stat-icon.cyan { background: #ecfeff; color: var(--accent); }
+.stat-body { flex: 1; min-width: 0; }
+.stat-label { font-size: 11px; color: var(--gray-400); font-weight: 500; letter-spacing: .5px; }
+.stat-value { font-size: 23px; font-weight: 700; color: var(--gray-900); line-height: 1.15; font-variant-numeric: tabular-nums; margin: 2px 0; }
+.stat-sub { font-size: 11px; color: var(--gray-400); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stat-bar { height: 4px; border-radius: 2px; background: var(--gray-100); margin-top: 9px; overflow: hidden; }
+.stat-fill { height: 100%; border-radius: 2px; transition: width .6s ease, background .3s; }
+
+/* ===== 进度环 + 趋势图 ===== */
+.ring-wrap { display: flex; align-items: center; gap: 20px; }
+.ring { width: 100px; height: 100px; position: relative; flex-shrink: 0; }
+.ring svg { transform: rotate(-90deg); }
+.ring-bg { stroke: var(--gray-100); stroke-width: 7; fill: none; }
+.ring-fg { stroke-width: 7; fill: none; stroke-linecap: round; transition: stroke-dashoffset .8s ease; }
+.ring-text {
+  position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px; font-weight: 700; color: var(--gray-900); font-variant-numeric: tabular-nums;
+}
+.ring-info { flex: 1; min-width: 0; }
+.ring-row { display: flex; justify-content: space-between; font-size: 12px; margin: 5px 0; gap: 10px; }
+.ring-label { color: var(--gray-400); white-space: nowrap; }
+.ring-value { color: var(--gray-700); font-weight: 500; font-variant-numeric: tabular-nums; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ring-row.long .ring-label { min-width: 64px; }
+.ring-row.long .ring-value { white-space: normal; word-break: break-all; line-height: 1.35; }
+.uptime-block { width: 100px; height: 100px; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; }
+.uptime-big { font-size: 22px; font-weight: 700; color: var(--gray-900); line-height: 1.15; font-variant-numeric: tabular-nums; text-align: center; white-space: nowrap; }
+.uptime-sub { font-size: 11px; color: var(--gray-400); text-align: center; white-space: nowrap; }
+.spark-box { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--gray-200); }
+.spark-title { font-size: 10px; color: var(--gray-400); letter-spacing: .5px; margin-bottom: 6px; display: flex; justify-content: space-between; }
+.spark { position: relative; }
+.spark svg { display: block; width: 100%; height: 46px; }
+.spark .chline { bottom: 0; }
+.spark .chtip { font-size: 10px; padding: 3px 6px; }
+.spark-empty { font-size: 11px; color: var(--gray-300); padding: 14px 0; text-align: center; }
+
+/* ===== 表格 ===== */
+.table-scroll { overflow-x: auto; }
+.table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.table th {
+  text-align: left; padding: 10px 16px; font-weight: 500; color: var(--gray-400);
+  border-bottom: 1px solid var(--gray-100); font-size: 11px; letter-spacing: .3px;
+  white-space: nowrap; background: #fff;
+}
+.table td { padding: 11px 16px; border-bottom: 1px solid var(--gray-50); color: var(--gray-700); }
+.table tr:last-child td { border-bottom: none; }
+.table tbody tr:nth-child(even) td { background: #fafcff; }
+.scroll .table th { position: sticky; top: 0; z-index: 5; box-shadow: 0 1px 0 var(--gray-100); }
+.table tbody tr { transition: background .12s; }
+.table tbody tr:hover td { background: var(--gray-50); }
+.ta-r { text-align: right; }
+.ta-c { text-align: center; }
+.mono { font-family: var(--mono); font-size: 12px; letter-spacing: -0.2px; }
+.empty-cell { text-align: center; padding: 26px 16px !important; color: var(--gray-300); }
+/* 可排序列 */
+th[data-key] { cursor: pointer; user-select: none; transition: color .15s; }
+th[data-key]:hover { color: var(--primary); }
+th[data-key]::after { content: '\2195'; display: inline-block; margin-left: 4px; font-size: 10px; opacity: .3; }
+th[data-key].sorted { color: var(--primary); font-weight: 600; }
+th[data-key].sorted::after { opacity: 1; }
+th[data-key].sorted.asc::after { content: '\2191'; }
+th[data-key].sorted.desc::after { content: '\2193'; }
+
+/* ===== 徽章 ===== */
+.badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 10px; border-radius: 20px; font-size: 10px; font-weight: 500;
+}
+.badge::before { content: ''; width: 6px; height: 6px; border-radius: 50%; }
+.badge.up, .badge.running { background: var(--success-bg); color: var(--success); }
+.badge.up::before, .badge.running::before { background: var(--success); }
+.badge.down, .badge.stopped { background: var(--danger-bg); color: var(--danger); }
+.badge.down::before, .badge.stopped::before { background: var(--danger); }
+.badge.type-LAN { background: var(--primary-bg); color: var(--primary); }
+.badge.type-LAN::before { background: var(--primary); }
+.badge.type-WAN { background: var(--warn-bg); color: var(--warn); }
+.badge.type-WAN::before { background: var(--warn); }
+.badge.type-WIFI { background: #faf5ff; color: #9333ea; }
+.badge.type-WIFI::before { background: #9333ea; }
+.badge.type-physical { background: var(--gray-100); color: var(--gray-500); }
+.badge.type-physical::before { background: var(--gray-400); }
+/* v4/v6 徽章 */
+.vtag { font-size: 9px; padding: 1px 5px; border-radius: 4px; font-weight: 600; vertical-align: 1px; margin-left: 6px; font-family: -apple-system, sans-serif; }
+.vtag.v4 { background: var(--primary-bg); color: var(--primary); }
+.vtag.v6 { background: #faf5ff; color: #9333ea; }
+/* 连接数 */
+.connchip {
+  display: inline-flex; min-width: 28px; padding: 2px 8px; border-radius: 8px;
+  background: var(--gray-100); color: var(--gray-600);
+  font-weight: 600; font-size: 12px; justify-content: center;
+  font-variant-numeric: tabular-nums; transition: background .3s;
+}
+.connchip.warm { background: var(--warn-bg); color: var(--warn); }
+.connchip.hot { background: var(--danger-bg); color: var(--danger); }
+/* 设备状态点 */
+.dev-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 7px; flex-shrink: 0; }
+.dev-dot.active { background: var(--success); box-shadow: 0 0 0 3px rgba(22,163,74,.12); animation: dotPulse 2.4s infinite; }
+@keyframes dotPulse { 0%,100%{box-shadow:0 0 0 3px rgba(22,163,74,.12)} 50%{box-shadow:0 0 0 5px rgba(22,163,74,.20)} }
+.dev-dot.idle { background: var(--warn); box-shadow: 0 0 0 3px rgba(217,119,6,.12); }
+.dev-dot.offline { background: var(--gray-300); }
+.c-name { max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; color: var(--gray-800); display: flex; align-items: center; }
+.c-name .nm { overflow: hidden; text-overflow: ellipsis; }
+
+/* ===== 流量显示 ===== */
+.rate { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rate .arrow { font-size: 9px; margin-right: 3px; }
+.rate .arrow.down { color: var(--primary); }
+.rate .arrow.up { color: var(--success); }
+.rate .val { font-weight: 500; color: var(--gray-700); }
+.rate .total { color: var(--gray-400); font-size: 12px; }
+.if-ip { font-size: 12px; color: var(--gray-500); font-family: var(--mono); word-break: break-all; line-height: 1.45; }
+.if-name { font-weight: 600; color: var(--gray-900); }
+
+/* ===== 流量图（v7）===== */
+.flow-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+@media(max-width:1000px){ .flow-grid { grid-template-columns: 1fr; } }
+.flow-chart { background: var(--gray-50); border: 1px solid var(--gray-100); border-radius: var(--radius-sm); padding: 12px 14px 10px; transition: border-color .2s; }
+.flow-chart:hover { border-color: var(--primary-light); }
+.flow-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+.flow-legend { font-size: 11.5px; font-weight: 600; display: inline-flex; align-items: center; gap: 5px; }
+.flow-legend svg { width: 13px; height: 13px; }
+.flow-legend.down { color: var(--primary); }
+.flow-legend.up { color: var(--success); }
+.flow-cur { font-size: 16px; font-weight: 700; color: var(--gray-900); font-variant-numeric: tabular-nums; margin-left: auto; }
+.flow-peak { font-size: 10.5px; color: var(--gray-400); font-variant-numeric: tabular-nums; }
+.flow-plot { display: flex; gap: 8px; align-items: stretch; }
+.flow-yaxis { width: 52px; flex-shrink: 0; display: flex; flex-direction: column; justify-content: space-between; text-align: right; font-family: var(--mono); font-size: 9.5px; color: var(--gray-400); padding: 2px 0 16px; height: 140px; font-variant-numeric: tabular-nums; }
+.flow-svg { flex: 1; min-width: 0; position: relative; }
+.flow-svg svg { display: block; width: 100%; height: 140px; }
+.chtip { display: none; position: absolute; z-index: 4; pointer-events: none; background: #0f172a; color: #fff; font-size: 11px; font-variant-numeric: tabular-nums; padding: 5px 8px; border-radius: 6px; white-space: nowrap; box-shadow: 0 4px 12px rgba(15,23,42,.28); transform: translate(-50%,-110%); }
+.chline { display: none; position: absolute; top: 0; bottom: 16px; width: 1px; background: rgba(15,23,42,.35); pointer-events: none; z-index: 3; }
+.flow-xaxis { display: flex; justify-content: space-between; font-size: 9.5px; color: var(--gray-400); margin-top: 4px; font-variant-numeric: tabular-nums; }
+.flow-divider { border-top: 1px dashed var(--gray-200); margin: 16px 0; }
+.flow-daily { display: grid; grid-template-columns: 300px 1fr; gap: 18px; }
+@media(max-width:1000px){ .flow-daily { grid-template-columns: 1fr; } }
+.sysh-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 18px; }
+@media(max-width:1000px){ .sysh-grid { grid-template-columns: 1fr; } }
+.flow-legend.temp { color: var(--warn); }
+.ft-title { font-size: 11px; color: var(--gray-400); letter-spacing: .5px; margin-bottom: 10px; }
+.ft-row { display: flex; justify-content: space-between; align-items: baseline; padding: 8px 0; border-bottom: 1px solid var(--gray-50); font-size: 12.5px; }
+.ft-row:last-child { border-bottom: none; }
+.ft-lab { color: var(--gray-500); display: inline-flex; align-items: center; gap: 6px; }
+.ft-lab .arw { font-size: 9px; }
+.ft-lab.dn { color: var(--primary); }
+.ft-lab.up { color: var(--success); }
+.ft-val { font-weight: 700; color: var(--gray-900); font-variant-numeric: tabular-nums; }
+
+/* 协议分类弹窗 */
+.cat-donut { display: block; flex-shrink: 0; }
+.cat-donut path, .cat-donut circle { transition: opacity .15s; }
+.cat-donut path:hover, .cat-donut circle:hover { opacity: .82; }
+.cat-item { display: flex; align-items: center; gap: 5px; font-size: 11px; }
+.cat-dot { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+.cat-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--gray-50); }
+.cat-row:last-child { border-bottom: none; }
+.cat-name { font-size: 12px; font-weight: 500; min-width: 70px; }
+.cat-traffic { font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* ===== 协议统计 ===== */
+.proto-grid { display: grid; grid-template-columns: 1.45fr repeat(4, 1fr); gap: 12px; align-items: stretch; }
+.proto-item {
+  text-align: center; padding: 13px 8px 12px; border-radius: var(--radius-sm);
+  background: var(--gray-50); border: 1px solid var(--gray-100);
+  transition: all .2s;
+}
+.proto-item:hover { border-color: var(--primary-light); background: var(--primary-bg); transform: translateY(-1px); }
+.proto-item.ext-hl {
+  padding: 18px 12px 16px;
+  background: linear-gradient(180deg, #fff8f8 0%, #fff5f5 100%);
+  border: 1px solid #f6d0d0;
+  box-shadow: 0 4px 14px -8px rgba(220,38,38,.12);
+}
+.proto-item.ext-hl:hover { border-color: #f0b4b4; background: #fff1f1; }
+.proto-item.ext-hl .proto-ic { color: #e58a8a; }
+.proto-item.ext-hl .proto-ic svg { width: 20px; height: 20px; }
+.proto-item.ext-hl .proto-label { font-size: 12px; font-weight: 700; color: #d98989; letter-spacing: .6px; }
+.proto-item.ext-hl .proto-value { font-size: 28px; color: #c96b6b; }
+.proto-item.ext-hl .proto-sub { font-size: 11px; color: #d4a0a0; }
+.proto-item.ext-hl .proto-bar { height: 5px; background: #f3d6d6; }
+.proto-ic { display: inline-flex; margin-bottom: 4px; }
+.proto-ic svg { width: 15px; height: 15px; }
+.proto-label { font-size: 10px; color: var(--gray-400); letter-spacing: .5px; }
+.proto-value { font-size: 19px; font-weight: 700; color: var(--gray-900); margin-top: 2px; font-variant-numeric: tabular-nums; }
+.proto-sub { font-size: 10px; color: var(--gray-400); margin-top: 1px; }
+.proto-bar { height: 3px; border-radius: 2px; background: var(--gray-200); margin-top: 7px; overflow: hidden; }
+.proto-fill { height: 100%; border-radius: 2px; transition: width .5s; }
+
+/* ===== 磁盘 ===== */
+.disk-item { margin-bottom: 13px; }
+.disk-item:last-child { margin-bottom: 0; }
+.disk-header { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; margin-bottom: 5px; }
+.disk-mount { color: var(--gray-700); font-weight: 500; font-family: var(--mono); font-size: 11.5px; word-break: break-all; }
+.disk-fs { color: var(--gray-400); font-size: 10px; margin-left: 5px; font-family: var(--mono); }
+.disk-info { color: var(--gray-400); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.disk-bar { height: 7px; border-radius: 4px; background: var(--gray-100); overflow: hidden; }
+.disk-fill { height: 100%; border-radius: 4px; transition: width .5s; }
+
+/* ===== 服务 ===== */
+.svc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.svc-tile {
+  display: flex; align-items: center; gap: 10px; padding: 10px 13px;
+  border: 1px solid var(--gray-100); border-radius: var(--radius-sm); background: var(--gray-50);
+  transition: all .18s;
+}
+.svc-tile:hover { border-color: var(--primary-light); background: #fff; box-shadow: var(--shadow); }
+.svc-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.svc-tile.running .svc-dot { background: var(--success); box-shadow: 0 0 0 3px rgba(22,163,74,.12); }
+.svc-tile.stopped .svc-dot { background: var(--danger); box-shadow: 0 0 0 3px rgba(220,38,38,.12); }
+.svc-name { font-size: 12.5px; font-weight: 600; color: var(--gray-700); line-height: 1.3; font-family: var(--mono); }
+.svc-pid { font-size: 10px; color: var(--gray-400); font-variant-numeric: tabular-nums; }
+
+/* ===== 毛玻璃弹窗 ===== */
+.modal-overlay {
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(15,23,42,.28); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  display: none; align-items: center; justify-content: center; z-index: 200;
+}
+.modal-overlay.active { display: flex; }
+.modal {
+  background: rgba(255,255,255,.92); backdrop-filter: blur(16px); border: 1px solid rgba(255,255,255,.6);
+  border-radius: 20px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.14), 0 8px 24px rgba(0,0,0,.06);
+  max-width: 500px; width: 92%; max-height: 80vh; overflow-y: auto;
+  animation: modalIn .25s ease;
+}
+@keyframes modalIn { from{opacity:0;transform:scale(.95) translateY(12px)} to{opacity:1;transform:scale(1) translateY(0)} }
+.modal-header {
+  padding: 15px 20px; border-bottom: 1px solid var(--gray-100);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.modal-header h3 { font-size: 15px; font-weight: 600; color: var(--gray-900); display: flex; align-items: center; gap: 8px; }
+.modal-header h3 .h-ic { width: 28px; height: 28px; border-radius: 9px; background: var(--primary-bg); color: var(--primary); display: inline-flex; align-items: center; justify-content: center; }
+.modal-header h3 .h-ic svg { width: 15px; height: 15px; }
+.modal-close {
+  background: var(--gray-50); border: 1px solid var(--gray-200); cursor: pointer;
+  width: 32px; height: 32px; border-radius: 10px; color: var(--gray-400); transition: all .2s;
+  display: flex; align-items: center; justify-content: center;
+}
+.modal-close:hover { background: var(--danger-bg); border-color: var(--danger); color: var(--danger); }
+.modal-body { padding: 20px; }
+.modal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+.modal-item .label { font-size: 10px; color: var(--gray-400); letter-spacing: .5px; }
+.modal-item .value { font-size: 14px; color: var(--gray-900); font-weight: 500; margin: 4px 0; font-variant-numeric: tabular-nums; word-break: break-all; }
+
+.footer { text-align: center; padding: 22px 0 26px; font-size: 12px; color: var(--gray-400); }
+.footer a { color: var(--primary); text-decoration: none; }
+
+@media (max-width: 1100px) {
+  .grid-4, .grid-stat { grid-template-columns: repeat(2, 1fr); }
+  .grid-2, .grid-clients { grid-template-columns: 1fr; }
+  .flow-grid, .flow-daily { grid-template-columns: 1fr; }
+  .sysh-grid { grid-template-columns: 1fr; }
+  .proto-grid { grid-template-columns: 1fr 1fr; }
+  .proto-item.ext-hl { grid-column: 1 / -1; }
+}
+@media (max-width: 720px) {
+  .container { padding: 0 12px 8px; }
+  .tb-inner { padding: 10px 12px; flex-wrap: wrap; }
+  .tb-title h1 { font-size: 15px; }
+  .tb-sub { display: none; }
+  .grid-4, .grid-stat { grid-template-columns: 1fr; }
+  .proto-grid { grid-template-columns: 1fr 1fr; }
+  .modal-grid { grid-template-columns: 1fr; }
+  .ring-wrap { flex-direction: column; align-items: flex-start; }
+  .shortcuts { gap: 6px; padding: 12px 0 10px; }
+  .chip { padding: 7px 11px; font-size: 12px; }
+  .card-body { padding: 14px; }
+  .table th, .table td { padding: 8px 10px; }
+  .c-name { max-width: 120px; }
+  .flow-yaxis { width: 40px; font-size: 8.5px; }
+}
+@media (max-width: 480px) {
+  .proto-grid { grid-template-columns: 1fr; }
+  .toolbar { width: 100%; justify-content: flex-end; }
+  .tb-right { width: 100%; justify-content: space-between; }
+  .stat-value { font-size: 20px; }
+}
+.footer a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="bg-glow"></div>
+
+<header class="topbar">
+  <div class="tb-inner">
+    <div class="tb-left">
+      <div class="logo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3-9 4 18 3-9h4"/></svg>
+      </div>
+      <div class="tb-title">
+        <h1>状态监控</h1>
+        <div class="tb-sub" id="hostname-top">OpenWrt · SYSTEM STATUS MONITOR</div>
+      </div>
+    </div>
+    <div class="tb-right">
+      <span class="live"><span class="live-dot"></span>实时</span>
+      <span class="tb-time" id="lastUpdate">--:--:--</span>
+      <div class="toolbar">
+        <button class="btn active" id="btn-2s">2s</button>
+        <button class="btn" id="btn-5s">5s</button>
+        <button class="btn" id="btn-pause" title="暂停/继续刷新"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- 快捷入口 -->
+  <div class="shortcuts">
+    <a class="chip" href="/cgi-bin/luci"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>LuCI 管理</a>
+    <a class="chip" href="/cgi-bin/luci/admin/services/iptv_auth/status"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><polyline points="8 21 12 17 16 21"/></svg>IPTV 代理</a>
+    <a class="chip" href="/cgi-bin/luci/admin/services/mediahub"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="2"/><circle cx="12" cy="12" r="4"/></svg>影视中心</a>
+    <a class="chip" href="/cgi-bin/luci/admin/network/network"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12.55a11 11 0 0114.08 0"/><path d="M1.42 9a16 16 0 0121.16 0"/><path d="M8.53 16.11a6 6 0 016.95 0"/><line x1="12" y1="20" x2="12" y2="20"/></svg>网络设置</a>
+    <a class="chip" href="/cgi-bin/luci/admin/system/admin"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>系统管理</a>
+    <a class="chip" href="/cgi-bin/luci/admin/system/filemanager"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>文件管理</a>
+    <a class="chip" href="http://192.168.10.1:23234/st"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>rtp2httpd</a>
+    <a class="chip" href="/cgi-bin/luci/admin/statusmon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 12l3-3 4 4 5-5"/></svg>状态监控 (LuCI)</a>
+  </div>
+
+  <!-- 系统概览 -->
+  <div class="grid grid-stat">
+    <div class="card">
+      <div class="card-header"><h2><span class="h-ic blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></span>系统</h2><span class="badge running" id="sys-badge">运行中</span></div>
+      <div class="card-body">
+        <div class="ring-wrap">
+          <div class="uptime-block">
+            <div class="uptime-big" id="uptime">--</div>
+            <div class="uptime-sub" id="kernel">--</div>
+          </div>
+          <div class="ring-info">
+            <div class="ring-row"><span class="ring-label">主机名</span><span class="ring-value" id="sys-host">--</span></div>
+            <div class="ring-row"><span class="ring-label">开机时刻</span><span class="ring-value" id="sys-boot">--</span></div>
+            <div class="ring-row"><span class="ring-label">连接追踪</span><span class="ring-value" id="sys-conn">--</span></div>
+            <div class="ring-row"><span class="ring-label">系统时间</span><span class="ring-value" id="sys-clock">--</span></div>
+          </div>
+        </div>
+        <div class="spark-box">
+          <div class="spark-title"><span>近 3 分钟连接表占用</span><span id="spark-conn-max">峰值 --%</span></div>
+          <div class="spark" id="spark-conn"><div class="spark-empty">采集中...</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h2><span class="h-ic green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></span>系统负载</h2><span class="badge running" id="load-badge">正常</span></div>
+      <div class="card-body">
+        <div class="ring-wrap">
+          <div class="ring"><svg width="100" height="100"><circle class="ring-bg" cx="50" cy="50" r="42"/><circle class="ring-fg" cx="50" cy="50" r="42" id="load-ring" style="stroke:var(--success)" stroke-dasharray="263.89" stroke-dashoffset="263.89"/></svg><div class="ring-text" id="load-ring-text">--%</div></div>
+          <div class="ring-info">
+            <div class="ring-row"><span class="ring-label">1 分钟</span><span class="ring-value" id="load-1">--</span></div>
+            <div class="ring-row"><span class="ring-label">5 分钟</span><span class="ring-value" id="load-5">--</span></div>
+            <div class="ring-row"><span class="ring-label">15 分钟</span><span class="ring-value" id="load-15">--</span></div>
+            <div class="ring-row"><span class="ring-label">核心数</span><span class="ring-value" id="load-cores">-- 核</span></div>
+          </div>
+        </div>
+        <div class="spark-box">
+          <div class="spark-title"><span>近 3 分钟负载趋势</span><span id="spark-load-max">峰值 --%</span></div>
+          <div class="spark" id="spark-load"><div class="spark-empty">采集中...</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h2><span class="h-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3"/></svg></span>CPU</h2><span class="badge running" id="cpu-badge">--</span></div>
+      <div class="card-body">
+        <div class="ring-wrap">
+          <div class="ring"><svg width="100" height="100"><circle class="ring-bg" cx="50" cy="50" r="42"/><circle class="ring-fg" cx="50" cy="50" r="42" id="cpu-ring" style="stroke:var(--primary)" stroke-dasharray="263.89" stroke-dashoffset="263.89"/></svg><div class="ring-text" id="cpu-ring-text">--%</div></div>
+          <div class="ring-info">
+            <div class="ring-row long"><span class="ring-label">型号</span><span class="ring-value" id="cpu-model">--</span></div>
+            <div class="ring-row"><span class="ring-label">核心数</span><span class="ring-value" id="cpu-cores">--</span></div>
+            <div class="ring-row"><span class="ring-label">负载 1/5/15m</span><span class="ring-value" id="cpu-load">--</span></div>
+            <div class="ring-row"><span class="ring-label">温度</span><span class="ring-value" id="cpu-temp">--</span></div>
+          </div>
+        </div>
+        <div class="spark-box">
+          <div class="spark-title"><span>近 3 分钟使用率趋势</span><span id="spark-cpu-max">峰值 --%</span></div>
+          <div class="spark" id="spark-cpu"><div class="spark-empty">采集中...</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h2><span class="h-ic cyan"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 3v18"/></svg></span>内存</h2><span class="badge running" id="mem-badge">--</span></div>
+      <div class="card-body">
+        <div class="ring-wrap">
+          <div class="ring"><svg width="100" height="100"><circle class="ring-bg" cx="50" cy="50" r="42"/><circle class="ring-fg" cx="50" cy="50" r="42" id="mem-ring" style="stroke:var(--success)" stroke-dasharray="263.89" stroke-dashoffset="263.89"/></svg><div class="ring-text" id="mem-ring-text">--%</div></div>
+          <div class="ring-info">
+            <div class="ring-row"><span class="ring-label">总量</span><span class="ring-value" id="mem-total">--</span></div>
+            <div class="ring-row"><span class="ring-label">已用</span><span class="ring-value" id="mem-used">--</span></div>
+            <div class="ring-row"><span class="ring-label">可用</span><span class="ring-value" id="mem-avail">--</span></div>
+            <div class="ring-row"><span class="ring-label">缓存/缓冲</span><span class="ring-value" id="mem-cache">--</span></div>
+          </div>
+        </div>
+        <div class="spark-box">
+          <div class="spark-title"><span>近 3 分钟占用趋势</span><span id="spark-mem-max">峰值 --%</span></div>
+          <div class="spark" id="spark-mem"><div class="spark-empty">采集中...</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- WAN 流量监控 -->
+  <div class="card" style="margin-bottom:14px">
+    <div class="card-header"><h2><span class="h-ic cyan"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l3-3 4 4 5-5"/></svg></span>WAN 流量监控</h2><span class="meta" id="flow-iface">--</span><select id="flow-sel" style="margin-left:8px;padding:3px 8px;border-radius:6px;border:1px solid var(--gray-200);font-size:12px;background:#fff;color:var(--gray-600);cursor:pointer;display:none"></select></div>
+    <div class="card-body">
+      <div class="flow-grid">
+        <div class="flow-chart">
+          <div class="flow-head"><span class="flow-legend down"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="7 17 12 22 17 17"/><line x1="12" y1="2" x2="12" y2="22"/></svg>下行（接收）</span><span class="flow-cur" id="flow-rx-cur">--</span><span class="flow-peak">峰值 <span id="flow-rx-peak">--</span></span></div>
+          <div class="flow-plot"><div class="flow-yaxis"><span id="flow-rx-y1">--</span><span id="flow-rx-y2">--</span><span>0</span></div><div class="flow-svg" id="flow-rx-svg"><div class="spark-empty">采集中...</div></div></div>
+          <div class="flow-xaxis"><span>30 分钟前</span><span>15 分钟前</span><span>现在</span></div>
+        </div>
+        <div class="flow-chart">
+          <div class="flow-head"><span class="flow-legend up"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="7 7 12 2 17 7"/><line x1="12" y1="2" x2="12" y2="22"/></svg>上行（发送）</span><span class="flow-cur" id="flow-tx-cur">--</span><span class="flow-peak">峰值 <span id="flow-tx-peak">--</span></span></div>
+          <div class="flow-plot"><div class="flow-yaxis"><span id="flow-tx-y1">--</span><span id="flow-tx-y2">--</span><span>0</span></div><div class="flow-svg" id="flow-tx-svg"><div class="spark-empty">采集中...</div></div></div>
+          <div class="flow-xaxis"><span>30 分钟前</span><span>15 分钟前</span><span>现在</span></div>
+        </div>
+      </div>
+      <div class="flow-divider"></div>
+      <div class="flow-daily" id="flow-month">
+        <div>
+          <div class="ft-title">本月流量总计 <span id="ft-month" style="color:var(--gray-400);font-weight:400"></span></div>
+          <div id="month-donut" style="display:flex;justify-content:center" title="点击查看今日协议分析"><div class="spark-empty">加载中...</div></div>
+        </div>
+        <div>
+          <div class="ft-title">分类明细 <span style="color:var(--gray-400);font-weight:400">· 每月 1 日 0 点清零重计</span></div>
+          <div id="month-cats"><div class="spark-empty">加载中...</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CPU / 内存 / 温度 24 小时曲线 -->
+  <div class="card" style="margin-bottom:14px">
+    <div class="card-header"><h2><span class="h-ic amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l3-3 4 4 5-5"/></svg></span>CPU / 内存 / 温度</h2><span class="meta" id="sysh-meta">近 24 小时 · 每分钟采样</span></div>
+    <div class="card-body">
+      <div class="sysh-grid">
+        <div class="flow-chart">
+          <div class="flow-head"><span class="flow-legend down"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/></svg>CPU 占用</span><span class="flow-cur" id="sysh-cpu-cur">--</span><span class="flow-peak">峰值 <span id="sysh-cpu-peak">--</span></span></div>
+          <div class="flow-plot"><div class="flow-yaxis"><span id="sysh-cpu-y1">100%</span><span id="sysh-cpu-y2">50%</span><span>0</span></div><div class="flow-svg" id="sysh-cpu-svg"><div class="spark-empty">采集中...</div></div></div>
+          <div class="flow-xaxis"><span>24 小时前</span><span>12 小时前</span><span>现在</span></div>
+        </div>
+        <div class="flow-chart">
+          <div class="flow-head"><span class="flow-legend up"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 3v18"/></svg>内存占用</span><span class="flow-cur" id="sysh-mem-cur">--</span><span class="flow-peak">峰值 <span id="sysh-mem-peak">--</span></span></div>
+          <div class="flow-plot"><div class="flow-yaxis"><span id="sysh-mem-y1">100%</span><span id="sysh-mem-y2">50%</span><span>0</span></div><div class="flow-svg" id="sysh-mem-svg"><div class="spark-empty">采集中...</div></div></div>
+          <div class="flow-xaxis"><span>24 小时前</span><span>12 小时前</span><span>现在</span></div>
+        </div>
+        <div class="flow-chart">
+          <div class="flow-head"><span class="flow-legend temp"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 14.76V3.5a2.5 2.5 0 00-5 0v11.26a4.5 4.5 0 105 0z"/></svg>CPU 温度</span><span class="flow-cur" id="sysh-temp-cur">--</span><span class="flow-peak">峰值 <span id="sysh-temp-peak">--</span></span></div>
+          <div class="flow-plot"><div class="flow-yaxis"><span id="sysh-temp-y1">--</span><span id="sysh-temp-y2">--</span><span>0</span></div><div class="flow-svg" id="sysh-temp-svg"><div class="spark-empty">采集中...</div></div></div>
+          <div class="flow-xaxis"><span>24 小时前</span><span>12 小时前</span><span>现在</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 协议统计 -->
+  <div class="card">
+    <div class="card-header"><h2><span class="h-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v16H4z"/><path d="M4 12h16M12 4v16"/></svg></span>网络连接数统计</h2><span class="meta" id="ct-info">--</span></div>
+    <div class="card-body">
+      <div style="font-size:11px;color:var(--gray-400);margin-bottom:10px">连接数含路由器自身及外部入站连接，客户端表仅统计内网设备发起的连接</div>
+      <div class="proto-grid">
+        <div class="proto-item ext-hl"><span class="proto-ic" style="color:#e58a8a"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg></span><div class="proto-label">外部连接</div><div class="proto-value" id="proto-external">--</div><div class="proto-sub" id="proto-external-sub">通往 / 来自公网</div><div class="proto-bar"><div class="proto-fill" id="proto-external-bar" style="background:#e8b4b4;width:0%"></div></div></div>
+        <div class="proto-item"><span class="proto-ic" style="color:var(--primary)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></span><div class="proto-label">TCP 连接</div><div class="proto-value" id="proto-tcp-curr">--</div><div class="proto-sub" id="proto-tcp-total">--</div><div class="proto-bar"><div class="proto-fill" id="proto-tcp-bar" style="background:var(--primary);width:0%"></div></div></div>
+        <div class="proto-item"><span class="proto-ic" style="color:var(--accent)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 010 8.49M7.76 16.24a6 6 0 010-8.49M19.07 4.93a10 10 0 010 14.14M4.93 19.07a10 10 0 010-14.14"/></svg></span><div class="proto-label">UDP 连接</div><div class="proto-value" id="proto-udp">--</div><div class="proto-sub" id="proto-udp-sub">--</div><div class="proto-bar"><div class="proto-fill" id="proto-udp-bar" style="background:var(--accent);width:0%"></div></div></div>
+        <div class="proto-item"><span class="proto-ic" style="color:var(--warn)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg></span><div class="proto-label">ICMP 连接</div><div class="proto-value" id="proto-icmp">--</div><div class="proto-sub">数据包</div><div class="proto-bar"><div class="proto-fill" style="background:var(--warn);width:100%"></div></div></div>
+        <div class="proto-item"><span class="proto-ic" style="color:var(--success)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg></span><div class="proto-label">总连接数</div><div class="proto-value" id="proto-ip">--</div><div class="proto-sub" id="proto-ct-sub">--</div><div class="proto-bar"><div class="proto-fill" id="proto-ct-bar" style="background:var(--success);width:0%"></div></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 网络接口 -->
+  <div class="card">
+    <div class="card-header"><h2><span class="h-ic cyan"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12.55a11 11 0 0114.08 0"/><path d="M1.42 9a16 16 0 0121.16 0"/><path d="M8.53 16.11a6 6 0 016.95 0"/><line x1="12" y1="20" x2="12" y2="20"/></svg></span>网络接口</h2><span class="meta" id="net-count">--</span></div>
+    <div class="card-body table-scroll" style="padding:0">
+      <table class="table">
+        <thead><tr><th>接口</th><th>类型</th><th>状态</th><th>IP 地址</th><th class="ta-r">接收速率</th><th class="ta-r">发送速率</th><th class="ta-r">总接收</th><th class="ta-r">总发送</th></tr></thead>
+        <tbody id="net-tbody"><tr><td colspan="8" class="empty-cell">加载中...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 已连接客户端 -->
+  <div class="card" style="margin-bottom:14px">
+    <div class="card-header"><h2><span class="h-ic green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg></span>已连接客户端</h2><span class="meta" id="client-count">--</span></div>
+    <div class="card-body table-scroll scroll" style="padding:0;max-height:420px;overflow-y:auto">
+      <table class="table" id="client-table">
+        <thead><tr>
+          <th data-key="name">设备</th>
+          <th data-key="ip">IP 地址</th>
+          <th data-key="mac">MAC</th>
+          <th data-key="conn" class="ta-c">连接</th>
+          <th data-key="rxr" class="ta-r">接收速率</th>
+          <th data-key="txr" class="ta-r">发送速率</th>
+          <th data-key="rxt" class="ta-r">总接收</th>
+          <th data-key="txt" class="ta-r">总发送</th>
+        </tr></thead>
+        <tbody id="client-tbody"><tr><td colspan="8" class="empty-cell">加载中...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 磁盘使用 -->
+  <div class="card" style="margin-bottom:14px">
+    <div class="card-header"><h2><span class="h-ic amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg></span>磁盘使用</h2><span class="meta" id="disk-count">--</span></div>
+    <div class="card-body" id="disk-body" style="max-height:200px;overflow-y:auto"><div class="empty-cell">加载中...</div></div>
+  </div>
+
+  <!-- 服务 -->
+  <div class="card">
+    <div class="card-header"><h2><span class="h-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v6M12 22v-6M4.93 4.93l4.24 4.24M14.83 14.83l4.24 4.24M2 12h6M22 12h-6M4.93 19.07l4.24-4.24M14.83 9.17l4.24-4.24"/></svg></span>服务状态</h2><span class="meta" id="svc-summary">--</span></div>
+    <div class="card-body"><div class="svc-grid" id="svc-body"><span class="empty-cell">加载中...</span></div></div>
+  </div>
+
+  <div class="footer">OpenWrt Status Monitor · <a href="/cgi-bin/luci">LuCI 管理界面</a> · 点击接口或客户端查看详情 · 自动刷新 <span id="refresh-rate">2</span>s</div>
+</div>
+
+<div class="modal-overlay" id="modal">
+  <div class="modal">
+    <div class="modal-header"><h3><span class="h-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12.55a11 11 0 0114.08 0"/><path d="M1.42 9a16 16 0 0121.16 0"/><path d="M8.53 16.11a6 6 0 016.95 0"/></svg></span><span id="modal-title">详情</span></h3><button class="modal-close" onclick="closeModal()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
+<script>
+function fmt(b){if(!b||b<0)return '0 B';if(b<1024)return b+' B';if(b<1048576)return(b/1024).toFixed(1)+' KB';if(b<1073741824)return(b/1048576).toFixed(1)+' MB';return(b/1073741824).toFixed(2)+' GB'}
+function fmtR(r){if(!r||r<1)return '0 B/s';if(r<1024)return Math.round(r)+' B/s';if(r<1048576)return(r/1024).toFixed(1)+' KB/s';return(r/1048576).toFixed(1)+' MB/s'}
+function up(s){if(!s)return'--';var d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);if(d>0)return d+'天 '+h+'小时';if(h>0)return h+'小时 '+m+'分';return m+'分钟'}
+function tp(t){if(t===null||t===undefined)return'N/A';return parseFloat(t).toFixed(1)+'°C'}
+function setR(id,p,c){var r=document.getElementById(id);var ci=2*Math.PI*42;r.setAttribute('stroke-dasharray',ci);r.setAttribute('stroke-dashoffset',ci*(1-Math.min(100,p)/100));if(c)r.style.stroke=c}
+function lc(p){p=+p;if(p<50)return'var(--success)';if(p<80)return'var(--warn)';return'var(--danger)'}
+function esc(s){return s?String(s).replace(/"/g,'&quot;'):''}
+function fmtK(n){if(!n)return'0';if(n<1000)return n;if(n<1000000)return(n/1000).toFixed(1)+'K';return(n/1000000).toFixed(1)+'M'}
+function fmtShort(b){if(!b||b<0)return'0';if(b<1024)return b+'B';if(b<1048576)return Math.round(b/1024)+'K';if(b<1073741824)return(b/1048576).toFixed(0)+'M';return(b/1073741824).toFixed(1)+'G'}
+
+var timer=null,interval=2000,paused=false,lastData=null;
+var API='/cgi-bin/statusmon';
+try{var si=parseInt(localStorage.getItem('sm-interval'));if(si===2000||si===5000)interval=si}catch(e){}
+
+/* ===== 前端速率计算（v4.6：各页独立，不受多页面并发干扰）===== */
+var prevSnap=null;  // {ts,net:{name:{rx,tx}},clients:{mac:{rx,tx}}}
+function calcRates(d){
+  var now=d.timestamp||Math.floor(Date.now()/1000);
+  if(!prevSnap){prevSnap={ts:now,net:{},clients:{}};}
+  var dt=now-prevSnap.ts;
+  if(dt<1)dt=1;
+  // 网络接口速率
+  (d.network||[]).forEach(function(n){
+    var p=prevSnap.net[n.name];
+    n.rx_rate=0;n.tx_rate=0;
+    if(p&&n.rx>=p.rx)n.rx_rate=Math.round((n.rx-p.rx)/dt);
+    if(p&&n.tx>=p.tx)n.tx_rate=Math.round((n.tx-p.tx)/dt);
+    prevSnap.net[n.name]={rx:n.rx,tx:n.tx};
+  });
+  // 客户端速率 v4.11：改由 CGI 端 6s 滑动窗口计算（平滑无跳变、多页面一致），前端直接使用 c.rx_rate/c.tx_rate；
+  // 接口速率仍由前端差分（接口计数为驱动层事实，无停更风险）
+  prevSnap.ts=now;
+  return d;
+}
+
+/* ===== 趋势历史（localStorage 持久化）===== */
+var HIST_MAX=90,histCpu=[],histMem=[],histLoad=[],histConn=[];
+function histVal(p){return (p&&typeof p==='object')?(+p.v||0):(+p||0)}
+function migrateHist(arr){
+  if(!Array.isArray(arr))return [];
+  var now=Math.floor(Date.now()/1000);
+  return arr.slice(-HIST_MAX).map(function(x,i,a){
+    if(x&&typeof x==='object'&&x.v!=null)return {t:+x.t||now,v:Math.max(0,Math.min(100,+x.v||0))};
+    return {t:now-(a.length-1-i)*2,v:Math.max(0,Math.min(100,+x||0))};
+  });
+}
+try{histCpu=migrateHist(JSON.parse(localStorage.getItem('sm-hist-cpu')||'[]'))}catch(e){}
+try{histMem=migrateHist(JSON.parse(localStorage.getItem('sm-hist-mem')||'[]'))}catch(e){}
+try{histLoad=migrateHist(JSON.parse(localStorage.getItem('sm-hist-load')||'[]'))}catch(e){}
+try{histConn=migrateHist(JSON.parse(localStorage.getItem('sm-hist-conn')||'[]'))}catch(e){}
+function pushHist(arr,v){arr.push({t:Math.floor(Date.now()/1000),v:Math.max(0,Math.min(100,v))});if(arr.length>HIST_MAX)arr.shift();return arr}
+function bootTime(upt){var d=new Date(Date.now()-upt*1000);return ('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2)+' '+('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2)}
+function saveHist(){try{localStorage.setItem('sm-hist-cpu',JSON.stringify(histCpu));localStorage.setItem('sm-hist-mem',JSON.stringify(histMem));localStorage.setItem('sm-hist-load',JSON.stringify(histLoad));localStorage.setItem('sm-hist-conn',JSON.stringify(histConn))}catch(e){}}
+function hms(t){var d=new Date(t*1000);return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2)+':'+('0'+d.getSeconds()).slice(-2)}
+function hoverSpark(el,arr){
+  var tip=el.querySelector('.chtip'),line=el.querySelector('.chline');
+  if(!tip){tip=document.createElement('div');tip.className='chtip';el.appendChild(tip)}
+  if(!line){line=document.createElement('div');line.className='chline';el.appendChild(line)}
+  el.onmousemove=function(e){
+    var n=arr.length; if(n<2)return;
+    var r=el.getBoundingClientRect(),x=e.clientX-r.left,w=Math.max(1,r.width);
+    var step=w/(HIST_MAX-1),x0=w-(n-1)*step;
+    var i=Math.round((x-x0)/step); if(i<0)i=0; if(i>n-1)i=n-1;
+    var p=arr[i],px=x0+i*step;
+    if(px<8)px=8; if(px>w-8)px=w-8;
+    tip.style.display='block'; line.style.display='block';
+    tip.style.left=px+'px'; line.style.left=px+'px';
+    tip.textContent=hms(p.t)+'  '+Math.round(histVal(p))+'%';
+  };
+  el.onmouseleave=function(){tip.style.display='none';line.style.display='none'};
+}
+function spark(el,arr,color,fill,maxId){
+  if(arr.length<2){el.innerHTML='<div class="spark-empty">采集中...</div>';return}
+  var w=260,h=46,n=arr.length,step=w/(HIST_MAX-1),x0=w-(n-1)*step;
+  var pts=[],peak=0;
+  for(var i=0;i<n;i++){var v=histVal(arr[i]);if(v>peak)peak=v;pts.push((x0+i*step).toFixed(1)+','+(h-4-(v/100)*(h-9)).toFixed(1))}
+  var poly=pts.join(' ');
+  var fx=pts[0].split(',')[0],lx=pts[n-1].split(',')[0];
+  el.innerHTML='<svg viewBox="0 0 '+w+' '+h+'" preserveAspectRatio="none"><polygon points="'+fx+','+h+' '+poly+' '+lx+','+h+'" fill="'+fill+'"/><polyline points="'+poly+'" fill="none" stroke="'+color+'" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="'+lx+'" cy="'+pts[n-1].split(',')[1]+'" r="2.5" fill="'+color+'"/></svg>';
+  if(maxId)document.getElementById(maxId).textContent='峰值 '+Math.round(peak)+'%';
+  hoverSpark(el,arr);
+}
+
+/* ===== WAN 流量图（近 30 分钟，localStorage 持久化，两页共享）===== */
+var FLOW_WIN=1800,histFlow={};  // {ifaceName: [{t,r,s}, ...]}
+try{var hf=JSON.parse(localStorage.getItem('sm-tflow')||'{}');if(typeof hf==='object'&&hf)histFlow=hf}catch(e){}
+function saveFlow(){try{localStorage.setItem('sm-tflow',JSON.stringify(histFlow))}catch(e){}}
+var selWan='';  // 当前选择的 WAN 接口名
+try{var sw=localStorage.getItem('sm-selwan');if(sw)selWan=sw}catch(e){}
+function getWanList(net){return(net||[]).filter(function(n){return n.type==='WAN'})}
+function getSelWan(net){
+  var wans=getWanList(net);
+  if(!wans.length)return null;
+  if(!selWan)selWan=wans[0].name;
+  for(var i=0;i<wans.length;i++){if(wans[i].name===selWan)return wans[i]}
+  return wans[0];
+}
+function hm(t){var d=new Date(t*1000);return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2)}
+function hoverChart(el,vals,t1,t2,fmtFn){
+  var tip=el.querySelector('.chtip'),line=el.querySelector('.chline');
+  if(!tip){tip=document.createElement('div');tip.className='chtip';el.appendChild(tip)}
+  if(!line){line=document.createElement('div');line.className='chline';el.appendChild(line)}
+  el.onmousemove=function(e){
+    var r=el.getBoundingClientRect(),x=e.clientX-r.left,t=t1+(x/Math.max(1,r.width))*(t2-t1),best=0,bd=1e18,i;
+    for(i=0;i<vals.length;i++){var d=Math.abs(vals[i].t-t);if(d<bd){bd=d;best=i}}
+    var p=vals[best],px=((p.t-t1)/(t2-t1))*r.width;
+    if(px<8)px=8;if(px>r.width-8)px=r.width-8;
+    tip.style.display='block';line.style.display='block';
+    tip.style.left=px+'px';line.style.left=px+'px';
+    tip.textContent=hm(p.t)+'  '+fmtFn(p.v);
+  };
+  el.onmouseleave=function(){tip.style.display='none';line.style.display='none'};
+}
+function drawFlow(svgId,y1Id,y2Id,curId,peakId,vals,stroke,fill){
+  var el=document.getElementById(svgId);
+  if(!vals||vals.length<2){el.innerHTML='<div class="spark-empty">采集中...</div>';return}
+  var now=Math.floor(Date.now()/1000),t1=now-FLOW_WIN,t2=now+2;
+  var W=560,H=140,pt=14,pb=4;
+  var peak=0;
+  vals.forEach(function(p){if(p.v>peak)peak=p.v});
+  var vmax=peak*1.12;if(vmax<20480)vmax=20480;
+  function X(t){return ((t-t1)/(t2-t1)*W).toFixed(2)}
+  function Y(v){return (H-pb-(v/vmax)*(H-pb-pt)).toFixed(2)}
+  var pts=[],first=null,last=null;
+  vals.forEach(function(p){
+    var x=X(p.t),y=Y(p.v);
+    if(first===null)first=[x,y];
+    last=[x,y];pts.push(x+','+y);
+  });
+  var grid='';
+  for(var g=1;g<=3;g++){var gy=Y(vmax*g/4);grid+='<line x1="0" y1="'+gy+'" x2="'+W+'" y2="'+gy+'" stroke="rgba(148,163,184,.28)" stroke-width="1" stroke-dasharray="3 4"/>'}
+  el.innerHTML='<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none">'
+    +'<defs><linearGradient id="gf-'+svgId+'" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="'+fill+'" stop-opacity=".28"/><stop offset="1" stop-color="'+fill+'" stop-opacity=".02"/></linearGradient></defs>'
+    +grid
+    +'<polygon points="'+first[0]+','+H+' '+pts.join(' ')+' '+last[0]+','+H+'" fill="url(#gf-'+svgId+')"/>'
+    +'<polyline points="'+pts.join(' ')+'" fill="none" stroke="'+stroke+'" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>'
+    +'<circle cx="'+last[0]+'" cy="'+last[1]+'" r="2.6" fill="'+stroke+'"/></svg>';
+  document.getElementById(y1Id).textContent=fmtR(vmax);
+  document.getElementById(y2Id).textContent=fmtR(vmax/2);
+  document.getElementById(curId).textContent=fmtR(vals[vals.length-1].v);
+  document.getElementById(peakId).textContent=fmtR(peak);
+  hoverChart(el,vals,t1,t2,fmtR);
+}
+/* v4.16：CPU/内存/温度 24h 曲线 */
+var SYSH_WIN=86400,syshPts=[],syshTs=0;
+function drawSysH(svgId,y1Id,y2Id,curId,peakId,vals,stroke,fill,unit,fixedMax){
+  var el=document.getElementById(svgId);
+  if(!el)return;
+  if(!vals||vals.length<2){el.innerHTML='<div class="spark-empty">采集中...</div>';return}
+  var now=Math.floor(Date.now()/1000),t1=now-SYSH_WIN,t2=now+2;
+  var W=560,H=140,pt=14,pb=4,peak=0;
+  vals.forEach(function(p){if(p.v>peak)peak=p.v});
+  var vmax=fixedMax||(peak*1.12);if(vmax<1)vmax=1;
+  function X(t){return ((t-t1)/(t2-t1)*W).toFixed(2)}
+  function Y(v){return (H-pb-(v/vmax)*(H-pb-pt)).toFixed(2)}
+  function fmt(v){return unit==='°C'?v.toFixed(1)+'°C':Math.round(v)+'%'}
+  var pts=[],first=null,last=null;
+  vals.forEach(function(p){var x=X(p.t),y=Y(p.v);if(first===null)first=[x,y];last=[x,y];pts.push(x+','+y)});
+  var grid='';
+  for(var g=1;g<=3;g++){var gy=Y(vmax*g/4);grid+='<line x1="0" y1="'+gy+'" x2="'+W+'" y2="'+gy+'" stroke="rgba(148,163,184,.28)" stroke-width="1" stroke-dasharray="3 4"/>'}
+  el.innerHTML='<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none">'
+    +'<defs><linearGradient id="gf-'+svgId+'" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="'+fill+'" stop-opacity=".28"/><stop offset="1" stop-color="'+fill+'" stop-opacity=".02"/></linearGradient></defs>'
+    +grid
+    +'<polygon points="'+first[0]+','+H+' '+pts.join(' ')+' '+last[0]+','+H+'" fill="url(#gf-'+svgId+')"/>'
+    +'<polyline points="'+pts.join(' ')+'" fill="none" stroke="'+stroke+'" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>'
+    +'<circle cx="'+last[0]+'" cy="'+last[1]+'" r="2.6" fill="'+stroke+'"/></svg>';
+  document.getElementById(y1Id).textContent=fmt(vmax);
+  document.getElementById(y2Id).textContent=fmt(vmax/2);
+  document.getElementById(curId).textContent=fmt(vals[vals.length-1].v);
+  document.getElementById(peakId).textContent=fmt(peak);
+  hoverChart(el,vals,t1,t2,fmt);
+}
+function renderSysH(pts){
+  if(!pts||!pts.length)return;
+  syshPts=pts;
+  var meta=document.getElementById('sysh-meta');
+  if(meta)meta.textContent='近 24 小时 · '+pts.length+' 点 · 每分钟采样';
+  drawSysH('sysh-cpu-svg','sysh-cpu-y1','sysh-cpu-y2','sysh-cpu-cur','sysh-cpu-peak',pts.map(function(p){return{t:p.t,v:p.c}}),'var(--primary)','#2563eb','%',100);
+  drawSysH('sysh-mem-svg','sysh-mem-y1','sysh-mem-y2','sysh-mem-cur','sysh-mem-peak',pts.map(function(p){return{t:p.t,v:p.m}}),'var(--success)','#16a34a','%',100);
+  var tmax=0;pts.forEach(function(p){if(p.p>tmax)tmax=p.p});
+  var tscale=Math.max(60,Math.ceil(tmax*1.15/5)*5);
+  drawSysH('sysh-temp-svg','sysh-temp-y1','sysh-temp-y2','sysh-temp-cur','sysh-temp-peak',pts.map(function(p){return{t:p.t,v:p.p}}),'var(--warn)','#d97706','°C',tscale);
+}
+async function fetchSysH(){
+  try{
+    var r=await fetch(API+'?sys_hist=1',{cache:'no-store'});
+    var d=await r.json();
+    if(d&&d.points)renderSysH(d.points);
+    syshTs=Date.now();
+  }catch(e){}
+}
+/* v4.14：本月流量总计（WAN 接口累计，分类按占比对齐）*/
+function renderMonthTraffic(t){
+  var wrap=document.getElementById('flow-month');
+  if(!t||!t.cats){wrap.style.display='none';return}
+  wrap.style.display='';
+  document.getElementById('ft-month').textContent='（'+t.month+'）';
+  var mrx=(t.total&&t.total.rx)||0,mtx=(t.total&&t.total.tx)||0,total=mrx+mtx,vals={};
+  CAT_ORDER.forEach(function(c){
+    var rx=(t.cats[c]&&t.cats[c].rx)||0,tx=(t.cats[c]&&t.cats[c].tx)||0;
+    vals[c]=rx+tx;
+  });
+  document.getElementById('month-donut').innerHTML=renderCatDonut(vals,total,'本月');
+  var now=new Date();var tstr=now.getFullYear()+'-'+('0'+(now.getMonth()+1)).slice(-2)+'-'+('0'+now.getDate()).slice(-2);
+  document.getElementById('month-donut').style.cursor='pointer';
+  document.getElementById('month-donut').onclick=function(){showTrafficAnalysis(tstr)};
+  var html='';
+  CAT_ORDER.slice().sort(function(a,b){return vals[b]-vals[a]}).forEach(function(c){
+    if(vals[c]<=0)return;
+    var rx=(t.cats[c]&&t.cats[c].rx)||0,tx=(t.cats[c]&&t.cats[c].tx)||0;
+    html+='<div class="cat-item" style="white-space:nowrap;padding:4px 0"><span class="cat-dot" style="background:'+CAT_COLORS[c]+'"></span><span style="color:var(--gray-500);min-width:64px;display:inline-block">'+CAT_NAMES[c]+'</span><span style="font-weight:700;font-variant-numeric:tabular-nums">↓'+fmt(rx)+' ↑'+fmt(tx)+'</span><span style="font-size:10px;color:var(--gray-400);margin-left:auto">'+(total>0?(vals[c]/total*100).toFixed(1):'0.0')+'%</span></div>';
+  });
+  if(!html)html='<div class="spark-empty">暂无数据</div>';
+  html+='<div style="display:flex;justify-content:space-between;margin-top:8px;padding-top:8px;border-top:1px dashed var(--gray-200);font-size:11px;color:var(--gray-500)"><span>本月合计</span><span style="font-variant-numeric:tabular-nums;font-weight:700;color:#0f172a">'+fmt(total)+'</span></div>';
+  html+='<div style="display:flex;justify-content:flex-end;margin-top:2px;font-size:11px;color:var(--gray-500)"><span style="font-variant-numeric:tabular-nums"><span style="color:var(--primary);font-weight:600">↓'+fmt(mrx)+'</span> · <span style="color:var(--success);font-weight:600">↑'+fmt(mtx)+'</span></span></div>';
+  document.getElementById('month-cats').innerHTML=html;
+}
+
+/* ===== 客户端排序 ===== */
+var cSort={key:'ip',dir:1};
+try{var sv=JSON.parse(localStorage.getItem('sm-csort')||'{}');if(sv&&sv.key)cSort={key:sv.key,dir:sv.dir||1}}catch(e){}
+var SORTERS={
+  name:function(c){return c.name||c.ip||''},
+  ip:function(c){return c.ip||''},
+  mac:function(c){return c.mac||''},
+  conn:function(c){return c.connections||0},
+  rxr:function(c){return c.rx_rate||0},
+  txr:function(c){return c.tx_rate||0},
+  rxt:function(c){return c.rx||0},
+  txt:function(c){return c.tx||0}
+};
+var SORT_NUM={conn:1,rxr:1,txr:1,rxt:1,txt:1};
+var SORT_LABEL={name:'设备',ip:'IP',mac:'MAC',conn:'连接数',rxr:'接收速率',txr:'发送速率',rxt:'总接收',txt:'总发送'};
+function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+function sortClients(list){
+  var f=SORTERS[cSort.key]||SORTERS.ip,d=cSort.dir;
+  return list.slice().sort(function(a,b){
+    var va=f(a),vb=f(b);
+    if(typeof va==='number'&&typeof vb==='number')return(va-vb)*d;
+    return String(va).localeCompare(String(vb))*d;
+  });
+}
+function renderSortIcons(){
+  Array.prototype.forEach.call(document.querySelectorAll('#client-table th[data-key]'),function(th){
+    var k=th.getAttribute('data-key');
+    th.classList.toggle('sorted',k===cSort.key);
+    th.classList.toggle('asc',k===cSort.key&&cSort.dir>0);
+    th.classList.toggle('desc',k===cSort.key&&cSort.dir<0);
+  });
+}
+document.querySelector('#client-table thead').addEventListener('click',function(e){
+  var th=e.target.closest('th[data-key]');if(!th)return;
+  var k=th.getAttribute('data-key');
+  if(cSort.key===k){cSort.dir=-cSort.dir}
+  else{cSort.key=k;cSort.dir=SORT_NUM[k]?-1:1}
+  try{localStorage.setItem('sm-csort',JSON.stringify(cSort))}catch(e2){}
+  renderSortIcons();
+  if(lastData)renderClients(lastData);
+});
+
+function renderClients(d){
+  var list=sortClients(d.clients||[]);
+  var ch='',act=0,idle=0,off=0;
+  list.forEach(function(c){
+    if(c.state==='active')act++;else if(c.state==='idle')idle++;else off++;
+    var nm=c.name||c.ip||c.mac||'未知';
+    var vb='';
+    if(c.version==='46')vb='<span class="vtag v4">v4</span><span class="vtag v6">v6</span>';
+    else if(c.version==='6')vb='<span class="vtag v6">v6</span>';
+    else vb='<span class="vtag v4">v4</span>';
+    var cc=c.connections||0;
+    var ccCls='connchip'+(cc>100?' hot':cc>30?' warm':'');
+    ch+='<tr style="cursor:pointer" onclick="showClient(\''+escHtml(c.ip)+'\',\''+escHtml(nm)+'\',\''+escHtml(c.mac)+'\')">'
+      +'<td class="c-name"><span class="dev-dot '+c.state+'"></span><span class="nm" title="'+escHtml(c.mac)+'">'+escHtml(nm)+'</span></td>'
+      +'<td class="mono" style="font-weight:500;color:var(--primary)">'+escHtml(c.ip)+vb
+      +(c.ip6?'<div style="font-size:10px;color:var(--gray-400);font-weight:400;margin-top:2px;word-break:break-all">'+escHtml(c.ip6.split(',')[0])+'</div>':'')
+      +'</td>'
+      +'<td class="mono" style="font-size:11px;color:var(--gray-400)">'+escHtml(c.mac)+'</td>'
+      +'<td class="ta-c"><span class="'+ccCls+'">'+cc+'</span></td>'
+      +'<td class="ta-r rate"><span class="arrow down">&#9660;</span><span class="val">'+fmtR(c.rx_rate)+'</span></td>'
+      +'<td class="ta-r rate"><span class="arrow up">&#9650;</span><span class="val">'+fmtR(c.tx_rate)+'</span></td>'
+      +'<td class="ta-r rate"><span class="total">'+fmt(c.rx)+'</span></td>'
+      +'<td class="ta-r rate"><span class="total">'+fmt(c.tx)+'</span></td>'
+      +'</tr>';
+  });
+  if(!ch)ch='<tr><td colspan="8" class="empty-cell">无在线设备</td></tr>';
+  document.getElementById('client-tbody').innerHTML=ch;
+  document.getElementById('client-count').textContent=list.length+' 台设备 · 活跃 '+act+' · 空闲 '+idle+' · 离线 '+off+' · 按'+(SORT_LABEL[cSort.key]||'IP')+(cSort.dir>0?' ↑':' ↓');
+}
+
+async function fetch_(){if(paused)return;try{var r=await fetch(API,{cache:'no-store'});var d=await r.json();d=calcRates(d);lastData=d;render(d);document.getElementById('lastUpdate').textContent=new Date().toLocaleTimeString('zh-CN')}catch(e){document.getElementById('lastUpdate').textContent='连接失败'}}
+
+function render(d){
+  document.getElementById('hostname-top').textContent=d.system.hostname+' · 内核 '+d.system.kernel+' · SYSTEM STATUS MONITOR';
+  document.getElementById('uptime').textContent=up(d.system.uptime);
+  document.getElementById('kernel').textContent='内核 '+d.system.kernel;
+  document.getElementById('sys-host').textContent=d.system.hostname;
+  document.getElementById('sys-boot').textContent=bootTime(d.system.uptime);
+  var connCur=d.protocols?(d.protocols.conntrack_current||0):0;
+  var connMax=d.protocols?(d.protocols.conntrack_max||1):1;
+  document.getElementById('sys-conn').textContent=connCur+' / '+connMax;
+  var cores=d.system.cpu_cores||4;
+  var lp=Math.min(100,Math.round(d.system.load[0]/cores*100));
+  setR('load-ring',lp,lc(lp));
+  document.getElementById('load-ring-text').textContent=lp+'%';
+  document.getElementById('load-1').textContent=d.system.load[0].toFixed(2);
+  document.getElementById('load-5').textContent=d.system.load[1].toFixed(2);
+  document.getElementById('load-15').textContent=d.system.load[2].toFixed(2);
+  document.getElementById('load-cores').textContent=cores+' 核';
+  document.getElementById('load-badge').textContent=lp<70?'正常':'偏高';
+  document.getElementById('load-badge').className='badge '+(lp<70?'running':'stopped');
+  var mp=d.memory.total>0?Math.round(d.memory.used/d.memory.total*100):0;
+
+  setR('cpu-ring',d.system.cpu_usage,lc(d.system.cpu_usage));
+  document.getElementById('cpu-ring-text').textContent=d.system.cpu_usage+'%';
+  document.getElementById('cpu-model').textContent=d.system.cpu_model;
+  document.getElementById('cpu-cores').textContent=d.system.cpu_cores+' 核';
+  document.getElementById('cpu-load').textContent=d.system.load.join(' / ');
+  document.getElementById('cpu-temp').textContent=tp(d.system.temperature);
+  document.getElementById('cpu-badge').textContent=d.system.cpu_usage<80?'正常':'高负载';
+  document.getElementById('cpu-badge').className='badge '+(d.system.cpu_usage<80?'running':'stopped');
+
+  setR('mem-ring',mp,lc(mp));
+  document.getElementById('mem-ring-text').textContent=mp+'%';
+  document.getElementById('mem-total').textContent=fmt(d.memory.total*1024);
+  document.getElementById('mem-used').textContent=fmt(d.memory.used*1024);
+  document.getElementById('mem-avail').textContent=fmt(d.memory.available*1024);
+  document.getElementById('mem-cache').textContent=fmt((d.memory.cached+d.memory.buffers)*1024);
+  document.getElementById('mem-badge').textContent=mp<80?'正常':'紧张';
+  document.getElementById('mem-badge').className='badge '+(mp<80?'running':'stopped');
+
+  pushHist(histCpu,d.system.cpu_usage);pushHist(histMem,mp);
+  var connPct=connMax>0?Math.round(connCur/connMax*100):0;
+  pushHist(histLoad,lp);pushHist(histConn,connPct);saveHist();
+  spark(document.getElementById('spark-cpu'),histCpu,'var(--primary)','rgba(37,99,235,.10)','spark-cpu-max');
+  spark(document.getElementById('spark-mem'),histMem,'var(--success)','rgba(22,163,74,.10)','spark-mem-max');
+  spark(document.getElementById('spark-load'),histLoad,'var(--success)','rgba(22,163,74,.10)','spark-load-max');
+  spark(document.getElementById('spark-conn'),histConn,'var(--primary)','rgba(37,99,235,.10)','spark-conn-max');
+
+  // WAN 流量图（多接口可选切换）
+  var wans=getWanList(d.network||[]);
+  var wan=getSelWan(d.network||[]);
+  if(wans.length>1){
+    var sel=document.getElementById('flow-sel');if(sel){
+      sel.style.display='';
+      if(sel.options.length!==wans.length){
+        sel.innerHTML=wans.map(function(w){return'<option value="'+w.name+'"'+(w.name===selWan?' selected':'')+'>'+w.name+'</option>'}).join('');
+      }
+    }
+  }else{var sel2=document.getElementById('flow-sel');if(sel2)sel2.style.display='none'}
+  if(wan){
+    var nows=Math.floor(Date.now()/1000);
+    if(!histFlow[wan.name])histFlow[wan.name]=[];
+    var hf=histFlow[wan.name];
+    hf.push({t:nows,r:wan.rx_rate||0,s:wan.tx_rate||0});
+    var cut=nows-FLOW_WIN;
+    while(hf.length&&hf[0].t<cut)hf.shift();
+    saveFlow();
+    document.getElementById('flow-iface').textContent=wan.name+' · 实时采样 '+hf.length+' 点';
+    drawFlow('flow-rx-svg','flow-rx-y1','flow-rx-y2','flow-rx-cur','flow-rx-peak',hf.map(function(p){return{t:p.t,v:p.r}}),'var(--primary)','#2563eb');
+    drawFlow('flow-tx-svg','flow-tx-y1','flow-tx-y2','flow-tx-cur','flow-tx-peak',hf.map(function(p){return{t:p.t,v:p.s}}),'var(--success)','#16a34a');
+  }
+  renderMonthTraffic(d.traffic);
+
+  var p=d.protocols||{};
+  document.getElementById('proto-tcp-curr').textContent=p.ct_tcp_estab||0;
+  document.getElementById('proto-tcp-total').textContent='总计 '+p.ct_tcp_total;
+  document.getElementById('proto-udp').textContent=p.ct_udp||0;
+  document.getElementById('proto-udp-sub').textContent='总计 '+p.ct_udp_total;
+  document.getElementById('proto-icmp').textContent=p.ct_icmp||0;
+  document.getElementById('proto-ip').textContent=p.conntrack_current||0;
+  document.getElementById('proto-ct-sub').textContent='容量上限 '+p.conntrack_max;
+  document.getElementById('proto-external').textContent=p.ct_external||0;
+  var ctMax=p.conntrack_max||1,ctCur=p.conntrack_current||0;
+  document.getElementById('ct-info').textContent='连接追踪 '+ctCur+' / '+ctMax+' ('+Math.round(ctCur/ctMax*100)+'%)';
+  document.getElementById('proto-tcp-bar').style.width=Math.min(100,Math.round((p.ct_tcp_estab||0)/Math.max(1,ctMax)*100))+'%';
+  document.getElementById('proto-udp-bar').style.width=Math.min(100,Math.round((p.ct_udp||0)/Math.max(1,ctMax)*100))+'%';
+  document.getElementById('proto-ct-bar').style.width=Math.min(100,Math.round(ctCur/Math.max(1,ctMax)*100))+'%';
+  document.getElementById('proto-external-bar').style.width=Math.min(100,Math.round((p.ct_external||0)/Math.max(1,ctMax)*100))+'%';
+
+  var nh='';
+  d.network.forEach(function(n){
+    var b=n.state==='up'?'<span class="badge up">UP</span>':'<span class="badge down">DOWN</span>';
+    var tp2='<span class="badge type-'+(n.type||'physical')+'">'+(n.type||'PHYS')+'</span>';
+    nh+='<tr style="cursor:pointer" onclick="showNet('+esc(JSON.stringify(n))+')">'
+      +'<td class="if-name mono" style="font-size:12.5px">'+n.name+'</td>'
+      +'<td>'+tp2+'</td>'
+      +'<td>'+b+'</td>'
+      +'<td><span class="if-ip">'+(n.ip||'<span style="color:var(--gray-300)">无</span>')+'</span></td>'
+      +'<td class="ta-r rate"><span class="arrow down">&#9660;</span><span class="val">'+fmtR(n.rx_rate)+'</span></td>'
+      +'<td class="ta-r rate"><span class="arrow up">&#9650;</span><span class="val">'+fmtR(n.tx_rate)+'</span></td>'
+      +'<td class="ta-r rate"><span class="total">'+fmt(n.rx)+'</span></td>'
+      +'<td class="ta-r rate"><span class="total">'+fmt(n.tx)+'</span></td>'
+      +'</tr>';
+  });
+  document.getElementById('net-tbody').innerHTML=nh;
+  document.getElementById('net-count').textContent=d.network.length+' 个接口';
+
+  renderClients(d);
+
+  var dh='';
+  d.disk.forEach(function(dk){
+    var dp=dk.usepct||0;
+    dh+='<div class="disk-item"><div class="disk-header"><span class="disk-mount">'+dk.mount+'<span class="disk-fs">'+dk.fs+'</span></span><span class="disk-info">'+fmt(dk.used*1024)+' / '+fmt(dk.total*1024)+' ('+dp+'%)</span></div><div class="disk-bar"><div class="disk-fill" style="background:'+lc(dp)+';width:'+dp+'%"></div></div></div>';
+  });
+  if(!dh)dh='<div class="empty-cell">无挂载点</div>';
+  document.getElementById('disk-body').innerHTML=dh;
+  document.getElementById('disk-count').textContent=d.disk.length+' 个挂载点';
+
+  var sh='',run=0,stop=0;
+  d.services.forEach(function(s){
+    sh+='<div class="svc-tile '+s.status+'"><span class="svc-dot"></span><div><div class="svc-name">'+s.name+'</div><div class="svc-pid">'+(s.pid>0?'PID '+s.pid:(s.status==='running'?'运行中':'已停止'))+'</div></div></div>';
+    if(s.status==='running')run++;else stop++;
+  });
+  document.getElementById('svc-body').innerHTML=sh;
+  document.getElementById('svc-summary').textContent=run+' 运行 / '+stop+' 停止';
+}
+
+function showNet(n){
+  document.getElementById('modal-title').textContent='接口详情 · '+n.name;
+  document.getElementById('modal-body').innerHTML=
+    '<div class="modal-grid">'
+    +'<div class="modal-item"><div class="label">状态</div><div class="value">'+(n.state==='up'?'<span class="badge up">UP</span>':'<span class="badge down">DOWN</span>')+'</div></div>'
+    +'<div class="modal-item"><div class="label">类型</div><div class="value">'+(n.type||'物理')+'</div></div>'
+    +'<div class="modal-item"><div class="label">IPv4 地址</div><div class="value" style="font-size:12px;font-family:var(--mono)">'+(n.ip4||'未分配')+'</div></div>'
+    +'<div class="modal-item"><div class="label">IPv6 地址</div><div class="value" style="font-size:12px;font-family:var(--mono);word-break:break-all">'+(n.ip6||'未分配')+'</div></div>'
+    +'<div class="modal-item"><div class="label">接收速率</div><div class="value" style="color:var(--primary)">'+fmtR(n.rx_rate)+'</div></div>'
+    +'<div class="modal-item"><div class="label">发送速率</div><div class="value" style="color:var(--success)">'+fmtR(n.tx_rate)+'</div></div>'
+    +'<div class="modal-item"><div class="label">总接收</div><div class="value">'+fmt(n.rx)+'</div></div>'
+    +'<div class="modal-item"><div class="label">总发送</div><div class="value">'+fmt(n.tx)+'</div></div>'
+    +'<div class="modal-item"><div class="label">接收包数</div><div class="value">'+fmtK(n.rx_pkts||0)+'</div></div>'
+    +'<div class="modal-item"><div class="label">发送包数</div><div class="value">'+fmtK(n.tx_pkts||0)+'</div></div>'
+    +'</div>';
+  document.getElementById('modal').classList.add('active');
+}
+
+async function showClient(ip,name,mac){
+  document.getElementById('modal-title').textContent='设备详情 · '+(name||ip);
+  document.getElementById('modal-body').innerHTML='<div style="text-align:center;padding:30px;color:var(--gray-400)">加载连接列表...</div>';
+  document.getElementById('modal').classList.add('active');
+  try{
+    var r=await fetch(API+'?mac='+encodeURIComponent(mac),{cache:'no-store'});
+    var conns=await r.json();
+    var info='<div class="modal-grid" style="margin-bottom:16px">'
+      +'<div class="modal-item"><div class="label">设备名</div><div class="value">'+escHtml(name||'未知')+'</div></div>'
+      +'<div class="modal-item"><div class="label">IP 地址</div><div class="value" style="font-size:12px;font-family:var(--mono)">'+escHtml(ip)+'</div></div>'
+      +'<div class="modal-item"><div class="label">MAC 地址</div><div class="value" style="font-size:12px;font-family:var(--mono)">'+escHtml(mac)+'</div></div>'
+      +'<div class="modal-item"><div class="label">活跃连接数</div><div class="value" style="font-weight:700;color:var(--primary)">'+conns.length+'</div></div>'
+      +'</div>';
+    if(!conns.length){
+      info+='<div style="text-align:center;padding:20px;color:var(--gray-400)">该设备当前无活跃连接</div>';
+    }else{
+      info+='<div style="font-size:11px;color:var(--gray-400);margin:0 0 8px;letter-spacing:.5px">连接列表（'+conns.length+' 条）</div>';
+      info+='<div style="max-height:360px;overflow-y:auto;border:1px solid var(--gray-100);border-radius:8px">';
+      info+='<table class="table" style="width:100%;font-size:12px"><thead><tr><th>协议</th><th>状态</th><th>目标地址</th><th class="ta-c">端口</th><th class="ta-c">服务</th><th class="ta-r">包数</th><th class="ta-r">流量</th></tr></thead><tbody>';
+      conns.forEach(function(c){
+        var st=c.state||'-';
+        var stCls=c.state==='ESTABLISHED'?'running':c.state==='TIME_WAIT'?'':c.state==='OFFLOAD'?'running':'stopped';
+        var stBadge=st==='-'?'<span style="color:var(--gray-300)">-</span>':'<span class="badge '+stCls+'" style="font-size:9px;padding:2px 6px">'+st+'</span>';
+        info+='<tr>'
+          +'<td class="mono" style="font-weight:600">'+c.proto.toUpperCase()+'</td>'
+          +'<td>'+stBadge+'</td>'
+          +'<td class="mono" style="font-size:11px">'+escHtml(c.dst)+'</td>'
+          +'<td class="ta-c mono">'+c.dport+'</td>'
+          +'<td class="ta-c">'+(c.svc!==c.dport?'<span style="color:var(--primary);font-weight:500">'+c.svc+'</span>':'<span style="color:var(--gray-300)">-</span>')+'</td>'
+          +'<td class="ta-r mono" style="font-size:11px">'+fmtK(c.pkts)+'</td>'
+          +'<td class="ta-r rate"><span class="total">'+fmt(c.bytes)+'</span></td>'
+          +'</tr>';
+      });
+      info+='</tbody></table></div>';
+      // 协议分类汇总
+      var catData={};CAT_ORDER.forEach(function(c){catData[c]={rx:0,tx:0,conn:0}});
+      conns.forEach(function(c){
+        var cat=classifyPort(c.dport,c.proto);
+        catData[cat].conn++;
+        // conntrack 中 bytes 是请求方向累计，近似为下行
+        catData[cat].tx+=(c.bytes||0);
+      });
+      var catTotal=0;CAT_ORDER.forEach(function(c){catTotal+=catData[c].tx});
+      if(catTotal>0){
+        info+='<div style="margin-top:16px;font-size:11px;color:var(--gray-400);margin-bottom:6px;letter-spacing:.5px">协议分类（当前活跃连接）</div>';
+        info+='<div style="display:flex;align-items:center;justify-content:center;gap:22px;flex-wrap:wrap;margin-bottom:10px">';
+        var donutVals={};CAT_ORDER.forEach(function(c){donutVals[c]=catData[c].tx});
+        info+=renderCatDonut(donutVals,catTotal,'活跃流量');
+        info+='<div style="display:flex;flex-direction:column;gap:7px">';
+        CAT_ORDER.forEach(function(c){
+          if(catData[c].conn===0)return;
+          info+='<div style="display:flex;align-items:center;gap:6px;font-size:11px;white-space:nowrap"><span style="width:10px;height:10px;border-radius:3px;background:'+CAT_COLORS[c]+';flex-shrink:0"></span><span style="color:var(--gray-500)">'+CAT_NAMES[c]+'</span><span style="font-weight:600;font-variant-numeric:tabular-nums">'+fmt(catData[c].tx)+'</span></div>';
+        });
+        info+='</div></div>';
+        // 详情行
+        info+='<div>';
+        CAT_ORDER.forEach(function(c){
+          if(catData[c].conn===0)return;
+          var pct=catTotal>0?(catData[c].tx/catTotal*100):0;
+          info+='<div class="cat-row"><span class="cat-dot" style="background:'+CAT_COLORS[c]+';width:12px;height:12px;border-radius:3px"></span><span class="cat-name" style="color:'+CAT_COLORS[c]+'">'+CAT_NAMES[c]+'</span><span class="cat-traffic">'+fmt(catData[c].tx)+'</span><span style="font-size:11px;color:var(--gray-400);margin-left:auto">'+pct.toFixed(1)+'% · '+catData[c].conn+' 连接</span><div style="flex-basis:100%;height:4px;border-radius:2px;background:var(--gray-100);margin-top:4px;overflow:hidden"><div style="height:100%;width:'+pct+'%;background:'+CAT_COLORS[c]+';border-radius:2px"></div></div></div>';
+        });
+        info+='</div>';
+      }
+    }
+    document.getElementById('modal-body').innerHTML=info;
+  }catch(e){
+    document.getElementById('modal-body').innerHTML='<div style="text-align:center;padding:20px;color:var(--danger)">加载失败: '+e.message+'</div>';
+  }
+}
+function closeModal(){document.getElementById('modal').classList.remove('active')}
+
+/* 流量协议分类分析 */
+var CAT_COLORS={video:'#8b5cf6',game:'#f59e0b',web:'#2563eb',download:'#16a34a',dns:'#06b6d4',ntp:'#94a3b8',other:'#cbd5e1'};
+var CAT_NAMES={video:'视频/直播',game:'游戏',web:'网页浏览',download:'下载/网盘',dns:'DNS',ntp:'NTP',other:'其他'};
+var CAT_ORDER=['video','game','web','download','dns','ntp','other'];
+function classifyPort(dport,proto){
+  var p=parseInt(dport)||0;
+  if(p==8567||p==8568||p==8569||(p>=6881&&p<=6889)||p==9921||p==9922||p==25565||p==27015||p==3478||p==43793)return'game';
+  if(p==53)return'dns';
+  if(p==123)return'ntp';
+  if(p==51413)return'download';
+  // v4.12：QUIC(UDP 443) 为视频 App 实际载体，归视频（与 nft 计数口径一致）
+  if(proto=='udp'&&(p==443||p==1935||(p>=8000&&p<=8999)))return'video';
+  if(p==80||p==443||p==8443)return'web';
+  if(p==1935||(p>=8000&&p<=8999))return'video';
+  return'other';
+}
+/* 协议分类扇形图（纯 SVG donut） */
+function catPolar(cx,cy,r,deg){
+  var a=(deg-90)*Math.PI/180;
+  return[(cx+r*Math.cos(a)).toFixed(2),(cy+r*Math.sin(a)).toFixed(2)];
+}
+function catArcPath(cx,cy,r0,r1,a0,a1){
+  var large=(a1-a0)>180?1:0;
+  var p0=catPolar(cx,cy,r1,a0),p1=catPolar(cx,cy,r1,a1),p2=catPolar(cx,cy,r0,a1),p3=catPolar(cx,cy,r0,a0);
+  return 'M'+p0[0]+' '+p0[1]+' A'+r1+' '+r1+' 0 '+large+' 1 '+p1[0]+' '+p1[1]+' L'+p2[0]+' '+p2[1]+' A'+r0+' '+r0+' 0 '+large+' 0 '+p3[0]+' '+p3[1]+' Z';
+}
+function renderCatDonut(vals,total,centerLabel){
+  var size=136,cx=size/2,cy=size/2,r1=cx-5,r0=Math.round(r1*0.62),mid=((r0+r1)/2).toFixed(1);
+  var segs=[];
+  CAT_ORDER.forEach(function(c){var v=vals[c]||0;if(v>0)segs.push({c:c,v:v})});
+  var html='<svg class="cat-donut" width="'+size+'" height="'+size+'" viewBox="0 0 '+size+' '+size+'">';
+  if(!segs.length||!(total>0)){
+    html+='<circle cx="'+cx+'" cy="'+cy+'" r="'+mid+'" fill="none" stroke="#f1f5f9" stroke-width="'+(r1-r0)+'"/>';
+  }else if(segs.length===1){
+    html+='<circle cx="'+cx+'" cy="'+cy+'" r="'+mid+'" fill="none" stroke="'+CAT_COLORS[segs[0].c]+'" stroke-width="'+(r1-r0)+'"><title>'+CAT_NAMES[segs[0].c]+' '+fmt(segs[0].v)+'（100%）</title></circle>';
+  }else{
+    var a0=0;
+    segs.forEach(function(s,i){
+      var a1=a0+s.v/total*360;
+      if(i===segs.length-1||a1>360)a1=360;
+      if(a1>a0)html+='<path d="'+catArcPath(cx,cy,r0,r1,a0,a1)+'" fill="'+CAT_COLORS[s.c]+'" stroke="#fff" stroke-width="1" stroke-linejoin="round"><title>'+CAT_NAMES[s.c]+' '+fmt(s.v)+'（'+(s.v/total*100).toFixed(1)+'%）</title></path>';
+      a0=a1;
+    });
+  }
+  html+='<text x="'+cx+'" y="'+(cy+3)+'" text-anchor="middle" font-size="12.5" font-weight="700" fill="#0f172a" style="font-variant-numeric:tabular-nums">'+fmt(total||0)+'</text>';
+  html+='<text x="'+cx+'" y="'+(cy+17)+'" text-anchor="middle" font-size="9" fill="#94a3b8">'+(centerLabel||'总计')+'</text>';
+  html+='</svg>';
+  return html;
+}
+ async function showTrafficAnalysis(day){
+  document.getElementById('modal-title').textContent='流量协议分析 · '+day;
+  document.getElementById('modal-body').innerHTML='<div style="text-align:center;padding:30px;color:var(--gray-400)">分析中...</div>';
+  document.getElementById('modal').classList.add('active');
+  try{
+    var r=await fetch(API+'?proto_day='+day,{cache:'no-store'});
+    var data=await r.json();
+    var histRx=0,histTx=0;
+    CAT_ORDER.forEach(function(c){histRx+=data[c].rx||0;histTx+=data[c].tx||0});
+    var histTotal=histRx+histTx;
+    var now=new Date();
+    var todayStr=now.getFullYear()+'-'+('0'+(now.getMonth()+1)).slice(-2)+'-'+('0'+now.getDate()).slice(-2);
+    var isToday=(day===todayStr);
+    var cliRx=0,cliTx=0;
+    if(isToday&&lastData&&lastData.client_sum){cliRx=lastData.client_sum.rx||0;cliTx=lastData.client_sum.tx||0;}
+    var html='<div style="margin-bottom:12px;display:flex;gap:20px">'
+      +'<div class="modal-item"><div class="label">当日下行</div><div class="value" style="font-size:16px;font-weight:700;color:var(--primary)">'+fmt(histRx)+'</div></div>'
+      +'<div class="modal-item"><div class="label">当日上行</div><div class="value" style="font-size:16px;font-weight:700;color:var(--success)">'+fmt(histTx)+'</div></div>'
+      +'<div class="modal-item"><div class="label">当日总计</div><div class="value" style="font-size:16px;font-weight:700">'+fmt(histTotal)+'</div></div>'
+      +(isToday&&lastData&&lastData.client_sum?'<div class="modal-item"><div class="label">客户端合计</div><div class="value" style="font-size:16px;font-weight:600">'+fmt(cliRx+cliTx)+'<div style="font-size:10px;color:var(--gray-400);font-weight:400">↓'+fmt(cliRx)+' ↑'+fmt(cliTx)+'</div></div></div>':'')
+      +'</div>';
+    if(histTotal===0&&!isToday){
+      // 无归档数据（功能上线前的日期）
+      html+='<div style="text-align:center;padding:26px;color:var(--gray-400);font-size:12px">该日无协议分类记录<br><span style="font-size:11px">（分类统计自 2026-10-05 起按 nftables 计数累积）</span></div>';
+    }else{
+      var catLabel=isToday?'当日各协议累计流量分类（按 WAN 占比对齐）':'当日各协议流量分类（按 WAN 占比对齐）';
+      var catVals={};CAT_ORDER.forEach(function(c){catVals[c]=(data[c].rx||0)+(data[c].tx||0)});
+      var barHtml='<div style="display:flex;align-items:center;justify-content:center;gap:22px;flex-wrap:wrap">';
+      barHtml+=renderCatDonut(catVals,histTotal,'当日合计');
+      barHtml+='<div style="display:flex;flex-direction:column;gap:7px">';
+      CAT_ORDER.forEach(function(c){
+        var v=catVals[c];
+        if(v<=0)return;
+        barHtml+='<div class="cat-item" style="white-space:nowrap"><span class="cat-dot" style="background:'+CAT_COLORS[c]+'"></span><span style="color:var(--gray-500)">'+CAT_NAMES[c]+'</span><span style="font-weight:600;font-variant-numeric:tabular-nums">'+fmt(v)+'</span><span style="font-size:10px;color:var(--gray-400)">'+(histTotal>0?(v/histTotal*100).toFixed(1):'0.0')+'%</span></div>';
+      });
+      barHtml+='</div></div>';
+      // 详情行
+      var rows='<div style="margin-top:14px">';
+      CAT_ORDER.forEach(function(c){
+        var rx=data[c].rx||0,tx=data[c].tx||0;
+        if(rx+tx===0)return;
+        var pct=histTotal>0?((rx+tx)/histTotal*100):0;
+        rows+='<div class="cat-row">'
+          +'<span class="cat-dot" style="background:'+CAT_COLORS[c]+';width:12px;height:12px;border-radius:3px"></span>'
+          +'<span class="cat-name" style="color:'+CAT_COLORS[c]+'">'+CAT_NAMES[c]+'</span>'
+          +'<span class="cat-traffic">↓'+fmt(rx)+' ↑'+fmt(tx)+'</span>'
+          +'<span style="font-size:11px;color:var(--gray-400);margin-left:auto">'+pct.toFixed(1)+'%</span>'
+          +'<div style="flex-basis:100%;height:4px;border-radius:2px;background:var(--gray-100);margin-top:4px;overflow:hidden"><div style="height:100%;width:'+pct+'%;background:'+CAT_COLORS[c]+';border-radius:2px"></div></div>'
+          +'</div>';
+      });
+      rows+='</div>';
+      html+='<div style="font-size:11px;color:var(--gray-400);margin-bottom:6px">'+catLabel+'</div>'
+        +barHtml+rows
+      html+='<div style="font-size:10px;color:var(--gray-400);margin-top:10px">总量为 WAN 接口累计，分类按 nft 占比对齐'+(isToday&&histTotal>0?' · 客户端合计 '+fmt(cliRx+cliTx):'')+'</div>';
+    }
+    document.getElementById('modal-body').innerHTML=html;
+  }catch(e){
+    document.getElementById('modal-body').innerHTML='<div style="text-align:center;padding:20px;color:var(--danger)">加载失败: '+e.message+'</div>';
+  }
+}
+document.getElementById('modal').addEventListener('click',function(e){if(e.target===this)closeModal()});
+
+document.getElementById('btn-2s').addEventListener('click',function(){setRate(2000)});
+document.getElementById('btn-5s').addEventListener('click',function(){setRate(5000)});
+document.getElementById('btn-pause').addEventListener('click',function(){paused=!paused;this.innerHTML=paused?'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="6 4 20 12 6 20 6 4"/></svg>':'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';this.classList.toggle('active')});
+function setRate(ms){interval=ms;if(timer)clearInterval(timer);timer=setInterval(fetch_,ms);document.getElementById('refresh-rate').textContent=ms/1000;document.getElementById('btn-2s').classList.toggle('active',ms===2000);document.getElementById('btn-5s').classList.toggle('active',ms===5000);try{localStorage.setItem('sm-interval',String(ms))}catch(e){}}
+
+renderSortIcons();
+// WAN 接口选择
+document.getElementById('flow-sel').addEventListener('change',function(){
+  selWan=this.value;try{localStorage.setItem('sm-selwan',selWan)}catch(e){}
+  // 清空选定接口的历史采样以便重新开始
+  if(histFlow[selWan])histFlow[selWan]=[];saveFlow();
+  if(lastData)render(lastData);
+});
+setInterval(function(){var el=document.getElementById('sys-clock');if(el)el.textContent=new Date().toLocaleTimeString('zh-CN')},1000);
+setRate(interval);
+fetch_();
+fetchSysH();
+setInterval(fetchSysH,60000);
+</script>
+</body>
+</html>

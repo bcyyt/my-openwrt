@@ -1,0 +1,318 @@
+<%# tvbox.htm — 影视中心 · TVBox 配置（IPTV 风格美化版） %>
+<%+header%>
+<%
+local sys = require "luci.sys"
+local http = require "luci.http"
+local function trim(s) return (s or ""):gsub("^%s+", ""):gsub("%s+$", "") end
+local lan_ip = trim(sys.exec("uci -q get network.lan.ipaddr 2>/dev/null")):gsub("/%d+$", "")  -- 剥 CIDR 后缀
+if lan_ip == "" then lan_ip = (http.getenv("HTTP_HOST") or ""):match("^([^:]+)"):gsub("/%d+$", "") or "192.168.10.1" end
+local tvbox_url = "http://" .. lan_ip .. ":8901/tvbox.json"
+local web_url = "http://" .. lan_ip .. ":5244/"
+local guest_pw = trim(sys.exec("uci -q get mediahub.main.guest_pw 2>/dev/null"))
+local ol_ver = trim(sys.exec("/usr/bin/alist version 2>/dev/null | grep -m1 '^Version:' | awk '{print $2}'"))
+if ol_ver == "" then ol_ver = "-" end
+%>
+
+<script type="text/javascript">
+//<![CDATA[
+window.addEventListener('error', function(ev) {
+    var el = document.getElementById('page-err');
+    if (el) el.textContent = '页面脚本错误: ' + (ev.message || ev.type) + (ev.lineno ? ' @line ' + ev.lineno : '');
+});
+
+function byId(id) { return document.getElementById(id); }
+
+function mhAPI(action, cb) {
+    var url = '<%=luci.dispatcher.build_url("admin/services/mediahub/api")%>' + '?action=' + action;
+    fetch(url, { credentials: 'same-origin' })
+        .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+        .then(cb)
+        .catch(function(e) { cb({ code: 500, message: e.message }); });
+}
+
+function copyText(id, tipId) {
+    var el = byId(id);
+    el.focus(); el.select(); el.setSelectionRange(0, 9999);
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    if (!ok && navigator.clipboard) {
+        navigator.clipboard.writeText(el.value).then(function() { showTip(tipId, '已复制!'); })
+            .catch(function() { showTip(tipId, '复制失败，请手动选择'); });
+        return;
+    }
+    showTip(tipId, ok ? '已复制!' : '复制失败，请手动选择');
+}
+function showTip(id, text) {
+    var tip = byId(id);
+    if (tip) { tip.textContent = text; setTimeout(function() { tip.textContent = ''; }, 2000); }
+}
+
+function updateOL() {
+    if (!confirm('确定在线更新 AList？\n（按所选镜像站下载 musl 版本，服务中断约 10-30 秒）')) return;
+    var btn = byId('btn-update');
+    btn.disabled = true; btn.value = '更新中...';
+    var mirrorSel = byId('ol-mirror');
+    var mname = mirrorSel ? mirrorSel.options[mirrorSel.selectedIndex].text : '';
+    byId('update-status').innerHTML = '<span style="color:#ef6c00"><span class="mh-spinner"></span>下载安装中...（下载源: ' + mname + '，1-2 分钟）</span>';
+    mhAPI('update_alist', function(d) {
+        btn.disabled = false; btn.value = '检查并更新';
+        if (d.code === 200) {
+            byId('update-status').innerHTML =
+                '<span style="color:#2e7d32">✓ 更新成功!</span>' +
+                '<span class="mh-info" style="margin-left:8px">' + (d.message || ('旧: ' + (d.old_version || '-') + ' → 新: ' + (d.new_version || '-'))) + '</span>';
+        } else {
+            byId('update-status').innerHTML = '<span style="color:#c62828">✗ ' + (d.message || '更新失败') + '</span>';
+        }
+    });
+}
+
+function loadMirror() {
+    mhAPI('get_ol_mirror', function(d) {
+        if (d.code === 200 && d.mirror) {
+            var sel = byId('ol-mirror');
+            if (sel) sel.value = d.mirror;
+        }
+    });
+}
+
+function saveMirror() {
+    var sel = byId('ol-mirror');
+    var v = sel ? sel.value : 'auto';
+    var btn = byId('btn-save-mirror');
+    if (btn) { btn.disabled = true; }
+    mhAPI('save_ol_mirror&mirror=' + encodeURIComponent(v), function(d) {
+        if (btn) { btn.disabled = false; }
+        var tip = byId('mirror-status');
+        if (tip) {
+            tip.textContent = d.code === 200 ? '✓ 已保存' : '✗ ' + (d.message || '失败');
+            setTimeout(function() { tip.textContent = ''; }, 2000);
+        }
+    });
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', loadMirror);
+} else {
+    loadMirror();
+}
+
+//]]>
+</script>
+
+<style type="text/css">
+:root {
+    --mh-primary: #4a90d9; --mh-primary-dark: #357abd; --mh-primary-bg: #e3f2fd;
+    --mh-success: #2e7d32; --mh-success-bg: #e8f5e9; --mh-success-border: #c8e6c9;
+    --mh-card-bg: #ffffff; --mh-border: #e2e8f0; --mh-text: #334155; --mh-muted: #64748b;
+}
+.mh-page-header { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.mh-page-header h2 { margin: 0; }
+.mh-ver-badge {
+    display: inline-block;
+    background: linear-gradient(135deg, var(--mh-primary), var(--mh-primary-dark));
+    color: #fff; font-size: 12px; font-weight: 600;
+    padding: 3px 12px; border-radius: 12px;
+    box-shadow: 0 2px 6px rgba(74,144,217,.25);
+    line-height: 1.6; vertical-align: middle;
+}
+.mh-sec { margin-top: 24px; }
+.mh-sec:first-of-type { margin-top: 0; }
+.mh-sec-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.mh-sec-icon {
+    flex-shrink: 0; width: 28px; height: 28px; border-radius: 8px;
+    background: var(--mh-primary-bg); color: var(--mh-primary);
+    display: flex; align-items: center; justify-content: center;
+}
+.mh-sec-icon svg { width: 15px; height: 15px; }
+.mh-sec-title { font-size: 15px; font-weight: 600; color: #475569; }
+.mh-sec-note { font-size: 12px; color: #94a3b8; }
+.mh-sec-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+.mh-card {
+    background: var(--mh-card-bg); border: 1px solid var(--mh-border);
+    border-radius: 12px; padding: 16px 18px;
+}
+.mh-config-card { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
+.mh-config-main { flex: 1; min-width: 300px; }
+.mh-qr-side { flex-shrink: 0; text-align: center; }
+.mh-qr-side img { width: 190px; height: 190px; border: 1px solid var(--mh-border); border-radius: 10px; background: #fff; }
+.mh-qr-tip { font-size: 12px; color: #94a3b8; margin-top: 6px; }
+.mh-label { font-size: 12px; color: var(--mh-muted); margin-bottom: 6px; letter-spacing: .3px; }
+.mh-url-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.mh-url-input {
+    flex: 1; min-width: 260px; padding: 10px 14px;
+    border: 1px solid #cbd5e1; border-radius: 8px;
+    font-family: Consolas, Monaco, 'Courier New', monospace;
+    font-size: 13px; font-weight: 600; background: #f8fafc; color: var(--mh-text);
+    box-sizing: border-box;
+}
+.mh-copy-tip { font-size: 12px; color: #2e7d32; min-width: 52px; }
+.mh-info { font-size: 12px; color: #94a3b8; margin-top: 8px; line-height: 1.7; }
+.mh-arch-note {
+    display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap;
+}
+.mh-arch-item {
+    flex: 1; min-width: 200px; background: #f8fafc; border: 1px solid var(--mh-border);
+    border-radius: 10px; padding: 10px 14px; font-size: 12px; color: var(--mh-muted); line-height: 1.7;
+}
+.mh-arch-item b { color: var(--mh-text); font-size: 13px; }
+.mh-link-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+.mh-link-card {
+    display: flex; align-items: center; gap: 10px; padding: 12px 14px;
+    border: 1px solid var(--mh-border); border-radius: 10px;
+    text-decoration: none; transition: all .2s; background: var(--mh-card-bg);
+}
+.mh-link-card:hover { background: #f0f7ff; border-color: var(--mh-primary); box-shadow: 0 2px 8px rgba(74,144,217,.1); }
+.mh-link-icon {
+    flex-shrink: 0; width: 32px; height: 32px; border-radius: 8px;
+    background: var(--mh-primary-bg); color: var(--mh-primary);
+    display: flex; align-items: center; justify-content: center;
+}
+.mh-link-icon.green { color: var(--mh-success); }
+.mh-link-icon svg { width: 16px; height: 16px; }
+.mh-link-title { font-size: 14px; font-weight: 600; color: var(--mh-text); }
+.mh-link-url { font-size: 12px; color: #94a3b8; word-break: break-all; }
+.mh-pw-line {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    margin-top: 12px; font-size: 13px;
+}
+.mh-pw {
+    font-family: Consolas, Monaco, 'Courier New', monospace;
+    font-size: 15px; font-weight: 700; color: #e65100;
+    background: #fff3e0; border: 1px dashed #ffb74d;
+    padding: 4px 14px; border-radius: 8px; user-select: all; letter-spacing: 1px;
+}
+.mh-ver-line { font-size: 13px; color: var(--mh-text); }
+.mh-ver-line b { font-family: Consolas, Monaco, 'Courier New', monospace; }
+.mh-spinner {
+    display: inline-block; width: 12px; height: 12px; margin-right: 6px; vertical-align: -1px;
+    border: 2px solid #c8e0f4; border-top-color: var(--mh-primary);
+    border-radius: 50%; animation: mh-spin .8s linear infinite;
+}
+@keyframes mh-spin { to { transform: rotate(360deg); } }
+.mh-result { font-size: 13px; }
+.mh-page-footer {
+    text-align: center; color: #94a3b8; font-size: 12px;
+    margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--mh-border);
+}
+#page-err { color: #c62828; margin-top: 4px; }
+</style>
+
+<div class="mh-page-header">
+    <h2><a id="content" name="content">TVBox 配置</a></h2>
+    <span class="mh-ver-badge">影视中心</span>
+</div>
+
+<div class="mh-sec">
+    <div class="mh-sec-head">
+        <span class="mh-sec-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2" y="7" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 3v4"/><path d="M7 8l-4 4"/><path d="M17 8l4 4"/>
+            </svg>
+        </span>
+        <span class="mh-sec-title">APP 配置地址</span>
+        <span class="mh-sec-note">内网地址 · TVBox / FongMi影视 等 APP 填入这一个地址即可</span>
+    </div>
+    <div class="mh-card mh-config-card">
+        <div class="mh-config-main">
+            <div class="mh-label">配置接口地址（内网）</div>
+            <div class="mh-url-row">
+                <input type="text" id="tvbox-url" class="mh-url-input" readonly value="<%=tvbox_url%>">
+                <input type="button" class="cbi-button cbi-button-apply" value="复制" onclick="copyText('tvbox-url', 'tvbox-tip')">
+                <span id="tvbox-tip" class="mh-copy-tip"></span>
+            </div>
+            <div class="mh-arch-note">
+                <div class="mh-arch-item">
+                    <b>搜索 / 接口</b><br>
+                    端口 8901 · CMS聚合搜索 + 网盘适配<br>
+                    http://<%=lan_ip%>:8901
+                </div>
+                <div class="mh-arch-item">
+                    <b>视频流直连</b><br>
+                    端口 5244 · AList 原生（115 CDN直链 / 夸克中继）<br>
+                    http://<%=lan_ip%>:5244
+                </div>
+            </div>
+            <p class="mh-info">此地址包含「CMS聚合影院」+「网盘影视」两个站点。外网使用请改填 http://cs.bcyyt.top:8901/tvbox.json</p>
+        </div>
+        <div class="mh-qr-side">
+            <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=<%=luci.util.urlencode(tvbox_url)%>" alt="QR">
+            <div class="mh-qr-tip">扫码直接配置到 APP</div>
+        </div>
+    </div>
+</div>
+
+<div class="mh-sec">
+    <div class="mh-sec-head">
+        <span class="mh-sec-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+            </svg>
+        </span>
+        <span class="mh-sec-title">网盘网页入口</span>
+        <span class="mh-sec-note">浏览器直接看网盘影片 · 打开后输入访问密码</span>
+    </div>
+    <div class="mh-link-grid">
+        <a class="mh-link-card" href="<%=web_url%>" target="_blank">
+            <span class="mh-link-icon green">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M20 16.58A5 5 0 0 0 18 7h-1.26A8 8 0 1 0 4 15.25"/><path d="M8 16h8"/><path d="M8 20h8"/>
+                </svg>
+            </span>
+            <div>
+                <div class="mh-link-title">打开网盘网页（内网）</div>
+                <div class="mh-link-url"><%=web_url%></div>
+            </div>
+        </a>
+    </div>
+    <div class="mh-pw-line">
+        <span style="color:var(--mh-muted)">网页访问密码：</span>
+        <% if guest_pw ~= "" then %>
+        <span class="mh-pw" id="guest-pw"><%=guest_pw%></span>
+        <input type="button" class="cbi-button cbi-button-apply" value="复制密码" onclick="copyText('guest-pw', 'pw-tip')">
+        <span id="pw-tip" class="mh-copy-tip"></span>
+        <% else %>
+        <span style="color:#c62828">未设置（网盘网页当前无密码保护）</span>
+        <% end %>
+    </div>
+</div>
+
+<div class="mh-sec">
+    <div class="mh-sec-head">
+        <span class="mh-sec-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/>
+            </svg>
+        </span>
+        <span class="mh-sec-title">AList 在线更新</span>
+        <span class="mh-sec-note">按所选镜像站下载 musl 版本 · 更新期间网盘服务中断约 10-30 秒</span>
+        <span class="mh-sec-actions">
+            <input type="button" id="btn-update" class="cbi-button cbi-button-apply" value="检查并更新" onclick="updateOL()" />
+        </span>
+    </div>
+    <div class="mh-card">
+        <div class="mh-ver-line">当前版本：<b><%=ol_ver%></b></div>
+        <div style="margin-top:10px; display:flex; align-items:center; gap:8px; flex-wrap:wrap">
+            <span style="color:var(--mh-muted)">下载镜像站：</span>
+            <select id="ol-mirror" class="cbi-input-select" style="max-width:260px">
+                <option value="auto">自动（测速选最快）</option>
+                <option value="direct">GitHub 直连</option>
+                <option value="https://gh-proxy.com/">gh-proxy.com</option>
+                <option value="https://mirror.ghproxy.com/">mirror.ghproxy.com</option>
+                <option value="https://ghfast.top/">ghfast.top</option>
+                <option value="https://ghproxy.net/">ghproxy.net</option>
+                <option value="https://cf.ghproxy.cc/">cf.ghproxy.cc</option>
+                <option value="https://hub.gitmirror.com/">hub.gitmirror.com</option>
+            </select>
+            <input type="button" id="btn-save-mirror" class="cbi-button cbi-button-neutral" value="保存选择" onclick="saveMirror()" />
+            <span id="mirror-status" style="color:var(--mh-success)"></span>
+        </div>
+        <div id="update-status" style="margin-top:10px"><span class="mh-info">点击「检查并更新」升级 AList 网盘内核</span></div>
+    </div>
+</div>
+
+<div class="mh-page-footer">
+    影视中心 · 页面显示地址均为内网地址 · 外网访问请用 cs.bcyyt.top（8901 API / 5244 视频流）
+    <div id="page-err"></div>
+</div>
+
+<%+footer%>

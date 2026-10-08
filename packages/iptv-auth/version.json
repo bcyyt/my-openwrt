@@ -1,0 +1,7 @@
+{
+  "version": "2.3.8-r0",
+  "date": "2026-10-08",
+  "changelog": "打包推送至 GitHub 仓库，OTA 地址切换到 raw.githubusercontent.com/bcyyt/my-openwrt。",
+  "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth-2.3.8-r0.apk",
+  "ipk_url": ""
+}

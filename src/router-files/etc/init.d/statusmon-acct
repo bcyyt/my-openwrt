@@ -1,0 +1,23 @@
+#!/bin/sh /etc/rc.common
+# statusmon-acct — 流量分类 nft 计数规则与 cron 累计任务管理
+# 规则表 netdev/statusmon_acct、inet/statusmon_cli 由 CGI 自愈逻辑创建
+START=99
+
+start() {
+    QUERY_STRING=accumulate=1 /www/cgi-bin/statusmon >/dev/null 2>&1
+}
+
+stop() {
+    nft delete table netdev statusmon_acct 2>/dev/null
+    nft delete table inet statusmon_cli 2>/dev/null
+    rm -f /tmp/statusmon-wan.dev /tmp/statusmon-lan6.elems
+    if [ -f /etc/crontabs/root ]; then
+        sed -i '/statusmon-acct-accumulate/d' /etc/crontabs/root 2>/dev/null
+        /etc/init.d/cron reload >/dev/null 2>&1
+    fi
+}
+
+restart() {
+    stop
+    start
+}

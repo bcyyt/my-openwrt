@@ -1,0 +1,1618 @@
+#!/bin/sh
+# statusmon v4.20 — OpenWrt 系统状态数据采集 CGI
+# 部署到 /www/cgi-bin/statusmon
+# v4.1 修复：ip neigh 字段解析（MAC=$5/状态=末字段）、CPU 采样公式、
+#           conntrack 双向归并 + IPv6 地址规范化匹配、活跃客户端过滤（REACHABLE/DELAY/PROBE）
+# v4.2 修复：tx 速率解析（state 条目格式 key:rx=N,tx=M 需 sed 提取，不能用 key:tx= 匹配）、
+#           fe80:: 排除修正、接口 IPv4 兼容 PPP peer 格式（无 /掩码）
+# v4.3 修复：firewall 改用 nft fw4 规则检测（fw4 非常常驻进程）；服务列表新增 rtp2httpd
+# v4.4 变更：客户端口径与首页对齐 —— DHCP 租约为设备底册（含主机名），
+#           状态分 活跃/空闲(STALE)/离线，同设备 v4+v6 合并一行
+# v4.5 变更：新增 WAN 每日流量统计（单接口）
+# v4.6 变更：速率计算全部移至前端 —— CGI 不再计算 rx_rate/tx_rate，
+#           只返回累计字节与 timestamp，前端各页独立计算速率，
+#           避免多页面并发写 state 导致 DT 被打乱；
+#           WAN 流量统计改为多接口分别统计（pppoe-wan + wan2 等）
+# v4.7 变更：PPPoE 接口改用底层物理口计数器（UCI 查 device，逻辑口 rx 只含 IP payload 严重偏低）；
+#           协议统计改 conntrack 实时连接数（TCP 活跃=ESTABLISHED+OFFLOAD，UDP 活跃=ASSURED+OFFLOAD，外部连接）；
+#           新增 ?summary=1 / ?proto_day=YYYY-MM-DD / ?mac=MAC / ?client=IP 端点；修复客户端 b2 赋值 bug
+# v4.8 修复：CPU 使用率改为跨请求差分采样 —— BusyBox sleep 不支持小数秒，
+#           请求内 sleep 0.5 采样必然失败（日志刷屏 + 1ms 窗口致 4 核量化失真 0/25/50/75/100%）；
+#           改为与上次请求存档的 /proc/stat 计数器做差（窗口即轮询间隔约 2s），
+#           状态文件 /tmp/statusmon-cpu.state，窗口不足 1s 或回绕时沿用上次结果
+# v4.9 变更：每日流量分类改用 nftables 双向计数 —— 实测 conntrack 字节计数在 flow offload 下
+#           双向失真（长流计数冻结 / 周期冲刷重复累加），不可用于记账；
+#           nft 表 netdev/statusmon_acct：br-lan ingress(-100) 按目的端口计上行、
+#           br-lan egress(-100) 按源端口计下行，优先级抢在 flowtable(offload, prio 0) 窃取包之前，
+#           offload 流量完整计入；LAN 源/目/组播提前 return 排除内网与 rtp2httpd 本地流量；
+#           计数后 return 防止落入 other 重复计数；
+#           新增 ?accumulate=1 端点（cron 每分钟调用），主轮询路径每次同步累计，
+#           归档 /etc/statusmon/proto-YYYY-MM-DD.json（?proto_day 读取）；
+#           自愈：累计时自动确保 nft 规则表与 cron 任务存在（重启后 cron 存续，首轮即重建规则）；
+#           分类顺序修正：web(80/443/8443) 先于 video(8000-8999)，修复 8443 被区间吞没；
+#           弃用旧 /tmp/statusmon-proto-state.json conntrack 增量方案（保留 ?summary=1 实时分类供客户端弹窗）
+# v4.10 变更：温度数据源修正 —— 优先 x86_pkg_temp（内核 x86 包温度，与 LuCI 首页一致）
+#           其次 coretemp Package，修正此前误用 thermal_zone0=acpitz 主板传感器导致与首页不符；
+#           轮询开销优化（实测 112ms/次 → 目标 ≤60ms）：
+#           ① 接口表：此前每接口 10+ 进程 spawn 且每个 ethX 跑两次 uci show network，
+#              改为一次性批量读取（/proc/net/dev + sysfs glob + ip -o + uci 预取，循环内零 spawn）；
+#           ② /proc/net/snmp 协议统计 12 个 grep/echo 管道合并为单次 awk；
+#           ③ 主路径 nft 累计节流：state 距上次不足 10s 跳过（cron 仍每分钟，弹窗强制刷新）
+# v4.12 变更：流量统计重构 —— 弃用「WAN 接口按天累计」（访问驱动：页面无人访问时停摆，
+#           跨天归档中断产生黑洞日、恢复后停摆期流量混叠计入恢复日；接口计数器无历史不可追溯）；
+#           改为「协议分类月度总计」：nft 计数器口径，cron 每分钟驱动持续累计，
+#           每月 1 日 0 点跨月清零，上月归档 /etc/statusmon/month-YYYY-MM.json 备查；
+#           traffic 字段输出 {month, today, total, cats}（today 供协议弹窗对账）；
+#           ?proto_day 按日明细弹窗保留；state.json 移除 wan 字段；
+#           修复归档 JSON 解析槽位错位（旧 p[i+4]+0 取到键名字符串恒为 0 的死 bug，
+#           正确为键在 p[i] 步进 8、值在 p[i+3]/p[i+5] 且需剥离前导冒号）
+# v4.13 修复：流量统计不准 ——
+#           ① PPPoE 重拨后 pppoe-wan ifindex 变化，netdev ingress 钩子绑死旧设备，
+#              表仍在但下行计数停摆；改为检测 WAN 设备变化并只重建 dl 链（保留计数器）；
+#           ② lan6 仅收 proto kernel（fe80），漏掉 GUA/ULA proto static，IPv6 局域网
+#              互访被算作上网；改为 kernel+static 全量刷新 set；
+#           ③ 客户端流量改 inet/forward 动态 set 计数，弃用 conntrack 字节
+#              （连接过期清零导致累计严重偏小）；
+#           ④ PPPoE WAN 改回逻辑口自身计数器（物理口含 PPP 开销与非 PPP 帧，偏大）
+# v4.14 修复：本月流量总计改 WAN 接口累计（pppoe-wan /proc/net/dev，cron 持续），
+#           分类按 nft 占比对齐到 WAN 总量（HTTPS 视频/网盘仍用域名 IP set 识别）；
+#           旧口径把分类计数加总当总量，HTTPS 大量进 web，数字与运营商账单对不上
+# v4.15 修复：HTTPS 视频被算成网页 —— dnsmasq nftset 遇 CNAME/DoH 漏填 vidips，
+#           443 落到 web；改为持久化 IP + 每 5 分钟解析视频/网盘域名灌 set
+#           （须在 web 规则之前命中）。历史已计入 web 的字节无法回改，新流量按域名分类
+# v4.16 变更：新增 CPU/内存/温度 24 小时滚动曲线 —— cron 每分钟采样，
+#           工作副本 /tmp/statusmon-sys-hist.txt，持久化 /etc/statusmon/sys-hist.txt；
+#           ?sys_hist=1 返回近 24h 点列；CPU 用独立 1 分钟差分窗口，不干扰 5s 轮询
+# v4.17 修复：客户端 IPv6 只取 REACHABLE/DELAY/PROBE，丢掉邻居表 STALE 残留
+#           （关 IPv6 / 前缀轮换后旧 SLAAC 会在邻居表里挂很久）
+# v4.18 修复：协议统计 TCP 活跃被 [ASSURED] 覆盖成 0；外部连接改动态识别本机
+#           LAN/WAN/ULA 前缀（不再写死 240e:039c:2ba9:4f30）；TCP 用 $6 状态位
+#           ESTABLISHED/OFFLOAD，UDP 用 [ASSURED]/[OFFLOAD]
+# v4.19 修复：外部连接改为「原始 src 或 dst 为公网」—— NAT 后入站 src 几乎都是
+#           WAN 本机地址，旧口径会显示 0；同时覆盖 LAN 访问公网的出站连接
+# v4.20 修复：HTTPS 直播仍进网页 —— 静态 nslookup 拿不到 CDN 节点；改为
+#           dnsmasq nftset 按域名动态灌 vidips，并从 QUIC(udp443)/大流量
+#           TCP443 回填 CDN IP（须在 web 规则之前命中）
+
+echo "Content-Type: application/json"
+echo "Access-Control-Allow-Origin: *"
+echo ""
+
+STATE=/tmp/statusmon-state.json
+NOW=$(date +%s)
+
+# ===== 每日流量分类累计引擎（v4.9，nftables 计数）=====
+# 原理：nft 表 netdev/statusmon_acct 在 br-lan ingress/egress 以 -100 优先级分类计数，
+#       先于 fw4 flowtable（offload，优先级 0）窃取包，offload 流量完整计入；
+#       本函数读计数器与上次快照做差，累计到当日归档 JSON（?proto_day 读取）。
+# 自愈：规则表/缺失自动重建（计数器从 0 重计）；cron 任务缺失自动补写。
+PROTO_DIR=/etc/statusmon
+PROTO_STATE=/tmp/statusmon-proto-state.txt
+SM_TABLE=statusmon_acct
+SM_CATS="web video game dns ntp download other"
+SM_LAN_DEV=br-lan
+SM_CLI_TABLE=statusmon_cli
+SM_WAN_FILE=/tmp/statusmon-wan.dev
+SYS_HIST_TMP=/tmp/statusmon-sys-hist.txt
+SYS_HIST_FILE=/etc/statusmon/sys-hist.txt
+SYS_HIST_CPU=/tmp/statusmon-sys-hist.cpu
+SYS_HIST_FLUSH=/tmp/statusmon-sys-hist.flush
+SYS_HIST_WIN=86400
+
+_sm_wan_dev() {
+    local d
+    d=$(ifstatus wan 2>/dev/null | jsonfilter -e '@.l3_device' 2>/dev/null)
+    [ -n "$d" ] && [ -d "/sys/class/net/$d" ] && { echo "$d"; return 0; }
+    [ -d /sys/class/net/pppoe-wan ] && { echo pppoe-wan; return 0; }
+    echo "pppoe-wan"
+}
+
+_sm_lan6_elems() {
+    local e
+    e=$(ip -6 route show dev "$SM_LAN_DEV" 2>/dev/null | awk '
+      $1 ~ /^f[eE]80:/ { next }
+      $1 ~ /^ff/ { next }
+      /proto (kernel|static)/ { printf "%s, ", $1 }
+    ')
+    echo "${e}fe80::/10, ff00::/8"
+}
+
+_sm_nft_add_dl_rules() {
+    nft add rule netdev $SM_TABLE dl 'meta l4proto { tcp, udp } th sport { 8567, 8568, 8569, 6881-6889, 9921, 9922, 25565, 27015, 3478, 43793 }' counter name "game_dl" return >/dev/null 2>&1
+    nft add rule netdev $SM_TABLE dl 'meta l4proto { tcp, udp } th sport 53' counter name "dns_dl" return >/dev/null 2>&1
+    nft add rule netdev $SM_TABLE dl 'meta l4proto { tcp, udp } th sport 123' counter name "ntp_dl" return >/dev/null 2>&1
+    nft add rule netdev $SM_TABLE dl 'meta l4proto { tcp, udp } th sport 51413' counter name "download_dl" return >/dev/null 2>&1
+    nft add rule netdev $SM_TABLE dl ip saddr @vidips4 counter name "video_dl" return >/dev/null 2>&1
+    nft add rule netdev $SM_TABLE dl ip6 saddr @vidips6 counter name "video_dl" return >/dev/null 2>&1
+    nft add rule netdev $SM_TABLE dl ip saddr @dlips4 counter name "download_dl" return >/dev/null 2>&1
+    nft add rule netdev $SM_TABLE dl ip6 saddr @dlips6 counter name "download_dl" return >/dev/null 2>&1
+    nft add rule netdev $SM_TABLE dl 'meta l4proto tcp th sport { 80, 443, 8443 }' counter name "web_dl" return >/dev/null 2>&1
+    nft add rule netdev $SM_TABLE dl 'meta l4proto tcp th sport { 1935, 8000-8999 }' counter name "video_dl" return >/dev/null 2>&1
+    nft add rule netdev $SM_TABLE dl 'meta l4proto udp th sport { 443, 1935, 8000-8999 }' counter name "video_dl" return >/dev/null 2>&1
+    nft add rule netdev $SM_TABLE dl counter name "other_dl" return >/dev/null 2>&1
+}
+
+_sm_nft_cli_ensure() {
+    nft list table inet $SM_CLI_TABLE >/dev/null 2>&1 && return 0
+    nft add table inet $SM_CLI_TABLE >/dev/null 2>&1 || return 1
+    nft add set inet $SM_CLI_TABLE ul4 '{ type ipv4_addr; flags dynamic,timeout; timeout 1d; counter; }' >/dev/null 2>&1
+    nft add set inet $SM_CLI_TABLE dl4 '{ type ipv4_addr; flags dynamic,timeout; timeout 1d; counter; }' >/dev/null 2>&1
+    nft add set inet $SM_CLI_TABLE ul6 '{ type ipv6_addr; flags dynamic,timeout; timeout 1d; counter; }' >/dev/null 2>&1
+    nft add set inet $SM_CLI_TABLE dl6 '{ type ipv6_addr; flags dynamic,timeout; timeout 1d; counter; }' >/dev/null 2>&1
+    nft add chain inet $SM_CLI_TABLE smfwd '{ type filter hook forward priority -150; policy accept; }' >/dev/null 2>&1
+    nft add rule inet $SM_CLI_TABLE smfwd iifname "$SM_LAN_DEV" oifname != "$SM_LAN_DEV" oifname != "docker0" ip saddr 192.168.10.0/24 add @ul4 '{ ip saddr }' >/dev/null 2>&1
+    nft add rule inet $SM_CLI_TABLE smfwd iifname != "$SM_LAN_DEV" iifname != "docker0" oifname "$SM_LAN_DEV" ip daddr 192.168.10.0/24 add @dl4 '{ ip daddr }' >/dev/null 2>&1
+    nft add rule inet $SM_CLI_TABLE smfwd iifname "$SM_LAN_DEV" oifname != "$SM_LAN_DEV" oifname != "docker0" ip6 saddr != fe80::/10 add @ul6 '{ ip6 saddr }' >/dev/null 2>&1
+    nft add rule inet $SM_CLI_TABLE smfwd iifname != "$SM_LAN_DEV" iifname != "docker0" oifname "$SM_LAN_DEV" ip6 daddr != fe80::/10 add @dl6 '{ ip6 daddr }' >/dev/null 2>&1
+}
+
+_sm_nft_refresh_lan6() {
+    local V6EL OLDV6
+    V6EL=$(_sm_lan6_elems)
+    OLDV6=$(cat /tmp/statusmon-lan6.elems 2>/dev/null)
+    [ "$V6EL" = "$OLDV6" ] && return 0
+    nft flush set netdev $SM_TABLE lan6 >/dev/null 2>&1
+    nft add element netdev $SM_TABLE lan6 '{ '"$(echo "$V6EL" | sed 's/, *$//')"' }' >/dev/null 2>&1
+    echo "$V6EL" > /tmp/statusmon-lan6.elems 2>/dev/null
+}
+
+_sm_nft_ensure() {
+    local SM_WAN_DEV CUR_WAN NEED_FULL=0 CUR_IFIDX OLD_BIND OLD_IFIDX NEED_REBIND
+    SM_WAN_DEV=$(_sm_wan_dev)
+    _sm_nft_cli_ensure
+    if nft list table netdev $SM_TABLE >/dev/null 2>&1; then
+        if ! nft list chain netdev $SM_TABLE dl >/dev/null 2>&1; then
+            nft delete table netdev $SM_TABLE >/dev/null 2>&1
+            NEED_FULL=1
+        fi
+    else
+        NEED_FULL=1
+    fi
+    if [ "$NEED_FULL" = "0" ]; then
+        CUR_WAN=$(nft list chain netdev $SM_TABLE dl 2>/dev/null | awk '/hook ingress device/{
+            for(i=1;i<=NF;i++) if($i=="device"){ gsub(/"/,"",$(i+1)); print $(i+1); exit }
+        }')
+        CUR_IFIDX=$(cat /sys/class/net/"$SM_WAN_DEV"/ifindex 2>/dev/null)
+        OLD_BIND=$(cat "$SM_WAN_FILE" 2>/dev/null)
+        OLD_IFIDX=${OLD_BIND##* }
+        NEED_REBIND=0
+        [ -n "$CUR_WAN" ] && [ "$CUR_WAN" != "$SM_WAN_DEV" ] && NEED_REBIND=1
+        [ -n "$OLD_IFIDX" ] && [ -n "$CUR_IFIDX" ] && [ "$CUR_IFIDX" != "$OLD_IFIDX" ] && NEED_REBIND=1
+        if [ "$NEED_REBIND" = "1" ]; then
+            nft delete chain netdev $SM_TABLE dl >/dev/null 2>&1
+            nft add chain netdev $SM_TABLE dl '{ type filter hook ingress device "'"$SM_WAN_DEV"'" priority -100; policy accept; }' >/dev/null 2>&1
+            _sm_nft_add_dl_rules
+        fi
+        _sm_nft_refresh_lan6
+        echo "$SM_WAN_DEV $CUR_IFIDX" > "$SM_WAN_FILE" 2>/dev/null
+        return 0
+    fi
+    nft add table netdev $SM_TABLE >/dev/null 2>&1 || return 1
+    local c d LAN4 V6EL
+    for c in $SM_CATS; do for d in ul dl; do nft add counter netdev $SM_TABLE ${c}_${d} >/dev/null 2>&1; done; done
+    LAN4=$(ip -4 route show dev $SM_LAN_DEV 2>/dev/null | awk '/proto kernel/{print $1; exit}')
+    [ -n "$LAN4" ] || LAN4="192.168.10.0/24"
+    nft add set netdev $SM_TABLE lanv4 '{ type ipv4_addr; flags interval; elements = { '"$LAN4"', 224.0.0.0/4, 255.255.255.255 }; }' >/dev/null 2>&1
+    V6EL=$(_sm_lan6_elems)
+    nft add set netdev $SM_TABLE lan6 '{ type ipv6_addr; flags interval; elements = { '"$(echo "$V6EL" | sed 's/, *$//')"' }; }' >/dev/null 2>&1
+    nft add set netdev $SM_TABLE vidips4 '{ type ipv4_addr; }' >/dev/null 2>&1
+    nft add set netdev $SM_TABLE vidips6 '{ type ipv6_addr; }' >/dev/null 2>&1
+    nft add set netdev $SM_TABLE dlips4 '{ type ipv4_addr; }' >/dev/null 2>&1
+    nft add set netdev $SM_TABLE dlips6 '{ type ipv6_addr; }' >/dev/null 2>&1
+    nft add chain netdev $SM_TABLE ul '{ type filter hook ingress device "'"$SM_LAN_DEV"'" priority -100; policy accept; }' >/dev/null 2>&1
+    nft add chain netdev $SM_TABLE dl '{ type filter hook ingress device "'"$SM_WAN_DEV"'" priority -100; policy accept; }' >/dev/null 2>&1
+    nft add rule netdev $SM_TABLE ul ip daddr @lanv4 return >/dev/null 2>&1
+    nft add rule netdev $SM_TABLE ul ip6 daddr @lan6 return >/dev/null 2>&1
+    # v4.10: WAN ingress 无需排除 LAN 源地址 >/dev/null 2>&1
+    # v4.10: WAN ingress 无需排除 LAN IPv6 源地址 >/dev/null 2>&1
+    # 分类顺序：game → dns → ntp → download(51413) → 域名IP(vidips/dlips) → web(80/443/8443 tcp)
+    #           → video(1935,8000-8999 + QUIC udp443) → other
+    # 上行按目的端口，下行按源端口；计数后 return 防止落入 other 重复计数
+    nft add rule netdev $SM_TABLE ul 'meta l4proto { tcp, udp } th dport { 8567, 8568, 8569, 6881-6889, 9921, 9922, 25565, 27015, 3478, 43793 }' counter name "game_ul" return >/dev/null 2>&1
+    nft add rule netdev $SM_TABLE dl 'meta l4proto { tcp, udp } th sport { 8567, 8568, 8569, 6881-6889, 9921, 9922, 25565, 27015, 3478, 43793 }' counter name "game_dl" return >/dev/null 2>&1
+    nft add rule netdev $SM_TABLE ul 'meta l4proto { tcp, udp } th dport 53' counter name "dns_ul" return >/dev/null 2>&1
+    nft add rule netdev $SM_TABLE dl 'meta l4proto { tcp, udp } th sport 53' counter name "dns_dl" return >/dev/null 2>&1
+    nft add rule netdev $SM_TABLE ul 'meta l4proto { tcp, udp } th dport 123' counter name "ntp_ul" return >/dev/null 2>&1
+    nft add rule netdev $SM_TABLE dl 'meta l4proto { tcp, udp } th sport 123' counter name "ntp_dl" return >/dev/null 2>&1
+    nft add rule netdev $SM_TABLE ul 'meta l4proto { tcp, udp } th dport 51413' counter name "download_ul" return >/dev/null 2>&1
+    nft add rule netdev $SM_TABLE dl 'meta l4proto { tcp, udp } th sport 51413' counter name "download_dl" return >/dev/null 2>&1
+    # v4.12 域名优先分类（须在 web 之前命中）
+    nft add rule netdev $SM_TABLE ul ip daddr @vidips4 counter name "video_ul" return >/dev/null 2>&1
+    nft add rule netdev $SM_TABLE ul ip6 daddr @vidips6 counter name "video_ul" return >/dev/null 2>&1
+    nft add rule netdev $SM_TABLE ul ip daddr @dlips4 counter name "download_ul" return >/dev/null 2>&1
+    nft add rule netdev $SM_TABLE ul ip6 daddr @dlips6 counter name "download_ul" return >/dev/null 2>&1
+    nft add rule netdev $SM_TABLE dl ip saddr @vidips4 counter name "video_dl" return >/dev/null 2>&1
+    nft add rule netdev $SM_TABLE dl ip6 saddr @vidips6 counter name "video_dl" return >/dev/null 2>&1
+    nft add rule netdev $SM_TABLE dl ip saddr @dlips4 counter name "download_dl" return >/dev/null 2>&1
+    nft add rule netdev $SM_TABLE dl ip6 saddr @dlips6 counter name "download_dl" return >/dev/null 2>&1
+    # v4.12：web 仅 TCP；QUIC(udp 443) 为视频 App 实际载体，归 video
+    nft add rule netdev $SM_TABLE ul 'meta l4proto tcp th dport { 80, 443, 8443 }' counter name "web_ul" return >/dev/null 2>&1
+    nft add rule netdev $SM_TABLE dl 'meta l4proto tcp th sport { 80, 443, 8443 }' counter name "web_dl" return >/dev/null 2>&1
+    nft add rule netdev $SM_TABLE ul 'meta l4proto tcp th dport { 1935, 8000-8999 }' counter name "video_ul" return >/dev/null 2>&1
+    nft add rule netdev $SM_TABLE dl 'meta l4proto tcp th sport { 1935, 8000-8999 }' counter name "video_dl" return >/dev/null 2>&1
+    nft add rule netdev $SM_TABLE ul 'meta l4proto udp th dport { 443, 1935, 8000-8999 }' counter name "video_ul" return >/dev/null 2>&1
+    nft add rule netdev $SM_TABLE dl 'meta l4proto udp th sport { 443, 1935, 8000-8999 }' counter name "video_dl" return >/dev/null 2>&1
+    nft add rule netdev $SM_TABLE ul 'ether type { ip, ip6 }' counter name "other_ul" return >/dev/null 2>&1
+    nft add rule netdev $SM_TABLE dl counter name "other_dl" return >/dev/null 2>&1
+    echo "$SM_WAN_DEV $(cat /sys/class/net/"$SM_WAN_DEV"/ifindex 2>/dev/null)" > "$SM_WAN_FILE" 2>/dev/null
+    _sm_sets_restore
+    return 0
+}
+
+_sm_sets_dump() {
+    nft list set netdev $SM_TABLE "$1" 2>/dev/null | tr ',{}' '\n' | awk '{
+      gsub(/^[ \t]+|[ \t]+$/, "")
+      if($0 ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/) print $0
+      else if($0 ~ /^[0-9a-fA-F:]+$/ && index($0,":")) print $0
+    }'
+}
+
+_sm_sets_restore() {
+    local f el
+    mkdir -p "$PROTO_DIR" 2>/dev/null
+    for f in vidips4 vidips6 dlips4 dlips6; do
+        [ -s "$PROTO_DIR/$f.txt" ] || continue
+        el=$(awk 'NF && !seen[$0]++{printf "%s, ", $0}' "$PROTO_DIR/$f.txt")
+        [ -n "$el" ] && nft add element netdev $SM_TABLE $f '{ '"$(echo "$el" | sed 's/, *$//')"' }' >/dev/null 2>&1
+    done
+}
+
+_sm_sets_save() {
+    local f
+    mkdir -p "$PROTO_DIR" 2>/dev/null
+    for f in vidips4 vidips6 dlips4 dlips6; do
+        _sm_sets_dump "$f" | awk 'NF && !seen[$0]++' > "$PROTO_DIR/$f.txt"
+    done
+}
+
+_sm_resolve_hosts() {
+    local h
+    for h in $1; do
+        nslookup "$h" 127.0.0.1 2>/dev/null
+    done | awk '
+      /^Address:/{
+        a=$2
+        if(a=="") next
+        if(a ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/){
+          if(a ~ /^10\./ || a ~ /^192\.168\./ || a ~ /^127\./ || a ~ /^169\.254\./) next
+          if(a ~ /^172\.(1[6-9]|2[0-9]|3[01])\./) next
+          print a; next
+        }
+        if(a ~ /:/ && a !~ /\./){
+          if(a ~ /^[fF][eE]80:/ || a ~ /^[fF][cCdD]/ || a ~ /^::1$/) next
+          print a
+        }
+      }'
+}
+
+_sm_sets_add_ips() {
+    local set=$1 v4="" v6="" ip
+    while read -r ip; do
+        [ -z "$ip" ] && continue
+        case "$ip" in
+            *:*) v6="$v6$ip, " ;;
+            *) v4="$v4$ip, " ;;
+        esac
+    done
+    [ -n "$v4" ] && nft add element netdev $SM_TABLE ${set}4 '{ '"$(echo "$v4" | sed 's/, *$//')"' }' >/dev/null 2>&1
+    [ -n "$v6" ] && nft add element netdev $SM_TABLE ${set}6 '{ '"$(echo "$v6" | sed 's/, *$//')"' }' >/dev/null 2>&1
+}
+
+_sm_nftset_conf() {
+    local dir conf
+    dir=$(awk -F= '/^conf-dir=/{print $2; exit}' /var/etc/dnsmasq.conf* 2>/dev/null)
+    [ -n "$dir" ] || dir=/tmp/dnsmasq.cfg01411c.d
+    dir=${dir%%,*}
+    mkdir -p "$dir" 2>/dev/null
+    conf=$dir/statusmon-nftset.conf
+    cat > "$conf.new" << 'EOF'
+nftset=/bilibili.com/4#netdev#statusmon_acct#vidips4,6#netdev#statusmon_acct#vidips6
+nftset=/bilivideo.com/4#netdev#statusmon_acct#vidips4,6#netdev#statusmon_acct#vidips6
+nftset=/bilivideo.cn/4#netdev#statusmon_acct#vidips4,6#netdev#statusmon_acct#vidips6
+nftset=/hdslb.com/4#netdev#statusmon_acct#vidips4,6#netdev#statusmon_acct#vidips6
+nftset=/biliapi.net/4#netdev#statusmon_acct#vidips4,6#netdev#statusmon_acct#vidips6
+nftset=/biliapi.com/4#netdev#statusmon_acct#vidips4,6#netdev#statusmon_acct#vidips6
+nftset=/b23.tv/4#netdev#statusmon_acct#vidips4,6#netdev#statusmon_acct#vidips6
+nftset=/acfun.cn/4#netdev#statusmon_acct#vidips4,6#netdev#statusmon_acct#vidips6
+nftset=/douyin.com/4#netdev#statusmon_acct#vidips4,6#netdev#statusmon_acct#vidips6
+nftset=/douyinvod.com/4#netdev#statusmon_acct#vidips4,6#netdev#statusmon_acct#vidips6
+nftset=/douyinstatic.com/4#netdev#statusmon_acct#vidips4,6#netdev#statusmon_acct#vidips6
+nftset=/iesdouyin.com/4#netdev#statusmon_acct#vidips4,6#netdev#statusmon_acct#vidips6
+nftset=/amemv.com/4#netdev#statusmon_acct#vidips4,6#netdev#statusmon_acct#vidips6
+nftset=/snssdk.com/4#netdev#statusmon_acct#vidips4,6#netdev#statusmon_acct#vidips6
+nftset=/byteimg.com/4#netdev#statusmon_acct#vidips4,6#netdev#statusmon_acct#vidips6
+nftset=/pstatp.com/4#netdev#statusmon_acct#vidips4,6#netdev#statusmon_acct#vidips6
+nftset=/ixigua.com/4#netdev#statusmon_acct#vidips4,6#netdev#statusmon_acct#vidips6
+nftset=/toutiaoimg.com/4#netdev#statusmon_acct#vidips4,6#netdev#statusmon_acct#vidips6
+nftset=/ibytedtos.com/4#netdev#statusmon_acct#vidips4,6#netdev#statusmon_acct#vidips6
+nftset=/tiktok.com/4#netdev#statusmon_acct#vidips4,6#netdev#statusmon_acct#vidips6
+nftset=/tiktokcdn.com/4#netdev#statusmon_acct#vidips4,6#netdev#statusmon_acct#vidips6
+nftset=/iqiyi.com/4#netdev#statusmon_acct#vidips4,6#netdev#statusmon_acct#vidips6
+nftset=/iqiyipic.com/4#netdev#statusmon_acct#vidips4,6#netdev#statusmon_acct#vidips6
+nftset=/qiyi.com/4#netdev#statusmon_acct#vidips4,6#netdev#statusmon_acct#vidips6
+nftset=/qiyipic.com/4#netdev#statusmon_acct#vidips4,6#netdev#statusmon_acct#vidips6
+nftset=/youku.com/4#netdev#statusmon_acct#vidips4,6#netdev#statusmon_acct#vidips6
+nftset=/ykimg.com/4#netdev#statusmon_acct#vidips4,6#netdev#statusmon_acct#vidips6
+nftset=/video.qq.com/4#netdev#statusmon_acct#vidips4,6#netdev#statusmon_acct#vidips6
+nftset=/v.qq.com/4#netdev#statusmon_acct#vidips4,6#netdev#statusmon_acct#vidips6
+nftset=/vlong.qq.com/4#netdev#statusmon_acct#vidips4,6#netdev#statusmon_acct#vidips6
+nftset=/tencentvideo.com/4#netdev#statusmon_acct#vidips4,6#netdev#statusmon_acct#vidips6
+nftset=/vqq.com/4#netdev#statusmon_acct#vidips4,6#netdev#statusmon_acct#vidips6
+nftset=/mgtv.com/4#netdev#statusmon_acct#vidips4,6#netdev#statusmon_acct#vidips6
+nftset=/hitv.com/4#netdev#statusmon_acct#vidips4,6#netdev#statusmon_acct#vidips6
+nftset=/huya.com/4#netdev#statusmon_acct#vidips4,6#netdev#statusmon_acct#vidips6
+nftset=/mszxyun.com/4#netdev#statusmon_acct#vidips4,6#netdev#statusmon_acct#vidips6
+nftset=/douyu.com/4#netdev#statusmon_acct#vidips4,6#netdev#statusmon_acct#vidips6
+nftset=/douyucdn.cn/4#netdev#statusmon_acct#vidips4,6#netdev#statusmon_acct#vidips6
+nftset=/douyucdn.com/4#netdev#statusmon_acct#vidips4,6#netdev#statusmon_acct#vidips6
+nftset=/kuaishou.com/4#netdev#statusmon_acct#vidips4,6#netdev#statusmon_acct#vidips6
+nftset=/yximgs.com/4#netdev#statusmon_acct#vidips4,6#netdev#statusmon_acct#vidips6
+nftset=/kwimgs.com/4#netdev#statusmon_acct#vidips4,6#netdev#statusmon_acct#vidips6
+nftset=/gifshow.com/4#netdev#statusmon_acct#vidips4,6#netdev#statusmon_acct#vidips6
+nftset=/youtube.com/4#netdev#statusmon_acct#vidips4,6#netdev#statusmon_acct#vidips6
+nftset=/youtu.be/4#netdev#statusmon_acct#vidips4,6#netdev#statusmon_acct#vidips6
+nftset=/googlevideo.com/4#netdev#statusmon_acct#vidips4,6#netdev#statusmon_acct#vidips6
+nftset=/ytimg.com/4#netdev#statusmon_acct#vidips4,6#netdev#statusmon_acct#vidips6
+nftset=/gvt1.com/4#netdev#statusmon_acct#vidips4,6#netdev#statusmon_acct#vidips6
+nftset=/bilibili.tv/4#netdev#statusmon_acct#vidips4,6#netdev#statusmon_acct#vidips6
+nftset=/migu.cn/4#netdev#statusmon_acct#vidips4,6#netdev#statusmon_acct#vidips6
+nftset=/cmvideo.cn/4#netdev#statusmon_acct#vidips4,6#netdev#statusmon_acct#vidips6
+nftset=/pan.baidu.com/4#netdev#statusmon_acct#dlips4,6#netdev#statusmon_acct#dlips6
+nftset=/baidupcs.com/4#netdev#statusmon_acct#dlips4,6#netdev#statusmon_acct#dlips6
+nftset=/pcs.baidu.com/4#netdev#statusmon_acct#dlips4,6#netdev#statusmon_acct#dlips6
+nftset=/aliyundrive.com/4#netdev#statusmon_acct#dlips4,6#netdev#statusmon_acct#dlips6
+nftset=/alipan.com/4#netdev#statusmon_acct#dlips4,6#netdev#statusmon_acct#dlips6
+nftset=/quark.cn/4#netdev#statusmon_acct#dlips4,6#netdev#statusmon_acct#dlips6
+nftset=/123pan.com/4#netdev#statusmon_acct#dlips4,6#netdev#statusmon_acct#dlips6
+nftset=/123pan.cn/4#netdev#statusmon_acct#dlips4,6#netdev#statusmon_acct#dlips6
+nftset=/115.com/4#netdev#statusmon_acct#dlips4,6#netdev#statusmon_acct#dlips6
+nftset=/drive.uc.cn/4#netdev#statusmon_acct#dlips4,6#netdev#statusmon_acct#dlips6
+nftset=/cloud.189.cn/4#netdev#statusmon_acct#dlips4,6#netdev#statusmon_acct#dlips6
+EOF
+    if [ ! -f "$conf" ] || ! cmp -s "$conf.new" "$conf" 2>/dev/null; then
+        mv -f "$conf.new" "$conf"
+        killall -HUP dnsmasq >/dev/null 2>&1
+    else
+        rm -f "$conf.new"
+    fi
+}
+
+_sm_sets_harvest() {
+    [ -f /proc/net/nf_conntrack ] || return 0
+    awk '
+      BEGIN{
+        skip["223.5.5.5"]=1; skip["223.6.6.6"]=1; skip["8.8.8.8"]=1; skip["8.8.4.4"]=1
+        skip["1.1.1.1"]=1; skip["1.0.0.1"]=1; skip["114.114.114.114"]=1
+        skip["119.29.29.29"]=1; skip["180.76.76.76"]=1; skip["9.9.9.9"]=1
+      }
+      {
+        p=$3; d1=""; dport=""; b1=0; b2=0; pk=0
+        for(i=1;i<=NF;i++){
+          if($i~/^dst=/&&d1=="") d1=substr($i,5)
+          if($i~/^dport=/&&dport=="") dport=substr($i,7)
+          if($i~/^bytes=/){ if(!b1) b1=substr($i,7)+0; else b2=substr($i,7)+0 }
+          if($i~/^packets=/) pk+=substr($i,9)+0
+        }
+        if(d1==""||dport!="443") next
+        if(skip[d1]) next
+        if(d1 ~ /^10\./ || d1 ~ /^192\.168\./ || d1 ~ /^127\./ || d1 ~ /^169\.254\./) next
+        if(d1 ~ /^172\.(1[6-9]|2[0-9]|3[01])\./) next
+        if(d1 ~ /^100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\./) next
+        if(d1 ~ /^[fF][eE]80:/ || d1 ~ /^[fF][cCdD]/ || d1=="::1") next
+        bytes=b1+b2
+        if(p=="udp") print d1
+        else if(p=="tcp" && (bytes>=262144 || pk>=200)) print d1
+      }
+    ' /proc/net/nf_conntrack | _sm_sets_add_ips vidips
+}
+
+_sm_sets_seed() {
+    local stamp=/tmp/statusmon-seed.ts last=0
+    last=$(cat "$stamp" 2>/dev/null || echo 0)
+    _sm_nftset_conf
+    _sm_sets_harvest
+    [ $((NOW - last)) -lt 300 ] && { _sm_sets_save; return 0; }
+    echo "$NOW" > "$stamp"
+    local VID_HOSTS="www.bilibili.com api.bilibili.com live.bilibili.com upos-sz-mirrorcos.bilivideo.com upos-sz-mirrorhw.bilivideo.com upos-sz-estghw.bilivideo.com upos-sz-mirrorali.bilivideo.com i0.hdslb.com i1.hdslb.com i2.hdslb.com www.douyin.com v3-web.douyinvod.com lf3-cdn-tos.douyinstatic.com www.iqiyi.com cache.video.iqiyi.com v.youku.com video.qq.com www.mgtv.com www.huya.com www.douyu.com live.kuaishou.com www.youtube.com googlevideo.com"
+    local DL_HOSTS="pan.baidu.com d.pcs.baidu.com www.aliyundrive.com www.alipan.com pan.quark.cn cloud.189.cn www.123pan.com 115.com drive.uc.cn"
+    _sm_sets_restore
+    _sm_resolve_hosts "$VID_HOSTS" | _sm_sets_add_ips vidips
+    _sm_resolve_hosts "$DL_HOSTS" | _sm_sets_add_ips dlips
+    _sm_sets_save
+}
+
+_sm_cron_ensure() {
+    grep -q 'statusmon-acct-accumulate' /etc/crontabs/root 2>/dev/null && return 0
+    mkdir -p /etc/crontabs 2>/dev/null
+    touch /etc/crontabs/root 2>/dev/null
+    echo '* * * * * QUERY_STRING=accumulate=1 /www/cgi-bin/statusmon >/dev/null 2>&1 # statusmon-acct-accumulate' >> /etc/crontabs/root
+    /etc/init.d/cron reload >/dev/null 2>&1
+}
+
+# v4.16：CPU/内存/温度 24h 滚动采样（cron 每分钟，独立 CPU 窗口）
+_sm_sys_hist_cpu() {
+    local tot idl pt pi pu dt di usage=0
+    read -r _ u n s i w q sq st _ _ < /proc/stat 2>/dev/null
+    [ -z "$i" ] && { echo 0; return; }
+    tot=$((u + n + s + i + w + q + sq + st))
+    idl=$((i + w))
+    pt=0; pi=0; pu=0
+    [ -f "$SYS_HIST_CPU" ] && read -r pt pi pu < "$SYS_HIST_CPU" 2>/dev/null
+    case "$pt" in ''|*[!0-9]*) pt=0 ;; esac
+    case "$pi" in ''|*[!0-9]*) pi=0 ;; esac
+    case "$pu" in ''|*[!0-9]*) pu=0 ;; esac
+    dt=$((tot - pt))
+    di=$((idl - pi))
+    if [ "$pt" -eq 0 ] || [ "$dt" -le 0 ]; then
+        usage=$pu
+    else
+        usage=$(( (dt - di) * 100 / dt ))
+        [ "$usage" -lt 0 ] && usage=0
+        [ "$usage" -gt 100 ] && usage=100
+    fi
+    printf '%s %s %s\n' "$tot" "$idl" "$usage" > "$SYS_HIST_CPU.$$" 2>/dev/null && mv -f "$SYS_HIST_CPU.$$" "$SYS_HIST_CPU" 2>/dev/null
+    echo "$usage"
+}
+
+_sm_sys_hist_temp() {
+    local t z h
+    for z in /sys/class/thermal/thermal_zone*; do
+        [ -f "$z/type" ] && [ "$(cat "$z/type" 2>/dev/null)" = "x86_pkg_temp" ] && [ -f "$z/temp" ] && {
+            t=$(cat "$z/temp" 2>/dev/null)
+            [ -n "$t" ] && { awk -v v="$t" 'BEGIN{printf "%.1f", v/1000}'; return; }
+        }
+    done
+    for h in /sys/class/hwmon/hwmon*; do
+        [ -f "$h/name" ] && [ "$(cat "$h/name" 2>/dev/null)" = "coretemp" ] && [ -f "$h/temp1_input" ] && {
+            t=$(cat "$h/temp1_input" 2>/dev/null)
+            [ -n "$t" ] && { awk -v v="$t" 'BEGIN{printf "%.1f", v/1000}'; return; }
+        }
+    done
+    echo "0"
+}
+
+_sm_sys_hist_mem() {
+    awk '
+      /^MemTotal:/{t=$2}
+      /^MemAvailable:/{a=$2}
+      END{if(t>0) printf "%d", int((t-a)*100/t+0.5); else print 0}
+    ' /proc/meminfo 2>/dev/null
+}
+
+sys_hist_sample() {
+    local cpu mem temp cut lastf first=0
+    mkdir -p "$PROTO_DIR" 2>/dev/null
+    [ -s "$SYS_HIST_TMP" ] || { [ -s "$SYS_HIST_FILE" ] && cp -f "$SYS_HIST_FILE" "$SYS_HIST_TMP" 2>/dev/null; }
+    [ -f "$SYS_HIST_CPU" ] || first=1
+    cpu=$(_sm_sys_hist_cpu)
+    mem=$(_sm_sys_hist_mem)
+    temp=$(_sm_sys_hist_temp)
+    cpu=${cpu:-0}; mem=${mem:-0}; temp=${temp:-0}
+    [ "$first" = 1 ] && return 0
+    cut=$((NOW - SYS_HIST_WIN))
+    {
+        [ -s "$SYS_HIST_TMP" ] && awk -v cut="$cut" '$1+0>=cut{print}' "$SYS_HIST_TMP"
+        printf '%s %s %s %s\n' "$NOW" "$cpu" "$mem" "$temp"
+    } > "$SYS_HIST_TMP.new" 2>/dev/null
+    mv -f "$SYS_HIST_TMP.new" "$SYS_HIST_TMP" 2>/dev/null
+    lastf=$(cat "$SYS_HIST_FLUSH" 2>/dev/null || echo 0)
+    case "$lastf" in ''|*[!0-9]*) lastf=0 ;; esac
+    if [ $((NOW - lastf)) -ge 300 ]; then
+        cp -f "$SYS_HIST_TMP" "$SYS_HIST_FILE" 2>/dev/null
+        echo "$NOW" > "$SYS_HIST_FLUSH"
+    fi
+}
+
+sys_hist_json() {
+    local f="$SYS_HIST_TMP"
+    [ -s "$f" ] || f="$SYS_HIST_FILE"
+    [ -s "$f" ] || { echo '{"points":[]}'; return; }
+    awk -v cut="$((NOW - SYS_HIST_WIN))" '
+      BEGIN{print "{\"points\":["}
+      $1+0>=cut{
+        if(n++) printf ","
+        printf "{\"t\":%d,\"c\":%d,\"m\":%d,\"p\":%s}", $1+0, $2+0, $3+0, ($4==""?"0":$4)
+      }
+      END{print "]}"}
+    ' "$f"
+}
+
+# $1 = force（1 = 强制刷写今日归档，供 ?proto_day 弹窗打开时用）
+proto_accumulate() {
+    if command -v flock >/dev/null 2>&1; then
+        exec 9>/tmp/statusmon-proto.lock
+        # busybox flock 无 -w 参数，用 timeout 包裹实现 10s 超时；超时则放弃本次防孤儿堆积
+        timeout 10 flock -x 9 2>/dev/null || return 1
+    fi
+    _sm_nft_ensure
+    _sm_cron_ensure
+    TODAY=$(date +%F)
+    THIS_MONTH=$(date +%Y-%m)
+    mkdir -p "$PROTO_DIR" 2>/dev/null
+    ARCHF="$PROTO_DIR/proto-$TODAY.json"
+    [ -s "$ARCHF" ] || ARCHF=/dev/null
+    MARCHF="$PROTO_DIR/month-$THIS_MONTH.json"
+    [ -s "$MARCHF" ] || MARCHF=/dev/null
+    [ -s "$PROTO_STATE" ] || : > "$PROTO_STATE"
+    rm -f "$PROTO_STATE.new"
+    nft list counters table netdev $SM_TABLE 2>/dev/null | awk \
+      -v STATEF="$PROTO_STATE" -v ARCHF="$ARCHF" -v NEWSTATE="$PROTO_STATE.new" \
+      -v TODAY="$TODAY" -v NOWS="$NOW" -v ARCHDIR="$PROTO_DIR" \
+      -v MARCHF="$MARCHF" -v THIS_MONTH="$THIS_MONTH" \
+      -v FLUSH_INT=30 -v FORCE="${1:-0}" '
+function wr_json(day, rx, tx,   f, i, c, out, jc) {
+  f = ARCHDIR "/proto-" day ".json"
+  out = "{"; split("video game web download dns ntp other", jc, " ")
+  for (i = 1; i <= 7; i++) { c = jc[i]; if (i > 1) out = out ","
+    out = out "\"" c "\":{\"rx\":" rx[c]+0 ",\"tx\":" tx[c]+0 ",\"conn\":0}" }
+  out = out "}"
+  print out > f
+}
+function wr_month(mon, rx, tx,   f, i, c, out, jc) {
+  f = ARCHDIR "/month-" mon ".json"
+  out = "{"; split("video game web download dns ntp other", jc, " ")
+  for (i = 1; i <= 7; i++) { c = jc[i]; if (i > 1) out = out ","
+    out = out "\"" c "\":{\"rx\":" rx[c]+0 ",\"tx\":" tx[c]+0 ",\"conn\":0}" }
+  out = out "}"
+  print out > f
+}
+FILENAME == ARCHF && ARCHF != "/dev/null" {
+  n = split($0, p, "\"")
+  for (i = 2; i + 5 <= n; i += 8) { arx[p[i]] = substr(p[i+3],2)+0; atx[p[i]] = substr(p[i+5],2)+0 }
+  next
+}
+FILENAME == MARCHF && MARCHF != "/dev/null" {
+  n = split($0, p, "\"")
+  for (i = 2; i + 5 <= n; i += 8) { mrx0[p[i]] = substr(p[i+3],2)+0; mtx0[p[i]] = substr(p[i+5],2)+0 }
+  next
+}
+FILENAME == STATEF { st[$1] = $2; next }
+$1 == "counter" { cn = $2; next }
+cn != "" && /bytes/ { cur[cn] = $NF+0; cn = ""; next }
+END {
+  split("web video game dns ntp download other", cats, " ")
+  oldday = st["DAY"] ""
+  oldmonth = st["MONTH"] ""
+  rollover = (oldday != "" && oldday != TODAY)
+  fresh = (oldday == "")
+  mrollover = (oldmonth != "" && oldmonth != THIS_MONTH)
+  mfresh = (oldmonth == "")
+  for (i = 1; i <= 7; i++) {
+    c = cats[i]
+    if (fresh || rollover) { nrx[c] = arx[c]+0; ntx[c] = atx[c]+0 }
+    else { nrx[c] = st["RX_" c]+0; ntx[c] = st["TX_" c]+0 }
+    if (fresh) { cul = 0; cdl = 0 }
+    else {
+      cul = cur[c "_ul"] - st["BASE_" c "_ul"]; cdl = cur[c "_dl"] - st["BASE_" c "_dl"]
+      if (cul < 0) cul = 0; if (cdl < 0) cdl = 0
+    }
+    nrx[c] += cdl; ntx[c] += cul
+    if (mrollover) { mrx[c] = 0; mtx[c] = 0 }
+    else if (mfresh) { mrx[c] = mrx0[c]+0; mtx[c] = mtx0[c]+0 }
+    else { mrx[c] = st["MRX_" c]+0; mtx[c] = st["MTX_" c]+0 }
+    mrx[c] += cdl; mtx[c] += cul
+  }
+  nf = st["FLUSH"]+0
+  needflush = FORCE || rollover || mrollover || nf == 0 || NOWS - nf >= FLUSH_INT
+  if (rollover) { for (i = 1; i <= 7; i++) { c = cats[i]; orx[c] = st["RX_" c]+0; otx[c] = st["TX_" c]+0 }
+    wr_json(oldday, orx, otx) }
+  if (mrollover) { for (i = 1; i <= 7; i++) { c = cats[i]; mox[c] = st["MRX_" c]+0; mot[c] = st["MTX_" c]+0 }
+    wr_month(oldmonth, mox, mot) }
+  if (needflush) { wr_json(TODAY, nrx, ntx); wr_month(THIS_MONTH, mrx, mtx); newflush = NOWS } else newflush = nf
+  print "DAY", TODAY > NEWSTATE
+  print "MONTH", THIS_MONTH > NEWSTATE
+  print "FLUSH", newflush > NEWSTATE
+  for (i = 1; i <= 7; i++) { c = cats[i]
+    print "BASE_" c "_ul", cur[c "_ul"]+0 > NEWSTATE
+    print "BASE_" c "_dl", cur[c "_dl"]+0 > NEWSTATE
+    print "RX_" c, nrx[c]+0 > NEWSTATE
+    print "TX_" c, ntx[c]+0 > NEWSTATE
+    print "MRX_" c, mrx[c]+0 > NEWSTATE
+    print "MTX_" c, mtx[c]+0 > NEWSTATE }
+}' "$ARCHF" "$MARCHF" "$PROTO_STATE" - 2>/dev/null
+    mv -f "$PROTO_STATE.new" "$PROTO_STATE" 2>/dev/null
+    wan_accumulate
+}
+
+# ===== WAN 接口月/日累计（v4.14：总量口径，cron 驱动）=====
+WAN_STATE=/tmp/statusmon-wan-acct.txt
+
+_sm_scale_cats() {
+    printf '%s' "$1" | awk -v wr="$2" -v wt="$3" '
+    {
+      n=split($0,p,"\"")
+      split("video game web download dns ntp other", jc, " ")
+      cr=0; ct=0
+      for(i=2;i+5<=n;i+=8){ rx[p[i]]=substr(p[i+3],2)+0; tx[p[i]]=substr(p[i+5],2)+0; cr+=rx[p[i]]; ct+=tx[p[i]] }
+      if(cr+ct<=0){ print $0; exit }
+      sr=(wr>0 && cr>0)?wr/cr:1; st=(wt>0 && ct>0)?wt/ct:1
+      srr=0; stt=0
+      for(i=1;i<=7;i++){
+        c=jc[i]
+        nrx[c]=int(rx[c]*sr+0.5); ntx[c]=int(tx[c]*st+0.5)
+        srr+=nrx[c]; stt+=ntx[c]
+      }
+      maxr=jc[1]; maxt=jc[1]
+      for(i=2;i<=7;i++){
+        if(nrx[jc[i]]>nrx[maxr]) maxr=jc[i]
+        if(ntx[jc[i]]>ntx[maxt]) maxt=jc[i]
+      }
+      if(wr>0){ nrx[maxr]+=wr-srr; if(nrx[maxr]<0) nrx[maxr]=0 }
+      if(wt>0){ ntx[maxt]+=wt-stt; if(ntx[maxt]<0) ntx[maxt]=0 }
+      out="{"
+      for(i=1;i<=7;i++){
+        c=jc[i]; if(i>1)out=out ","
+        out=out "\"" c "\":{\"rx\":" nrx[c]+0 ",\"tx\":" ntx[c]+0 ",\"conn\":0}"
+      }
+      out=out "}"
+      print out
+    }'
+}
+
+wan_accumulate() {
+    local IFACE CUR_RX CUR_TX LEFTF
+    IFACE=$(_sm_wan_dev)
+    [ -d "/sys/class/net/$IFACE" ] || return 0
+    CUR_RX=$(awk -v n="$IFACE:" '$1==n{print $2; exit}' /proc/net/dev 2>/dev/null)
+    CUR_TX=$(awk -v n="$IFACE:" '$1==n{print $10; exit}' /proc/net/dev 2>/dev/null)
+    CUR_RX=${CUR_RX:-0}; CUR_TX=${CUR_TX:-0}
+    mkdir -p "$PROTO_DIR" 2>/dev/null
+    LEFTF="$PROTO_DIR/daily-pppoe-wan.json"
+    [ -s "$LEFTF" ] || LEFTF=/dev/null
+    TODAY=$(date +%F)
+    THIS_MONTH=$(date +%Y-%m)
+    WAN_TODAYF="$PROTO_DIR/wan-day-$TODAY.json"
+    WAN_MONF="$PROTO_DIR/wan-month-$THIS_MONTH.json"
+    [ -s "$WAN_STATE" ] || : > "$WAN_STATE"
+    [ -s "$WAN_TODAYF" ] || WAN_TODAYF=/dev/null
+    [ -s "$WAN_MONF" ] || WAN_MONF=/dev/null
+    rm -f "$WAN_STATE.new"
+    awk -v STATEF="$WAN_STATE" -v LEFTF="$LEFTF" -v TODAYF="$WAN_TODAYF" -v MONF="$WAN_MONF" \
+      -v TODAY="$TODAY" -v THIS_MONTH="$THIS_MONTH" -v IFACE="$IFACE" \
+      -v CUR_RX="$CUR_RX" -v CUR_TX="$CUR_TX" -v ARCHDIR="$PROTO_DIR" '
+    FILENAME==STATEF && STATEF!="" { st[$1]=$2; next }
+    FILENAME==LEFTF && LEFTF!="/dev/null" {
+      n=split($0,p,"\"")
+      for(i=2;i+1<=n;i++){
+        k=p[i]
+        if(k=="day") ld=p[i+2]
+        if(k=="rx" && !sawrx){ lrx=substr(p[i+1],2)+0; sawrx=1 }
+        if(k=="tx" && !sawtx){ ltx=substr(p[i+1],2)+0; sawtx=1 }
+      }
+      next
+    }
+    FILENAME==TODAYF && TODAYF!="/dev/null" {
+      n=split($0,p,"\"")
+      for(i=2;i+1<=n;i++){ if(p[i]=="rx")trx0=substr(p[i+1],2)+0; if(p[i]=="tx")ttx0=substr(p[i+1],2)+0 }
+      next
+    }
+    FILENAME==MONF && MONF!="/dev/null" {
+      n=split($0,p,"\"")
+      for(i=2;i+1<=n;i++){ if(p[i]=="rx")mrx0=substr(p[i+1],2)+0; if(p[i]=="tx")mtx0=substr(p[i+1],2)+0 }
+      next
+    }
+    END {
+      oldday=st["DAY"] ""; oldmon=st["MONTH"] ""; oldif=st["IFACE"] ""
+      base_rx=st["BASE_RX"]+0; base_tx=st["BASE_TX"]+0
+      today_rx=st["TODAY_RX"]+0; today_tx=st["TODAY_TX"]+0
+      month_rx=st["MONTH_RX"]+0; month_tx=st["MONTH_TX"]+0
+      fresh=(oldday=="")
+      if(fresh){
+        if(ld!="" && ld==TODAY){ today_rx=lrx+0; today_tx=ltx+0 }
+        else if(trx0+ttx0>0){ today_rx=trx0; today_tx=ttx0 }
+        else { today_rx=0; today_tx=0 }
+        if(mrx0+mtx0>0){ month_rx=mrx0+0; month_tx=mtx0+0 }
+        else { month_rx=CUR_RX+0; month_tx=CUR_TX+0 }
+        base_rx=CUR_RX+0; base_tx=CUR_TX+0
+      } else {
+        if(oldif!="" && oldif!=IFACE){ base_rx=CUR_RX+0; base_tx=CUR_TX+0 }
+        dr=CUR_RX-base_rx; dt=CUR_TX-base_tx
+        if(dr<0)dr=0; if(dt<0)dt=0
+        if(oldday!="" && oldday!=TODAY){
+          print "{\"rx\":" today_rx+0 ",\"tx\":" today_tx+0 "}" > (ARCHDIR "/wan-day-" oldday ".json")
+          today_rx=0; today_tx=0
+        }
+        if(oldmon!="" && oldmon!=THIS_MONTH){
+          print "{\"rx\":" month_rx+0 ",\"tx\":" month_tx+0 "}" > (ARCHDIR "/wan-month-" oldmon ".json")
+          month_rx=0; month_tx=0
+        }
+        today_rx+=dr; today_tx+=dt
+        month_rx+=dr; month_tx+=dt
+        base_rx=CUR_RX+0; base_tx=CUR_TX+0
+      }
+      print "{\"rx\":" today_rx+0 ",\"tx\":" today_tx+0 "}" > (ARCHDIR "/wan-day-" TODAY ".json")
+      print "{\"rx\":" month_rx+0 ",\"tx\":" month_tx+0 "}" > (ARCHDIR "/wan-month-" THIS_MONTH ".json")
+      print "DAY", TODAY > (STATEF ".new")
+      print "MONTH", THIS_MONTH > (STATEF ".new")
+      print "IFACE", IFACE > (STATEF ".new")
+      print "BASE_RX", base_rx+0 > (STATEF ".new")
+      print "BASE_TX", base_tx+0 > (STATEF ".new")
+      print "TODAY_RX", today_rx+0 > (STATEF ".new")
+      print "TODAY_TX", today_tx+0 > (STATEF ".new")
+      print "MONTH_RX", month_rx+0 > (STATEF ".new")
+      print "MONTH_TX", month_tx+0 > (STATEF ".new")
+    }
+    ' "$WAN_STATE" "$LEFTF" "$WAN_TODAYF" "$WAN_MONF" 2>/dev/null
+    [ -s "$WAN_STATE.new" ] && mv -f "$WAN_STATE.new" "$WAN_STATE"
+}
+
+# ===== 客户端流量持久累计引擎（v4.13，nft inet 动态 set 计数）=====
+# 原理：inet/forward 动态 set 按客户端 IP 累计字节，不受 conntrack 过期清零影响；
+#       每次采样与上次快照做差，增量按 MAC 归属累加到当日文件。
+#       计数器回绕/超时重建：当前值小于快照时按重置处理，取当前值作为增量。
+#       从 conntrack 口径切换过来时 src!=nft，首采只建基准不累加。
+CLIENT_STATE=/tmp/statusmon-client-state.txt
+CLIENT_RATEF=/tmp/statusmon-client-rate.txt
+
+client_accumulate() {
+    if command -v flock >/dev/null 2>&1; then
+        exec 8>/tmp/statusmon-client.lock
+        timeout 10 flock -x 8 2>/dev/null || return 1
+    fi
+    _sm_nft_cli_ensure
+    TODAY=$(date +%F)
+    TOTALF="$PROTO_DIR/client-total-$TODAY.txt"
+    [ -d "$PROTO_DIR" ] || mkdir -p "$PROTO_DIR" 2>/dev/null
+    LSE=/tmp/dhcp.leases
+    [ -f "$LSE" ] || LSE=/dev/null
+    CSIN="$CLIENT_STATE"; [ -s "$CSIN" ] || CSIN=/dev/null
+    TOTIN="$TOTALF";     [ -s "$TOTIN" ] || TOTIN=/dev/null
+    RIN="$CLIENT_RATEF"; [ -s "$RIN" ] || RIN=/dev/null
+    N4F=/tmp/.sm_can4.$$
+    N6F=/tmp/.sm_can6.$$
+    NFTF=/tmp/.sm_nftcli.$$
+    ip -4 neigh show 2>/dev/null > "$N4F"
+    ip -6 neigh show 2>/dev/null > "$N6F"
+    {
+        echo "===ul4==="
+        nft list set inet $SM_CLI_TABLE ul4 2>/dev/null
+        echo "===dl4==="
+        nft list set inet $SM_CLI_TABLE dl4 2>/dev/null
+        echo "===ul6==="
+        nft list set inet $SM_CLI_TABLE ul6 2>/dev/null
+        echo "===dl6==="
+        nft list set inet $SM_CLI_TABLE dl6 2>/dev/null
+    } > "$NFTF"
+    rm -f "$TOTALF.new" "$CLIENT_STATE.new" "$CLIENT_RATEF.new"
+    awk -v LSE="$LSE" -v N4F="$N4F" -v N6F="$N6F" -v NFTF="$NFTF" \
+      -v STATEIN="$CSIN" -v TOTALIN="$TOTIN" -v RATEIN="$RIN" \
+      -v STATEF="$CLIENT_STATE" -v TOTALF="$TOTALF" -v RATEF="$CLIENT_RATEF" -v NOWS="$NOW" '
+      function stripz(g){while(length(g)>1&&substr(g,1,1)=="0")g=substr(g,2);return g}
+      function canon(v,  p,h,t,hn,tn,i,g,out){
+        v=tolower(v)
+        if(v~/::/){split(v,p,"::");hn=0;tn=0
+          if(p[1]!="")hn=split(p[1],h,":")
+          if(p[2]!="")tn=split(p[2],t,":")
+          for(i=1;i<=hn;i++)g[i]=h[i]
+          for(i=1;i<=8-hn-tn;i++)g[hn+i]="0"
+          for(i=1;i<=tn;i++)g[8-tn+i]=t[i]
+        } else split(v,g,":")
+        out="";for(i=1;i<=8;i++){if(i>1)out=out":";out=out stripz(g[i])}
+        return out
+      }
+      FILENAME==LSE && LSE!="/dev/null"{
+        if($3!="" && index($2,":")>0 && !($3 in macof))macof[$3]=$2
+        next
+      }
+      (FILENAME==N4F||FILENAME==N6F) && FILENAME!="/dev/null"{
+        ip=$1;mac=""
+        for(i=2;i<NF;i++){if($i=="lladdr"&&mac=="")mac=$(i+1)}
+        if(ip==""||mac==""||mac=="00:00:00:00:00:00")next
+        if($NF!="REACHABLE"&&$NF!="DELAY"&&$NF!="PROBE"&&$NF!="STALE")next
+        if(index(ip,":")){if(substr(ip,1,5)=="fe80:")next;ip=canon(ip)}
+        if(!(ip in macof))macof[ip]=mac
+        next
+      }
+      FILENAME==STATEIN && STATEIN!="/dev/null"{
+        if($1~/^ts=/){lastts=substr($1,4)+0;next}
+        if($1~/^src=/){lastsrc=substr($1,5);next}
+        split($0,a,"|");if(a[1]!=""){lup[a[1]]=a[2]+0;ldn[a[1]]=a[3]+0}
+        next
+      }
+      FILENAME==TOTALIN && TOTALIN!="/dev/null"{
+        split($0,a,"|");if(a[1]!=""){crx[a[1]]=a[2]+0;ctx[a[1]]=a[3]+0}
+        next
+      }
+      FILENAME==RATEIN && RATEIN!="/dev/null"{
+        split($0,a,"|")
+        if(a[1]!=""){
+          wrts[a[1]]=a[2]+0;wrx[a[1]]=a[3]+0;wtx[a[1]]=a[4]+0
+          wrr[a[1]]=a[5]+0;wrt[a[1]]=a[6]+0
+        }
+        next
+      }
+      FILENAME==NFTF && NFTF!="/dev/null"{
+        if($0~/^===ul/){sec="ul";next}
+        if($0~/^===dl/){sec="dl";next}
+        for(i=1;i<=NF;i++){
+          if($i=="counter" && i>1){
+            ip=$(i-1); gsub(/[{},]/,"",ip)
+            if(ip==""||ip=="elements"||ip=="="||ip=="{")continue
+            b=0
+            for(j=i;j<NF;j++) if($(j)=="bytes"){b=$(j+1)+0;break}
+            if(index(ip,":"))ip=canon(ip)
+            if(sec=="ul")up[ip]+=b; else dn[ip]+=b
+            seenip[ip]=1
+          }
+        }
+        next
+      }
+      END{
+        have_state=(lastts+0)>0 && lastsrc=="nft"
+        if(have_state){
+          for(ip in seenip){
+            m=macof[ip]; if(m=="")continue
+            du=up[ip]-(lup[ip]+0); if(du<0)du=up[ip]+0
+            dd=dn[ip]-(ldn[ip]+0); if(dd<0)dd=dn[ip]+0
+            crx[m]+=dd;ctx[m]+=du
+          }
+        }
+        for(m in crx)print m "|" crx[m]+0 "|" ctx[m]+0 > TOTALF ".new"
+        close(TOTALF ".new")
+        print "ts=" NOWS > STATEF ".new"
+        print "src=nft" > STATEF ".new"
+        for(ip in seenip)print ip "|" up[ip]+0 "|" dn[ip]+0 > STATEF ".new"
+        close(STATEF ".new")
+        for(m in crx){
+          if(!(m in wrts)){
+            print m "|" NOWS "|" crx[m]+0 "|" ctx[m]+0 "|0|0" > RATEF ".new"
+          } else {
+            wdtd=NOWS-(wrts[m]+0)
+            if(wdtd>=6){
+              wdrx=crx[m]-(wrx[m]+0);if(wdrx<0)wdrx=0
+              wdtx=ctx[m]-(wtx[m]+0);if(wdtx<0)wdtx=0
+              wrrate=0;wtrate=0
+              if(wdtd>0){wrrate=int(wdrx/wdtd);wtrate=int(wdtx/wdtd)}
+              print m "|" NOWS "|" crx[m]+0 "|" ctx[m]+0 "|" wrrate "|" wtrate > RATEF ".new"
+            } else {
+              print m "|" wrts[m]+0 "|" wrx[m]+0 "|" wtx[m]+0 "|" wrr[m]+0 "|" wrt[m]+0 > RATEF ".new"
+            }
+          }
+        }
+        close(RATEF ".new")
+      }
+      ' "$LSE" "$N4F" "$N6F" "$NFTF" "$CSIN" "$TOTIN" "$RIN" 2>/dev/null
+    [ -s "$TOTALF.new" ] && mv -f "$TOTALF.new" "$TOTALF" 2>/dev/null
+    [ -s "$CLIENT_STATE.new" ] && mv -f "$CLIENT_STATE.new" "$CLIENT_STATE" 2>/dev/null
+    [ -s "$CLIENT_RATEF.new" ] && mv -f "$CLIENT_RATEF.new" "$CLIENT_RATEF" 2>/dev/null
+    rm -f "$N4F" "$N6F" "$NFTF" "$TOTALF.new" "$CLIENT_STATE.new" "$CLIENT_RATEF.new"
+    return 0
+}
+
+# ===== 查询端点分发 =====
+# ===== 全局流量分类统计（?summary=1 / ?proto_day=YYYY-MM-DD）=====
+# ?summary=1: 返回当前 conntrack 实时分类流量
+# ?proto_day=YYYY-MM-DD: 返回历史某日的协议分类流量（从归档读取）
+_qs_summary=$(echo "$QUERY_STRING" | sed -n 's/^summary=\([^&]*\).*/\1/p')
+_qs_proto_day=$(echo "$QUERY_STRING" | sed -n 's/^proto_day=\([^&]*\).*/\1/p')
+if [ -n "$_qs_proto_day" ]; then
+    # 协议分类查询：先累计刷新（force 保证今日归档即时新鲜），再读归档
+    proto_accumulate 1
+    PROTO_FILE="$PROTO_DIR/proto-$_qs_proto_day.json"
+    if [ -s "$PROTO_FILE" ]; then
+        _pj=$(cat "$PROTO_FILE")
+        _wf="$PROTO_DIR/wan-day-$_qs_proto_day.json"
+        if [ -s "$_wf" ]; then
+            _wr=$(awk '{n=split($0,p,"\"");for(i=2;i+1<=n;i++)if(p[i]=="rx"){print substr(p[i+1],2)+0;exit}}' "$_wf")
+            _wt=$(awk '{n=split($0,p,"\"");for(i=2;i+1<=n;i++)if(p[i]=="tx"){print substr(p[i+1],2)+0;exit}}' "$_wf")
+            _pj=$(_sm_scale_cats "$_pj" "${_wr:-0}" "${_wt:-0}")
+        fi
+        printf '%s\n' "$_pj"
+    else
+        echo '{"video":{"rx":0,"tx":0,"conn":0},"game":{"rx":0,"tx":0,"conn":0},"web":{"rx":0,"tx":0,"conn":0},"download":{"rx":0,"tx":0,"conn":0},"dns":{"rx":0,"tx":0,"conn":0},"ntp":{"rx":0,"tx":0,"conn":0},"other":{"rx":0,"tx":0,"conn":0}}'
+    fi
+    exit 0
+fi
+_qs_accumulate=$(echo "$QUERY_STRING" | sed -n 's/^accumulate=\([^&]*\).*/\1/p')
+if [ -n "$_qs_accumulate" ]; then
+    # cron 每分钟调用：只累计不返回数据（协议 nft counter + 客户端 nft 动态 set 差分）
+    proto_accumulate 0
+    client_accumulate
+    _sm_sets_seed
+    sys_hist_sample
+    echo '{"result":"ok"}'
+    exit 0
+fi
+_qs_sys_hist=$(echo "$QUERY_STRING" | sed -n 's/^sys_hist=\([^&]*\).*/\1/p')
+if [ -n "$_qs_sys_hist" ]; then
+    sys_hist_json
+    exit 0
+fi
+if [ -n "$_qs_summary" ]; then
+    CTF=/proc/net/nf_conntrack
+    [ -f "$CTF" ] || CTF=/dev/null
+    summary=$(awk -v CTF="$CTF" '
+    function stripz(g){while(length(g)>1&&substr(g,1,1)=="0")g=substr(g,2);return g}
+    function canon(v,  p,h,t,hn,tn,i,g,out){
+      v=tolower(v)
+      if(v~/::/){split(v,p,"::");hn=0;tn=0;if(p[1]!="")hn=split(p[1],h,":");if(p[2]!="")tn=split(p[2],t,":");for(i=1;i<=hn;i++)g[i]=h[i];for(i=1;i<=8-hn-tn;i++)g[hn+i]="0";for(i=1;i<=tn;i++)g[8-tn+i]=t[i]}
+      else split(v,g,":")
+      out="";for(i=1;i<=8;i++){if(i>1)out=out":";out=out stripz(g[i])};return out
+    }
+    function classify(dport, proto,  p){
+      p = dport + 0
+      # 游戏（8567 网易系, 6881-6889, 9921-9922, 25565 MC, 27015 Steam, 3478 STUN）
+      if(p==8567||p==8568||p==8569||(p>=6881&&p<=6889)||p==9921||p==9922||p==25565||p==27015||p==3478||p==43793)return "game"
+      # DNS
+      if(p==53)return "dns"
+      # NTP
+      if(p==123)return "ntp"
+      # 下载/BT（51413 Transmission）
+      if(p==51413)return "download"
+      # v4.12：QUIC(udp 443) 为视频 App 实际载体，归视频（与 nft 计数口径一致）
+      if(proto=="udp"&&(p==443||p==1935||(p>=8000&&p<=8999)))return "video"
+      # 网页浏览（80/443/8443 先于 video 区间，修复 8443 被 8000-8999 吞没）
+      if(p==80||p==443||p==8443)return "web"
+      # 视频/直播（1935 RTMP, 8000-8999 流媒体）
+      if(p==1935||(p>=8000&&p<=8999))return "video"
+      return "other"
+    }
+    {
+      s1="";dport="";b1="";b2="";proto=$3
+      for(i=1;i<=NF;i++){
+        if($i~/^src=/&&s1=="")s1=substr($i,5)
+        if($i~/^dport=/&&dport=="")dport=substr($i,7)
+        if($i~/^bytes=/){if(b1=="")b1=substr($i,7);else if(b2=="")b2=substr($i,7)}
+      }
+      if(s1=="")next
+      if(dport=="")next
+      # 统计所有连接的流量（不限方向），按 dport 分类
+      cat=classify(dport,proto)
+      tx[cat]+=b1+0
+      rx[cat]+=b2+0
+      cnt[cat]++
+    }
+    END{
+      printf "{"
+      cats[1]="video";cats[2]="game";cats[3]="web";cats[4]="download";cats[5]="dns";cats[6]="ntp";cats[7]="other"
+      for(i=1;i<=7;i++){
+        c=cats[i]
+        if(i>1)printf ","
+        printf "\"%s\":{\"rx\":%d,\"tx\":%d,\"conn\":%d}",c,rx[c]+0,tx[c]+0,cnt[c]+0
+      }
+      printf "}"
+    }' "$CTF" 2>/dev/null)
+    echo "$summary"
+    exit 0
+fi
+
+# ===== 客户端连接详情查询（?client=IP 或 ?mac=MAC）=====
+# ?mac=MAC 时自动查找该 MAC 的所有 IP（v4+v6 邻居表），返回所有 conntrack 连接
+QUERY_VAL=""
+QUERY_MODE=""
+if [ -n "$QUERY_STRING" ]; then
+    _qs_mac=$(echo "$QUERY_STRING" | sed -n 's/^mac=\([^&]*\).*/\1/p')
+    _qs_ip=$(echo "$QUERY_STRING" | sed -n 's/^client=\([^&]*\).*/\1/p')
+    if [ -n "$_qs_mac" ]; then
+        QUERY_MODE="mac"; QUERY_VAL=$(printf '%b' "$(echo "$_qs_mac" | sed 's/%/\\x/g')")
+    elif [ -n "$_qs_ip" ]; then
+        QUERY_MODE="ip"; QUERY_VAL=$(printf '%b' "$(echo "$_qs_ip" | sed 's/%/\\x/g')")
+    fi
+fi
+if [ -n "$QUERY_MODE" ]; then
+    CTF=/proc/net/nf_conntrack
+    [ -f "$CTF" ] || CTF=/dev/null
+    # 如果是 MAC 模式，先查邻居表获取该 MAC 的所有 IP
+    if [ "$QUERY_MODE" = "mac" ]; then
+        QUERY_IPS=$(ip neigh show 2>/dev/null | grep -i "$QUERY_VAL" | grep -v fe80 | awk '{print $1}' | tr '\n' ' ')
+    else
+        QUERY_IPS="$QUERY_VAL"
+    fi
+    conns=$(awk -v ips="$QUERY_IPS" -v CTF="$CTF" '
+    function stripz(g){while(length(g)>1&&substr(g,1,1)=="0")g=substr(g,2);return g}
+    function canon(v,  p,h,t,hn,tn,i,g,out){
+      v=tolower(v)
+      if(v~/::/){split(v,p,"::");hn=0;tn=0;if(p[1]!="")hn=split(p[1],h,":");if(p[2]!="")tn=split(p[2],t,":");for(i=1;i<=hn;i++)g[i]=h[i];for(i=1;i<=8-hn-tn;i++)g[hn+i]="0";for(i=1;i<=tn;i++)g[8-tn+i]=t[i]}
+      else split(v,g,":")
+      out="";for(i=1;i<=8;i++){if(i>1)out=out":";out=out stripz(g[i])};return out
+    }
+    BEGIN {
+        first = 1; printf "["
+        nip = split(ips, iparr, " ")
+        for (i = 1; i <= nip; i++) {
+            ip = iparr[i]
+            if (index(ip, ":")) ip = canon(ip)
+            ipset[ip] = 1
+        }
+    }
+    {
+        proto = $3; nf = NF
+        state = ""
+        for (i = 1; i <= nf; i++) {
+            if ($i ~ /^(ESTABLISHED|TIME_WAIT|CLOSE_WAIT|CLOSE|SYN_RECV|FIN_WAIT|LISTEN|NONE|OFFLOAD|\[ESTABLISHED\]|\[TIME_WAIT\]|\[CLOSE_WAIT\]|\[CLOSE\]|\[SYN_RECV\]|\[FIN_WAIT\]|\[OFFLOAD\]|\[ASSURED\])$/) {
+                if (state == "") { state = $i; gsub(/[][]/, "", state) }
+            }
+        }
+        src = ""; dst = ""; sport = ""; dport = ""; pkts = "0"; byts = "0"
+        for (i = 1; i <= nf; i++) {
+            if ($i ~ /^src=/ && src == "") { src = substr($i, 5) }
+            if ($i ~ /^dst=/ && dst == "") { dst = substr($i, 5) }
+            if ($i ~ /^sport=/ && sport == "") { sport = substr($i, 7) }
+            if ($i ~ /^dport=/ && dport == "") { dport = substr($i, 7) }
+        }
+        if (src == "") next
+        # IPv6 地址规范化后匹配
+        csrc = src
+        if (index(csrc, ":")) csrc = canon(csrc)
+        if (csrc in ipset) {
+            # 只返回活跃连接（TCP=ESTABLISHED+OFFLOAD, UDP=ASSURED+OFFLOAD），与列表口径一致
+        if (state != "ESTABLISHED" && state != "OFFLOAD" && !(state == "ASSURED" && proto == "udp")) next
+            for (i = 1; i <= nf; i++) {
+                if ($i ~ /^packets=/) { pkts = substr($i, 9); break }
+            }
+            for (i = 1; i <= nf; i++) {
+                if ($i ~ /^bytes=/) { byts = substr($i, 7); break }
+            }
+            svc = dport
+            if (dport == "80") svc = "HTTP"
+            else if (dport == "443") svc = "HTTPS"
+            else if (dport == "53") svc = "DNS"
+            else if (dport == "22") svc = "SSH"
+            else if (dport == "8080") svc = "HTTP-Alt"
+            else if (dport == "123") svc = "NTP"
+            else if (dport == "1900") svc = "SSDP"
+            else if (dport == "5353") svc = "mDNS"
+            if (!first) printf ","
+            first = 0
+            printf "{\"proto\":\"%s\",\"state\":\"%s\",\"dst\":\"%s\",\"dport\":\"%s\",\"sport\":\"%s\",\"svc\":\"%s\",\"pkts\":%s,\"bytes\":%s}", proto, state, dst, dport, sport, svc, pkts+0, byts+0
+        }
+    }
+    END { printf "]" }
+    ' "$CTF" 2>/dev/null)
+    echo "$conns"
+    exit 0
+fi
+
+PREV_TS=0; PREV_NET=""; PREV_CLIENT=""
+if [ -f "$STATE" ]; then
+    PREV_TS=$(grep -o '"ts":[0-9]*' "$STATE" 2>/dev/null | head -1 | cut -d: -f2)
+    PREV_NET=$(grep -o '"net":"[^"]*"' "$STATE" 2>/dev/null | head -1 | cut -d: -f2- | tr -d '"')
+    PREV_CLIENT=$(grep -o '"clients":"[^"]*"' "$STATE" 2>/dev/null | head -1 | cut -d: -f2- | tr -d '"')
+fi
+# 注：v4.6 速率计算移至前端，CGI 不再使用 DT/PREV_NET/PREV_CLIENT 做速率计算；
+# 但仍需保存 net/clients 状态供客户端累计流量等使用
+DT=$((NOW - PREV_TS))
+[ "$DT" -lt 1 ] && DT=1
+
+# ===== 系统 =====
+hostname=$(cat /proc/sys/kernel/hostname 2>/dev/null)
+kernel=$(uname -r 2>/dev/null)
+uptime_s=$(awk '{printf "%.0f", $1}' /proc/uptime 2>/dev/null)
+load1=$(awk '{print $1}' /proc/loadavg 2>/dev/null)
+load5=$(awk '{print $2}' /proc/loadavg 2>/dev/null)
+load15=$(awk '{print $3}' /proc/loadavg 2>/dev/null)
+board=$(cat /tmp/sysinfo/board_name 2>/dev/null || echo "unknown")
+cpu_model=$(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2 | sed 's/^ *//' || echo "unknown")
+cpu_cores=$(grep -c processor /proc/cpuinfo 2>/dev/null || echo 1)
+
+# CPU 温度（v4.10）：优先 x86_pkg_temp（内核 x86 包温度，与 LuCI 首页口径一致；
+# 本机实测 x86_pkg_temp=coretemp Package=35C，而 thermal_zone0=acpitz=41C 是主板 ACPI 传感器非 CPU 本体）
+# 其次 coretemp hwmon 的 Package id 0，最后回退首个 thermal zone / hwmon
+temp_c="null"
+for z in /sys/class/thermal/thermal_zone*; do
+    [ -f "$z/type" ] && [ "$(cat "$z/type" 2>/dev/null)" = "x86_pkg_temp" ] && [ -f "$z/temp" ] && {
+        t=$(cat "$z/temp" 2>/dev/null)
+        [ -n "$t" ] && { temp_c=$(awk -v v="$t" 'BEGIN{printf "%.1f", v/1000}'); break; }
+    }
+done
+if [ "$temp_c" = "null" ]; then
+    for h in /sys/class/hwmon/hwmon*; do
+        [ -f "$h/name" ] && [ "$(cat "$h/name" 2>/dev/null)" = "coretemp" ] && [ -f "$h/temp1_input" ] && {
+            t=$(cat "$h/temp1_input" 2>/dev/null)
+            [ -n "$t" ] && { temp_c=$(awk -v v="$t" 'BEGIN{printf "%.1f", v/1000}'); break; }
+        }
+    done
+fi
+if [ "$temp_c" = "null" ]; then
+    for z in /sys/class/thermal/thermal_zone*/temp; do
+        [ -f "$z" ] && { t=$(cat "$z" 2>/dev/null); [ -n "$t" ] && { temp_c=$(awk -v v="$t" 'BEGIN{printf "%.1f", v/1000}'); break; }; }
+    done
+fi
+[ "$temp_c" = "null" ] && for h in /sys/class/hwmon/hwmon*/temp1_input; do
+    [ -f "$h" ] && { t=$(cat "$h" 2>/dev/null); [ -n "$t" ] && { temp_c=$(awk -v v="$t" 'BEGIN{printf "%.1f", v/1000}'); break; }; }
+done
+
+# CPU 使用率：跨请求差分采样（v4.8）
+# BusyBox sleep 不支持小数秒，请求内 sleep 0.5 必然失败（日志刷屏 + 窗口退化 ~1ms，
+# 4 核量化出 0/25/50/75/100% 失真值）。改为本次 /proc/stat 计数器与上次请求存档做差，
+# 采样窗口即轮询间隔（约 2s）；窗口不足 1s（delta < 核数×100 tick）或计数器回绕时沿用上次结果。
+# 状态文件 /tmp/statusmon-cpu.state：total idle usage 三个整数，原子替换写入
+cpu_usage=0
+CPU_STATE=/tmp/statusmon-cpu.state
+read -r _ cu_u2 cu_n2 cu_s2 cu_i2 cu_w2 cu_q2 cu_sq2 cu_st2 _ _ < /proc/stat 2>/dev/null
+if [ -n "$cu_i2" ]; then
+    cu_tot2=$((cu_u2 + cu_n2 + cu_s2 + cu_i2 + cu_w2 + cu_q2 + cu_sq2 + cu_st2))
+    cu_idl2=$((cu_i2 + cu_w2))
+    cu_pt=0; cu_pi=0; cu_pu=0
+    [ -f "$CPU_STATE" ] && read -r cu_pt cu_pi cu_pu < "$CPU_STATE" 2>/dev/null
+    case "$cu_pt" in ''|*[!0-9]*) cu_pt=0 ;; esac
+    case "$cu_pi" in ''|*[!0-9]*) cu_pi=0 ;; esac
+    case "$cu_pu" in ''|*[!0-9]*) cu_pu=0 ;; esac
+    cu_dt=$((cu_tot2 - cu_pt))
+    cu_di=$((cu_idl2 - cu_pi))
+    cu_min=$((cpu_cores * 100))
+    if [ "$cu_pt" -eq 0 ] || [ "$cu_dt" -lt 0 ]; then
+        # 首次运行 / 计数器回绕（重启）：仅重建基线，沿用上次结果
+        cpu_usage=$cu_pu
+    elif [ "$cu_dt" -ge "$cu_min" ]; then
+        cpu_usage=$(( (cu_dt - cu_di) * 100 / cu_dt ))
+    else
+        # 窗口不足 1s（并发轮询密集）：沿用上次结果
+        cpu_usage=$cu_pu
+    fi
+    printf '%s %s %s\n' "$cu_tot2" "$cu_idl2" "$cpu_usage" > "$CPU_STATE.$$" 2>/dev/null && mv -f "$CPU_STATE.$$" "$CPU_STATE" 2>/dev/null
+    rm -f "$CPU_STATE.$$" 2>/dev/null
+fi
+
+# ===== 内存 =====
+mem_total=0; mem_free=0; mem_avail=0; mem_cached=0; mem_buf=0
+while read -r line; do
+    case "$line" in
+        MemTotal:*) mem_total=$(echo "$line" | awk '{print $2}') ;;
+        MemFree:*) mem_free=$(echo "$line" | awk '{print $2}') ;;
+        MemAvailable:*) mem_avail=$(echo "$line" | awk '{print $2}') ;;
+        Cached:*) mem_cached=$(echo "$line" | awk '{print $2}') ;;
+        Buffers:*) mem_buf=$(echo "$line" | awk '{print $2}') ;;
+    esac
+done < /proc/meminfo 2>/dev/null
+mem_used=$((mem_total - mem_avail))
+
+# ===== 协议统计 =====
+# v4.10：/proc/net/snmp 单次 awk 提取（此前 12 个 grep/echo|awk 进程 spawn）
+# 各协议两行（表头+数值），awk 后行覆盖前行 → 取到数值行，与旧 tail -1 语义一致
+proto_tcp_curr=0; proto_tcp_total=0; proto_udp=0; proto_icmp=0; proto_ip_total=0
+proto_tcp_ret=0; proto_udp_ret=0
+set -- $(awk '
+  /^Tcp:/{t10=$10;t11=$11;t13=$13}
+  /^Udp:/{u2=$2;u4=$4}
+  /^Icmp:/{i2=$2}
+  /^Ip:/{p3=$3}
+  END{print t10+0,t11+0,t13+0,u2+0,u4+0,i2+0,p3+0}' /proc/net/snmp 2>/dev/null)
+[ -n "${1:-}" ] && proto_tcp_curr=$1
+[ -n "${2:-}" ] && proto_tcp_total=$2
+[ -n "${3:-}" ] && proto_tcp_ret=$3
+[ -n "${4:-}" ] && proto_udp=$4
+[ -n "${5:-}" ] && proto_udp_ret=$5
+[ -n "${6:-}" ] && proto_icmp=$6
+[ -n "${7:-}" ] && proto_ip_total=$7
+ct_total=0
+[ -f /proc/sys/net/netfilter/nf_conntrack_count ] && ct_total=$(cat /proc/sys/net/netfilter/nf_conntrack_count 2>/dev/null || echo 0)
+[ -z "$ct_total" ] && ct_total=0
+ct_max=0
+[ -f /proc/sys/net/netfilter/nf_conntrack_max ] && ct_max=$(cat /proc/sys/net/netfilter/nf_conntrack_max 2>/dev/null || echo 0)
+[ -z "$ct_max" ] && ct_max=0
+
+# conntrack 协议分布
+# TCP 活跃 = ESTABLISHED 或 [OFFLOAD]（勿用 [ASSURED] 覆盖 TCP 状态）
+# UDP 活跃 = [ASSURED] 或 [OFFLOAD]（UDP 无 ESTABLISHED）
+# ICMP 无状态概念，统计全部条目
+# 外部连接 = 活跃连接中原始 src 或 dst 任一为公网（含 LAN 出站与公网入站）
+ct_tcp_estab=0; ct_tcp_total=0; ct_udp=0; ct_udp_total=0; ct_icmp=0; ct_external=0
+if [ -f /proc/net/nf_conntrack ]; then
+    _own_ip=$(ip -o addr show 2>/dev/null | awk '{
+      for(i=1;i<=NF;i++) if($i=="inet"||$i=="inet6"){a=$(i+1); sub(/\/.*/,"",a); sub(/%.*/,"",a); if(a!=""&&a!="::1"&&a!="127.0.0.1") print a}
+    }' | tr '\n' '|')
+    _lan6=$(ip -o addr show 2>/dev/null | awk '/inet6/{
+      a=$4; sub(/\/.*/,"",a); sub(/%.*/,"",a)
+      if(a==""||a=="::1"||index(a,"fe80")==1) next
+      n=split(a,h,":"); p=h[1]":"h[2]":"h[3]":"h[4]
+      if(p!=""&&p!=":::") print p
+    }' | tr '\n' '|')
+    _proto_stats=$(awk -v OWN="|${_own_ip}" -v LAN6="|${_lan6}" '
+      function z(s){ gsub(/^0+/,"",s); return (s==""?"0":s) }
+      function p4(s, n,h){ n=split(s,h,":"); return z(h[1])":"z(h[2])":"z(h[3])":"z(h[4]) }
+      function is_int(ip){
+        if(ip=="") return 1
+        if(index(OWN,"|" ip "|")>0) return 1
+        if(index(ip,".")>0){
+          if(substr(ip,1,3)=="10.") return 1
+          if(substr(ip,1,4)=="127.") return 1
+          if(substr(ip,1,8)=="169.254.") return 1
+          if(substr(ip,1,8)=="192.168.") return 1
+          if(substr(ip,1,4)=="172."){
+            seg=substr(ip,5)+0
+            if(seg>=16&&seg<=31) return 1
+          }
+          if(substr(ip,1,4)=="100."){
+            seg=substr(ip,5)+0
+            if(seg>=64&&seg<=127) return 1
+          }
+          return 0
+        }
+        if(substr(ip,1,5)=="fe80:"||ip=="::1") return 1
+        if(substr(ip,1,2)=="fc"||substr(ip,1,2)=="fd") return 1
+        if(index(LAN6,"|" p4(ip) "|")>0) return 1
+        return 0
+      }
+      {
+      p=$3; s1=""; d1=""; off=0; assured=0
+      for(i=1;i<=NF;i++){
+        if($i~/^src=/&&s1=="") s1=substr($i,5)
+        if($i~/^dst=/&&d1=="") d1=substr($i,5)
+        if($i=="[OFFLOAD]"||$i=="OFFLOAD") off=1
+        if($i=="[ASSURED]") assured=1
+      }
+      tcp_st=$6
+      active=0
+      if(p=="tcp"){
+        tcp++
+        if(tcp_st=="ESTABLISHED"||off){tcp_e++; active=1}
+      } else if(p=="udp"){
+        udp++
+        if(assured||off){udp_e++; active=1}
+      } else if(p=="icmp"||p=="icmpv6"){
+        icmp++; active=1
+      }
+      if(active && (!is_int(s1) || !is_int(d1))) ext++
+    } END{print tcp_e+0, tcp+0, udp_e+0, udp+0, icmp+0, ext+0}' /proc/net/nf_conntrack 2>/dev/null)
+    ct_tcp_estab=$(echo "$_proto_stats" | awk '{print $1}')
+    ct_tcp_total=$(echo "$_proto_stats" | awk '{print $2}')
+    ct_udp=$(echo "$_proto_stats" | awk '{print $3}')
+    ct_udp_total=$(echo "$_proto_stats" | awk '{print $4}')
+    ct_icmp=$(echo "$_proto_stats" | awk '{print $5}')
+    ct_external=$(echo "$_proto_stats" | awk '{print $6}')
+fi
+
+# ===== 网络接口（物理 + LAN + WAN + WiFi + pppoe*）=====
+# v4.10 性能优化：所有 sysfs/ip/uci 读取批量预取为 shell 变量，循环内零进程 spawn
+# （此前每接口 10+ spawn，且每个 ethX 跑两次 uci show network —— 是轮询开销主因）
+net_ifs="[]"
+net_lines=""
+net_state=""
+
+# 1) 全部接口计数器：一次 awk 读 /proc/net/dev（与 /sys/class/net/*/statistics 同源）
+eval "$(awk 'NR>2{n=$1;sub(/:$/,"",n);gsub(/[^a-zA-Z0-9_]/,"_",n);
+  printf "IFC_%s=\"%s %s %s %s\"\n", n, $2, $10, $3, $11}' /proc/net/dev 2>/dev/null)"
+# 2) operstate：一次 awk 扫全部 sysfs 文件（carrier 不能 bulk 读 —— 虚拟设备如 dummy0
+#    的 carrier 读返回 EINVAL 会让 BusyBox awk 直接退出，故 carrier 在循环内按需 cat）
+eval "$(awk '{f=FILENAME;sub(/.*\/net\//,"",f);sub(/\/operstate$/,"",f);gsub(/[^a-zA-Z0-9_]/,"_",f);
+  printf "OPST_%s=\"%s\"\n", f, $0}' /sys/class/net/*/operstate 2>/dev/null)"
+# 3) 地址：ip -o 一次全取（v4 取前 3 个、v6 全局取前 2 个，与旧逐口解析口径一致；
+#    PPP peer 行 $4 为裸 IP，等价旧正则的可选掩码语义）
+eval "$(ip -o -4 addr show 2>/dev/null | awk '{n=$2;gsub(/[^a-zA-Z0-9_]/,"_",n);a=$4;sub(/ .*/,"",a);
+  if(A4[n]=="")A4[n]=a; else if(c4[n]<2)A4[n]=A4[n]", "a; c4[n]++}
+  END{for(n in A4)printf "ADR4_%s=\"%s\"\n", n, A4[n]}')"
+eval "$(ip -o -6 addr show 2>/dev/null | awk '$5=="scope"&&$6=="global"{n=$2;gsub(/[^a-zA-Z0-9_]/,"_",n);
+  if(A6[n]=="")A6[n]=$4; else if(c6[n]<1)A6[n]=A6[n]", "$4; c6[n]++}
+  END{for(n in A6)printf "ADR6_%s=\"%s\"\n", n, A6[n]}')"
+# 4) UCI 一次性预取：PPPoE 各接口的底层 device + 全部 device 引用
+_pppoe_base_devs=""
+for _sec in $(uci show network 2>/dev/null | sed -n "s/^network\.\([^.]*\)\.proto='pppoe'/\1/p"); do
+    _pd=$(uci get "network.$_sec.device" 2>/dev/null)
+    [ -n "$_pd" ] && { _pppoe_base_devs="$_pppoe_base_devs $_pd"; eval "PPPB_${_sec//-/_}='$_pd'"; }
+done
+_uci_all=$(uci show network 2>/dev/null | grep "device=")
+
+for iface_dir in /sys/class/net/*; do
+    iface=$(basename "$iface_dir")
+    case "$iface" in
+        eth*|wlan*|ra*|br-lan|wan|br-wan|pppoe-*|ppp-*) ;;
+        *) continue ;;
+    esac
+    _m=${iface//-/_}; _m=${_m//./_}
+    # 状态（operstate 为 unknown/down 时参考 carrier，同旧逻辑；carrier 逐口读，
+    # 虚拟设备读返回 EINVAL 时 cat 失败→空值→不误判）
+    eval "operstate=\${OPST_${_m}:-unknown}"
+    if [ "$operstate" = "unknown" ] || [ "$operstate" = "down" ]; then
+        if [ -f "$iface_dir/carrier" ]; then
+            carrier=$(cat "$iface_dir/carrier" 2>/dev/null)
+            [ "$carrier" = "1" ] && operstate="up"
+        fi
+    fi
+    # 计数器（rx tx rx_pkts tx_pkts）
+    eval "_cnt=\${IFC_${_m}:-0 0 0 0}"
+    set -- $_cnt
+    rx_bytes=${1:-0}; tx_bytes=${2:-0}; rx_pkts=${3:-0}; tx_pkts=${4:-0}
+    # 地址
+    eval "ip4=\${ADR4_${_m}:-}"
+    eval "ip6=\${ADR6_${_m}:-}"
+    ip_addr="$ip4"
+    [ -n "$ip6" ] && ip_addr="${ip4:+$ip4, }$ip6"
+    # 接口类型
+    iface_type="physical"
+    case "$iface" in
+        br-lan) iface_type="LAN" ;;
+        pppoe-*|ppp-*) iface_type="WAN" ;;
+        wan|br-wan) iface_type="WAN" ;;
+        wlan*|ra*) iface_type="WIFI" ;;
+    esac
+    # v4.13：PPPoE 用逻辑口自身计数器（IP payload，与运营商/协议分类口径一致）
+    # UCI 识别：ethX 是某个非 PPPoE WAN 接口的底层设备时标记为 WAN（如 IPTV 专线 eth1=wan2）
+    # 但排除 PPPoE 接口的底层物理口（如 eth0 是 pppoe-wan 的载体，流量已通过 pppoe-wan 体现，不重复计为 WAN）
+    # v4.10：纯 shell 判断（旧实现每个 ethX 跑两次 uci show + grep 管道）
+    if [ "$iface_type" = "physical" ]; then
+        case "$iface" in
+            eth*)
+                _rest=${iface#eth}
+                case "$_rest" in
+                    ''|*[!0-9]*) ;;
+                    *)
+                        _is_pppoe_base=0
+                        for _pd in $_pppoe_base_devs; do [ "$_pd" = "$iface" ] && _is_pppoe_base=1; done
+                        if [ "$_is_pppoe_base" = "0" ]; then
+                            # device 引用且非 lan 段（lan 段引用优先视为 LAN 底层口）
+                            case "$_uci_all" in
+                                *"network.lan.device='$iface'"*) ;;
+                                *"device='$iface'"*) iface_type="WAN" ;;
+                            esac
+                        fi
+                        ;;
+                esac
+                ;;
+        esac
+    fi
+    # v4.6：速率计算移至前端，CGI 不再计算 rx_rate/tx_rate
+    net_lines="$net_lines{\"name\":\"$iface\",\"type\":\"$iface_type\",\"state\":\"$operstate\",\"rx\":$rx_bytes,\"tx\":$tx_bytes,\"rx_pkts\":$rx_pkts,\"tx_pkts\":$tx_pkts,\"ip\":\"$ip_addr\",\"ip4\":\"$ip4\",\"ip6\":\"$ip6\"},"
+    net_state="${net_state}${iface}:rx=${rx_bytes},tx=${tx_bytes};"
+done
+[ -n "$net_lines" ] && net_lines=${net_lines%,} && net_ifs="[$net_lines]"
+
+# ===== 客户端（DHCP 租约底册 + 邻居状态 + conntrack 流量，按设备合并）=====
+# 口径与首页设备列表一致：以 /tmp/dhcp.leases 为设备清单底册（含主机名），
+# 叠加邻居表状态：REACHABLE/DELAY/PROBE=活跃（近期有流量）、STALE=空闲（在线但静默）、
+# 无邻居条目的租约设备=离线；FAILED/INCOMPLETE 仍排除。
+# 同一设备（按 MAC）的 v4/v6 地址与 conntrack 流量合并为一行。
+# v4.11：主查询每次请求都触发持久累计（前端 2s 轮询差分需要连续新鲜的累计值；
+#        旧版 2s 节流与轮询同频导致 0/2x 速率跳变，故去掉节流，由 flock 串行化）
+CLIENT_TOTALF="$PROTO_DIR/client-total-$(date +%F).txt"
+client_accumulate
+clients="[]"
+client_lines=""
+client_state=""
+
+LSE=/tmp/dhcp.leases
+[ -f "$LSE" ] || LSE=/dev/null
+
+TMPL4=/tmp/.sm_neigh4.$$
+TMPL6=/tmp/.sm_neigh6.$$
+trap 'rm -f "$TMPL4" "$TMPL6"' EXIT
+ip -4 neigh show 2>/dev/null > "$TMPL4"
+ip -6 neigh show 2>/dev/null > "$TMPL6"
+
+CTF=/proc/net/nf_conntrack
+[ -f "$CTF" ] || CTF=/dev/null
+
+# 一次 awk 扫描四个文件：租约(设备底册) -> conntrack(IP聚合) -> v4/v6邻居(状态+IP归属)
+CLIENTS=$(awk -v CTF="$CTF" -v LSE="$LSE" '
+function stripz(g){while(length(g)>1&&substr(g,1,1)=="0")g=substr(g,2);return g}
+function canon(v,  p,h,t,hn,tn,i,g,out){
+  v=tolower(v)
+  if(v~/::/){
+    split(v,p,"::");hn=0;tn=0
+    if(p[1]!="")hn=split(p[1],h,":")
+    if(p[2]!="")tn=split(p[2],t,":")
+    for(i=1;i<=hn;i++)g[i]=h[i]
+    for(i=1;i<=8-hn-tn;i++)g[hn+i]="0"
+    for(i=1;i<=tn;i++)g[8-tn+i]=t[i]
+  } else split(v,g,":")
+  out=""
+  for(i=1;i<=8;i++){if(i>1)out=out":";out=out stripz(g[i])}
+  return out
+}
+# --- 文件1: DHCP 租约（dnsmasq 格式: 到期 MAC IP 主机名 clientid） ---
+FILENAME==LSE{
+  if($2!="" && index($2,":")>0){
+    if($4!="" && $4!="*")host[$2]=$4
+    lip[$2]=$3
+    if(!($2 in seen)){seen[$2]=1;order[++k]=$2}
+  }
+  next
+}
+# --- 文件2: conntrack 聚合（客户端发起: 发送=orig_bytes, 接收=reply_bytes） ---
+# 只统计请求方向（s1=发起方），不统计返回方向（s2=服务端），避免连接数翻倍
+# 流量(up/dn)统计所有连接；连接数(cn)只统计活跃连接：
+#   TCP=ESTABLISHED+OFFLOAD, UDP=ASSURED+OFFLOAD
+FILENAME==CTF{
+  s1="";s2="";b1="";b2="";ctst="";proto=""
+  for(i=1;i<=NF;i++){
+    if($i~/^src=/){if(s1=="")s1=substr($i,5);else if(s2=="")s2=substr($i,5)}
+    else if($i~/^bytes=/){if(b1=="")b1=substr($i,7);else if(b2=="")b2=substr($i,7)}
+    if($i~/^(ESTABLISHED|OFFLOAD|\[ESTABLISHED\]|\[OFFLOAD\]|\[ASSURED\])$/){ctst=$i;gsub(/[][]/,"",ctst)}
+  }
+  proto=$3
+  if(s1=="")next
+  if(index(s1,":"))s1=canon(s1)
+  up[s1]+=b1;dn[s1]+=b2
+  # TCP 活跃: ESTABLISHED+OFFLOAD; UDP 活跃: ASSURED+OFFLOAD
+  if(ctst=="ESTABLISHED"||ctst=="OFFLOAD"||(ctst=="ASSURED"&&proto=="udp"))cn[s1]++
+  next
+}
+# --- 文件3/4: 邻居表（含 STALE=空闲） ---
+{
+  ip=$1;mac="";dev=""
+  for(i=2;i<NF;i++){
+    if($i=="dev"&&dev=="")dev=$(i+1)
+    else if($i=="lladdr"&&mac=="")mac=$(i+1)
+  }
+  st=$NF
+  if(ip=="")next
+  if(st!="REACHABLE"&&st!="DELAY"&&st!="PROBE"&&st!="STALE")next
+  if(mac==""||mac=="00:00:00:00:00:00")next
+  ver=4
+  if(index(ip,":")){
+    if(substr(ip,1,5)=="fe80:")next
+    # v4.17：IPv6 只认近期可达，丢掉 STALE 残留（关 IPv6 / 前缀轮换后旧 SLAAC 会挂很久）
+    if(st=="STALE")next
+    ver=6
+  }
+  if(dev!="br-lan"&&dev!~/^(br-|wlan|ra|ath|apcli)/)next
+  if(!(mac in seen)){seen[mac]=1;order[++k]=mac}
+  if(st!="STALE")act[mac]=1
+  if(ver==4){
+    if(!(mac in m4))m4[mac]=ip
+  } else {
+    if(m6[mac]=="")m6[mac]=ip;else m6[mac]=m6[mac] "," ip
+  }
+  key=ip
+  if(ver==6)key=canon(ip)
+  if(key in cn)totconn[mac]+=cn[key]
+  if(key in dn)totrx[mac]+=dn[key]
+  if(key in up)tottx[mac]+=up[key]
+}
+END{
+  for(i=1;i<=k;i++){
+    m=order[i]
+    st="offline"
+    if(m in act)st="active"
+    else if((m in m4)||(m in m6))st="idle"
+    nm=(m in host)?host[m]:""
+    v4=""
+    if(m in m4)v4=m4[m]
+    else if(m in lip)v4=lip[m]
+    v6=(m in m6)?m6[m]:""
+    ip=v4
+    if(ip==""){if(v6!=""){split(v6,t6,",");ip=t6[1]}}
+    ver=(v4!="")?((v6!="")?"46":"4"):"6"
+    # 离线设备（无邻居条目）也查一次租约 IP 的 conntrack 残留计数
+    if(!(m in m4)&&v4!=""){
+      if(v4 in cn)totconn[m]+=cn[v4]
+      if(v4 in dn)totrx[m]+=dn[v4]
+      if(v4 in up)tottx[m]+=up[v4]
+    }
+    printf "%s|%s|%s|%s|%s|%s|%d|%d|%d\n",nm,ip,m,st,ver,v6,totconn[m]+0,totrx[m]+0,tottx[m]+0
+  }
+}' "$LSE" "$CTF" "$TMPL4" "$TMPL6" 2>/dev/null)
+
+while IFS='|' read -r cname cip cmac cst cver cv6 cconn crx ctx; do
+    [ -z "$cmac" ] && continue
+    cname=$(echo "$cname" | sed 's/["\\<>]//g')
+    # v4.11：优先用当日持久累计覆盖（含离线设备，单调递增）；无记录则回退 conntrack 即时值
+    _ctl=$(grep -m1 "^$cmac|" "$CLIENT_TOTALF" 2>/dev/null)
+    [ -n "$_ctl" ] && { crx=$(echo "$_ctl" | cut -d'|' -f2); ctx=$(echo "$_ctl" | cut -d'|' -f3); }
+    # v4.11：速率改 CGI 端 6s 滑动窗口计算（读速率缓存文件），前端不再差分
+    crxr=0; ctxr=0
+    _crl=$(grep -m1 "^$cmac|" "$CLIENT_RATEF" 2>/dev/null)
+    [ -n "$_crl" ] && { crxr=$(echo "$_crl" | cut -d'|' -f5); ctxr=$(echo "$_crl" | cut -d'|' -f6); }
+    client_lines="$client_lines{\"name\":\"$cname\",\"ip\":\"$cip\",\"ip6\":\"$cv6\",\"mac\":\"$cmac\",\"state\":\"$cst\",\"version\":\"$cver\",\"connections\":$cconn,\"rx\":$crx,\"tx\":$ctx,\"rx_rate\":$crxr,\"tx_rate\":$ctxr},"
+    client_state="${client_state}${cmac}:rx=${crx},tx=${ctx};"
+done <<CLIENTS_EOF
+$CLIENTS
+CLIENTS_EOF
+
+[ -n "$client_lines" ] && client_lines=$(echo "$client_lines" | sed 's/,$//') && clients="[$client_lines]"
+
+# v4.11：客户端合计（对账用：与协议分类合计交叉验证统计完整度）
+client_sum_rx=0
+client_sum_tx=0
+if [ -s "$CLIENT_TOTALF" ]; then
+    client_sum_rx=$(cut -d'|' -f2 "$CLIENT_TOTALF" | awk '{s+=$1} END{print s+0}')
+    client_sum_tx=$(cut -d'|' -f3 "$CLIENT_TOTALF" | awk '{s+=$1} END{print s+0}')
+fi
+
+# ===== 磁盘 =====
+disk="[]"
+disk_lines=""
+while read -r line; do
+    fs=$(echo "$line" | awk '{print $1}')
+    size=$(echo "$line" | awk '{print $2}')
+    used=$(echo "$line" | awk '{print $3}')
+    avail=$(echo "$line" | awk '{print $4}')
+    usep=$(echo "$line" | awk '{print $5}' | tr -d '%')
+    [ -z "$usep" ] && usep=0
+    mount=$(echo "$line" | awk '{print $6}')
+    [ -z "$mount" ] && continue
+    disk_lines="$disk_lines{\"mount\":\"$mount\",\"fs\":\"$fs\",\"total\":$size,\"used\":$used,\"free\":$avail,\"usepct\":$usep},"
+done <<DISK_EOF
+$(df 2>/dev/null | tail -n +2 | grep -v tmpfs | grep -v devtmpfs | grep -v overlay)
+DISK_EOF
+[ -n "$disk_lines" ] && disk_lines=$(echo "$disk_lines" | sed 's/,$//') && disk="[$disk_lines]"
+
+# ===== 服务状态 =====
+# firewall 用 nft 规则检测（fw4 非常驻进程，pidof 永远查不到）
+services="[]"
+svc_lines=""
+for svc in uhttpd dnsmasq iptv-auth rtp2httpd cron firewall; do
+    pid=""
+    if pidof "$svc" >/dev/null 2>&1; then
+        pid=$(pidof "$svc" | awk '{print $1}')
+        status="running"
+    elif pgrep -f "$svc" >/dev/null 2>&1; then
+        pid=$(pgrep -f "$svc" | head -1)
+        status="running"
+    elif [ "$svc" = "firewall" ] && nft list chain inet fw4 input >/dev/null 2>&1; then
+        status="running"
+    else
+        status="stopped"
+    fi
+    svc_lines="$svc_lines{\"name\":\"$svc\",\"status\":\"$status\",\"pid\":${pid:-0}},"
+done
+[ -n "$svc_lines" ] && svc_lines=$(echo "$svc_lines" | sed 's/,$//') && services="[$svc_lines]"
+
+# ===== 保存状态（v4.12：wan 字段随按天统计退役移除，net/clients 保留供其他用途）=====
+printf '{"ts":%d,"net":"%s","clients":"%s"}\n' \
+    "$NOW" "$net_state" "$client_state" > "$STATE" 2>/dev/null
+
+# ===== 每日协议分类流量累计（v4.9：nftables 计数，详见文件头部 proto_accumulate）=====
+# v4.10 节流：主轮询仅当 state 距上次累计 ≥10s 才执行（cron 仍每分钟，?proto_day 强制刷新），
+# 计数器单调不丢数据，节流只影响归档鲜度
+if [ ! -f "$PROTO_STATE" ]; then
+    proto_accumulate 0
+else
+    _acc_ts=$(stat -c %Y "$PROTO_STATE" 2>/dev/null || echo 0)
+    [ $((NOW - _acc_ts)) -ge 10 ] && proto_accumulate 0
+fi
+
+# ===== 本月流量总计（v4.14：WAN 接口累计总量 + nft 分类占比对齐）=====
+TRA_MONTH=$(date +%Y-%m)
+TRA_MFILE="$PROTO_DIR/month-$TRA_MONTH.json"
+month_cats=$(cat "$TRA_MFILE" 2>/dev/null)
+case "$month_cats" in
+    '{'*'}') : ;;
+    *) month_cats='{"video":{"rx":0,"tx":0,"conn":0},"game":{"rx":0,"tx":0,"conn":0},"web":{"rx":0,"tx":0,"conn":0},"download":{"rx":0,"tx":0,"conn":0},"dns":{"rx":0,"tx":0,"conn":0},"ntp":{"rx":0,"tx":0,"conn":0},"other":{"rx":0,"tx":0,"conn":0}}' ;;
+esac
+wan_accumulate
+month_total_rx=$(awk '$1=="MONTH_RX"{print $2+0; exit}' "$WAN_STATE" 2>/dev/null); month_total_rx=${month_total_rx:-0}
+month_total_tx=$(awk '$1=="MONTH_TX"{print $2+0; exit}' "$WAN_STATE" 2>/dev/null); month_total_tx=${month_total_tx:-0}
+today_rx=$(awk '$1=="TODAY_RX"{print $2+0; exit}' "$WAN_STATE" 2>/dev/null); today_rx=${today_rx:-0}
+today_tx=$(awk '$1=="TODAY_TX"{print $2+0; exit}' "$WAN_STATE" 2>/dev/null); today_tx=${today_tx:-0}
+month_cats=$(_sm_scale_cats "$month_cats" "$month_total_rx" "$month_total_tx")
+traffic_json='{"month":"'"$TRA_MONTH"'","today":{"rx":'"$today_rx"',"tx":'"$today_tx"'}, "total":{"rx":'"$month_total_rx"',"tx":'"$month_total_tx"'}, "cats":'"$month_cats"'}'
+
+# ===== 输出 JSON =====
+cat <<JSONEOF
+{
+  "system": {
+    "hostname": "$hostname",
+    "kernel": "$kernel",
+    "uptime": $uptime_s,
+    "load": [$load1, $load5, $load15],
+    "board": "$board",
+    "cpu_model": "$cpu_model",
+    "cpu_cores": $cpu_cores,
+    "cpu_usage": $cpu_usage,
+    "temperature": $temp_c
+  },
+  "memory": {
+    "total": $mem_total,
+    "used": $mem_used,
+    "free": $mem_free,
+    "available": $mem_avail,
+    "cached": $mem_cached,
+    "buffers": $mem_buf
+  },
+  "protocols": {
+    "tcp_current": $proto_tcp_curr,
+    "tcp_total": $proto_tcp_total,
+    "tcp_retrans": $proto_tcp_ret,
+    "udp_total": $proto_udp,
+    "udp_inerrors": $proto_udp_ret,
+    "icmp_total": $proto_icmp,
+    "ip_total": $proto_ip_total,
+    "conntrack_current": $ct_total,
+    "conntrack_max": $ct_max,
+    "ct_tcp_estab": $ct_tcp_estab,
+    "ct_tcp_total": $ct_tcp_total,
+    "ct_udp": $ct_udp,
+    "ct_udp_total": $ct_udp_total,
+    "ct_icmp": $ct_icmp,
+    "ct_external": $ct_external
+  },
+  "network": $net_ifs,
+  "traffic": $traffic_json,
+  "clients": $clients,
+  "client_sum": {"rx": $client_sum_rx, "tx": $client_sum_tx},
+  "disk": $disk,
+  "services": $services,
+  "timestamp": $NOW
+}
+JSONEOF

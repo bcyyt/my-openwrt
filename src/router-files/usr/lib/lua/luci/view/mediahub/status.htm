@@ -1,0 +1,483 @@
+<%# status.htm — 影视中心 · 运行状态（IPTV 风格美化版） %>
+<%+header%>
+<%
+local sys = require "luci.sys"
+local http = require "luci.http"
+local function trim(s) return (s or ""):gsub("^%s+", ""):gsub("%s+$", "") end
+local lan_ip = trim(sys.exec("uci -q get network.lan.ipaddr 2>/dev/null")):gsub("/%d+$", "")  -- 剥 CIDR 后缀
+if lan_ip == "" then lan_ip = (http.getenv("HTTP_HOST") or ""):match("^([^:]+)"):gsub("/%d+$", "") or "192.168.10.1" end
+%>
+
+<script type="text/javascript">
+//<![CDATA[
+window.addEventListener('error', function(ev) {
+    var el = document.getElementById('page-err');
+    if (el) el.textContent = '页面脚本错误: ' + (ev.message || ev.type) + (ev.lineno ? ' @line ' + ev.lineno : '');
+});
+
+function byId(id) { return document.getElementById(id); }
+
+function mhAPI(action, params, cb) {
+    var url = '<%=luci.dispatcher.build_url("admin/services/mediahub/api")%>' + '?action=' + action;
+    if (params) {
+        var qs = [];
+        for (var k in params) qs.push(k + '=' + encodeURIComponent(params[k]));
+        url += '&' + qs.join('&');
+    }
+    fetch(url, { credentials: 'same-origin' })
+        .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+        .then(cb)
+        .catch(function(e) { cb({ code: 500, message: e.message }); });
+}
+
+function setBadge(id, text, cls) {
+    var el = byId(id);
+    if (!el) return;
+    el.textContent = text;
+    var badge = el.parentElement;
+    if (badge && badge.classList.contains('mh-badge')) {
+        badge.className = 'mh-badge ' + (cls === 'ok' ? 'mh-badge-ok' : cls === 'err' ? 'mh-badge-err' : cls === 'warn' ? 'mh-badge-warn' : '');
+    }
+}
+
+function fmtBytes(b) {
+    if (b > 1048576) return (b / 1048576).toFixed(1) + ' MB';
+    if (b > 1024) return (b / 1024).toFixed(1) + ' KB';
+    return (b || 0) + ' B';
+}
+
+var CRAWL_TXT = { running: '爬取中', done: '已完成', idle: '待机', error: '出错' };
+var MODE_TXT = { strict: '严格', balanced: '均衡', rapid: '急速' };
+var MODE_DESC = { strict: '严格（片名+年份须一致）', balanced: '均衡（推荐 · 片名须一致）', rapid: '急速（首个结果直接用）' };
+
+function refresh() {
+    mhAPI('get_status', null, function(d) {
+        if (!d || !d.alist) return;
+        setBadge('ol-run', d.alist.running ? '运行中' : '已停止', d.alist.running ? 'ok' : 'err');
+        setBadge('cms-run', d.cms.running ? '运行中' : '已停止', d.cms.running ? 'ok' : 'err');
+        setBadge('ol-115', d.alist.c115 === 'ok' ? '正常' : (d.alist.c115 === 'error' ? '异常' : '未知'),
+                 d.alist.c115 === 'ok' ? 'ok' : (d.alist.c115 === 'error' ? 'err' : 'warn'));
+        setBadge('ol-quark', d.alist.cquark === 'ok' ? '正常' : (d.alist.cquark === 'error' ? '异常' : '未知'),
+                 d.alist.cquark === 'ok' ? 'ok' : (d.alist.cquark === 'error' ? 'err' : 'warn'));
+        byId('m-cms').textContent = (d.cms.total || 0).toLocaleString();
+        byId('m-115').textContent = (d.cloud.c115 || 0).toLocaleString();
+        byId('m-quark').textContent = (d.cloud.cquark || 0).toLocaleString();
+        byId('m-search').textContent = (d.cms.searches || 0).toLocaleString();
+        var c = d.cache || {};
+        byId('m-cache').textContent = fmtBytes(c.bytes || 0);
+        // 海报刮削进度
+        var pf = d.poster || {};
+        byId('m-poster').textContent = (pf.extra || 0).toLocaleString();
+        byId('m-thumbs').textContent = (pf.thumbs || 0).toLocaleString();
+        byId('pf-mode').textContent = '匹配模式：' + (MODE_DESC[pf.mode] || pf.mode || '-');
+        byId('d-pfmode').textContent = (MODE_DESC[pf.mode] || pf.mode || '-');
+        byId('d-extra').textContent = (pf.extra || 0) + ' 条';
+        byId('d-thumbs').textContent = (pf.thumbs || 0) + ' 张';
+        if (pf.running) {
+            setBadge('pf-status', '刮削中', 'ok');
+        } else if (pf.total > 0 && pf.done >= pf.total) {
+            setBadge('pf-status', '已完成', 'ok');
+        } else if (pf.done > 0) {
+            setBadge('pf-status', '中断（重启后自动续刮）', 'warn');
+        } else {
+            setBadge('pf-status', '待启动（重启后约 90 秒）', 'warn');
+        }
+        var pct = (pf.total > 0) ? Math.round((pf.done || 0) / pf.total * 100) : 0;
+        byId('pf-bar').style.width = pct + '%';
+        byId('pf-bar-text').textContent = pct + '%';
+        byId('pf-count').textContent = (pf.done || 0) + ' / ' + (pf.total || 0);
+        var pfS = [];
+        if (pf.tmdb) pfS.push('TMDb');
+        if (pf.tvdb) pfS.push('TheTVDB');
+        pfS.push('豆瓣', '采集站');
+        var eta = '';
+        if (pf.running && pf.started && pf.done > 0) {
+            var elapsed = Math.max(1, Math.floor(Date.now() / 1000) - pf.started);
+            var speed = pf.done / elapsed;
+            var remain = Math.round((pf.total - pf.done) / speed);
+            eta = ' · 已运行 ' + (elapsed >= 3600 ? (elapsed / 3600).toFixed(1) + ' 小时' : Math.round(elapsed / 60) + ' 分钟')
+                + ' · 预计剩余 ' + (remain >= 3600 ? (remain / 3600).toFixed(1) + ' 小时' : Math.max(1, Math.round(remain / 60)) + ' 分钟');
+        }
+        byId('pf-detail').textContent = '匹配 ' + (pf.scraped || 0) + ' · 截帧兑底 ' + (pf.framed || 0) + eta;
+        byId('d-olver').textContent = d.alist.version || '-';
+        byId('d-cmsver').textContent = d.cms.version || '-';
+        byId('d-sites').textContent = (d.cms.sites || 0) + ' 个';
+        byId('d-crawl').textContent = CRAWL_TXT[d.cms.crawl_status] || (d.cms.crawl_status || '-');
+        byId('d-files').textContent = (c.cloud_files || 0).toLocaleString() + ' 个';
+        byId('d-climit').textContent = (c.limit_mb || 0) + ' MB / ' + (c.entries || 0) + ' 条';
+        byId('d-disk').textContent = d.disk || '-';
+            byId('d-datadir').textContent = d.data_dir || '-';
+        byId('d-last').textContent = d.cms.last_refresh ? new Date(d.cms.last_refresh * 1000).toLocaleString('zh-CN') : '尚未爬取';
+        var nc = d.cms.next_crawl || 0;
+        var ncEl = byId('d-next');
+        if (d.cms.crawl_interval === 0) {
+            ncEl.textContent = '定时爬取已关闭（仅启动时爬一次）';
+            ncEl.style.color = '#94a3b8';
+        } else if (d.cms.crawl_status === 'running') {
+            ncEl.textContent = '正在爬取中...';
+            ncEl.style.color = '#ef6c00';
+        } else if (nc > 0) {
+            var diff = nc - Math.floor(Date.now() / 1000);
+            var left = diff > 0 ? (diff >= 3600 ? (diff / 3600).toFixed(1) + ' 小时后' : Math.max(1, Math.round(diff / 60)) + ' 分钟后') : '即将开始';
+            ncEl.textContent = new Date(nc * 1000).toLocaleString('zh-CN') + '（约 ' + left + '）';
+            ncEl.style.color = '';
+        } else {
+            ncEl.textContent = '-';
+            ncEl.style.color = '';
+        }
+    });
+    mhAPI('get_logs', null, function(d) {
+        var el = byId('log-area');
+        if (el && d && d.logs) {
+            var atBottom = (el.scrollHeight - el.scrollTop - el.clientHeight) < 40;
+            el.textContent = d.logs.length ? d.logs.join('\n') : '暂无日志';
+            if (atBottom) el.scrollTop = el.scrollHeight;
+        }
+    });
+}
+
+function restartAll() {
+    if (!confirm('确定重启所有服务？\n（AList 网盘 + CMS 代理，正在播放的影片会中断数秒）')) return;
+    var btn = byId('restart-btn');
+    if (btn) { btn.disabled = true; btn.value = '重启中...'; }
+    mhAPI('restart_services', null, function(d) {
+        alert(d.message || '操作完成');
+        if (btn) { btn.disabled = false; btn.value = '重启服务'; }
+        setTimeout(refresh, 3000);
+    });
+}
+
+function startAutoRefresh() {
+    setInterval(refresh, 5000);
+    refresh();
+}
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', startAutoRefresh);
+} else {
+    startAutoRefresh();
+}
+document.addEventListener('visibilitychange', function() {
+    if (!document.hidden && document.readyState !== 'loading') refresh();
+});
+//]]>
+</script>
+
+<style type="text/css">
+/* ===== 影视中心 — IPTV 风格样式 ===== */
+:root {
+    --mh-primary: #4a90d9;
+    --mh-primary-dark: #357abd;
+    --mh-primary-bg: #e3f2fd;
+    --mh-success: #2e7d32;
+    --mh-success-bg: #e8f5e9;
+    --mh-success-border: #c8e6c9;
+    --mh-error: #c62828;
+    --mh-error-bg: #ffebee;
+    --mh-error-border: #ffcdd2;
+    --mh-warn: #ef6c00;
+    --mh-warn-bg: #fff3e0;
+    --mh-card-bg: #ffffff;
+    --mh-border: #e2e8f0;
+    --mh-text: #334155;
+    --mh-muted: #64748b;
+    --mh-terminal-bg: #1a1a2e;
+    --mh-terminal-border: #2d2d44;
+}
+.mh-page-header { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.mh-page-header h2 { margin: 0; }
+.mh-ver-badge {
+    display: inline-block;
+    background: linear-gradient(135deg, var(--mh-primary), var(--mh-primary-dark));
+    color: #fff; font-size: 12px; font-weight: 600;
+    padding: 3px 12px; border-radius: 12px;
+    box-shadow: 0 2px 6px rgba(74,144,217,.25);
+    line-height: 1.6; vertical-align: middle;
+}
+.mh-header-actions { margin-left: auto; display: flex; gap: 8px; }
+.mh-hero {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px;
+    background: var(--mh-border); border: 1px solid var(--mh-border);
+    border-radius: 12px; overflow: hidden; margin-bottom: 12px;
+}
+.mh-hero-cell {
+    background: var(--mh-card-bg); padding: 14px 18px;
+    display: flex; flex-direction: column; justify-content: center; gap: 8px;
+    min-height: 64px;
+}
+.mh-hero-label { font-size: 12px; color: var(--mh-muted); letter-spacing: .3px; }
+.mh-hero-value { display: flex; align-items: center; gap: 8px; min-height: 26px; }
+.mh-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 12px; border-radius: 20px;
+    font-size: 13px; font-weight: 600;
+    border: 1px solid #e0e0e0; background: #f5f5f5; color: #888;
+}
+.mh-badge::before {
+    content: ''; display: inline-block; width: 7px; height: 7px;
+    border-radius: 50%; flex-shrink: 0; background: #bbb;
+}
+.mh-badge-ok { background: var(--mh-success-bg); color: var(--mh-success); border-color: var(--mh-success-border); }
+.mh-badge-ok::before { background: #4caf50; animation: mh-pulse 2s ease-in-out infinite; }
+.mh-badge-err { background: var(--mh-error-bg); color: var(--mh-error); border-color: var(--mh-error-border); }
+.mh-badge-err::before { background: #f44336; }
+.mh-badge-warn { background: var(--mh-warn-bg); color: var(--mh-warn); border-color: #ffe0b2; }
+.mh-badge-warn::before { background: #ff9800; }
+@keyframes mh-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
+.mh-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 4px; }
+.mh-metric {
+    background: var(--mh-card-bg); border: 1px solid var(--mh-border);
+    border-radius: 12px; padding: 14px 18px; text-align: center;
+    transition: box-shadow .2s, border-color .2s;
+}
+.mh-metric:hover { box-shadow: 0 2px 12px rgba(0,0,0,.06); border-color: #cbd5e1; }
+.mh-metric-num { font-size: 22px; font-weight: 700; color: var(--mh-primary); line-height: 1.3; word-break: break-all; }
+.mh-metric-num .mh-metric-unit { font-size: 12px; font-weight: 400; color: #94a3b8; margin-left: 2px; }
+.mh-metric-label { font-size: 12px; color: var(--mh-muted); margin-top: 4px; letter-spacing: .3px; }
+.mh-sec { margin-top: 24px; }
+.mh-sec-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.mh-sec-icon {
+    flex-shrink: 0; width: 28px; height: 28px; border-radius: 8px;
+    background: var(--mh-primary-bg); color: var(--mh-primary);
+    display: flex; align-items: center; justify-content: center;
+}
+.mh-sec-icon svg { width: 15px; height: 15px; }
+.mh-sec-title { font-size: 15px; font-weight: 600; color: #475569; }
+.mh-sec-note { font-size: 12px; color: #94a3b8; }
+.mh-sec-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+.mh-link-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.mh-link-card {
+    display: flex; align-items: center; gap: 10px; padding: 12px 14px;
+    border: 1px solid var(--mh-border); border-radius: 10px;
+    text-decoration: none; transition: all .2s; background: var(--mh-card-bg);
+}
+.mh-link-card:hover { background: #f0f7ff; border-color: var(--mh-primary); box-shadow: 0 2px 8px rgba(74,144,217,.1); }
+.mh-link-icon {
+    flex-shrink: 0; width: 32px; height: 32px; border-radius: 8px;
+    background: var(--mh-primary-bg); color: var(--mh-primary);
+    display: flex; align-items: center; justify-content: center;
+}
+.mh-link-icon.green { color: var(--mh-success); }
+.mh-link-icon svg { width: 16px; height: 16px; }
+.mh-link-title { font-size: 14px; font-weight: 600; color: var(--mh-text); }
+.mh-link-url { font-size: 12px; color: #94a3b8; word-break: break-all; }
+.mh-detail-table {
+    width: 100%; border-collapse: collapse; background: var(--mh-card-bg);
+    border: 1px solid var(--mh-border); border-radius: 10px; overflow: hidden; font-size: 13px;
+}
+.mh-detail-table th {
+    background: #f1f5f9; color: var(--mh-muted); font-weight: 600;
+    text-align: left; padding: 9px 14px; font-size: 12px; width: 170px;
+}
+.mh-detail-table td { padding: 9px 14px; border-top: 1px solid var(--mh-border); color: var(--mh-text); }
+.mh-terminal {
+    background: var(--mh-terminal-bg); color: #a5f3fc; padding: 14px;
+    border-radius: 10px; max-height: 46vh; min-height: 220px;
+    overflow-y: auto !important; overscroll-behavior: contain;
+    font-size: 13px; font-family: Consolas, Monaco, 'Courier New', monospace;
+    white-space: pre-wrap; word-break: break-all; line-height: 1.6;
+    border: 1px solid var(--mh-terminal-border);
+    margin: 0;
+}
+.mh-terminal::-webkit-scrollbar { width: 10px; }
+.mh-terminal::-webkit-scrollbar-track { background: #0f0f1e; border-radius: 5px; }
+.mh-terminal::-webkit-scrollbar-thumb { background: #4a5a8a; border-radius: 5px; }
+.mh-terminal::-webkit-scrollbar-thumb:hover { background: #6b7fb0; }
+.mh-terminal { scrollbar-width: thin; scrollbar-color: #4a5a8a #0f0f1e; }
+.mh-page-footer {
+    text-align: center; color: #94a3b8; font-size: 12px;
+    margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--mh-border);
+}
+#page-err { color: var(--mh-error); margin-top: 4px; }
+@media (max-width: 720px) {
+    .mh-hero { grid-template-columns: repeat(2, 1fr); }
+    .mh-header-actions { margin-left: 0; }
+}
+</style>
+
+<div class="mh-page-header">
+    <h2><a id="content" name="content">运行状态</a></h2>
+    <span class="mh-ver-badge">影视中心 · 内网</span>
+    <div class="mh-header-actions">
+        <input type="button" id="restart-btn" class="cbi-button cbi-button-negative" value="重启服务" onclick="restartAll()" />
+    </div>
+</div>
+
+<div class="mh-hero">
+    <div class="mh-hero-cell">
+        <div class="mh-hero-label">网盘服务 (AList)</div>
+        <div class="mh-hero-value"><span class="mh-badge"><span id="ol-run">检测中...</span></span></div>
+    </div>
+    <div class="mh-hero-cell">
+        <div class="mh-hero-label">CMS 代理 (端口 8901)</div>
+        <div class="mh-hero-value"><span class="mh-badge"><span id="cms-run">检测中...</span></span></div>
+    </div>
+    <div class="mh-hero-cell">
+        <div class="mh-hero-label">115 网盘挂载</div>
+        <div class="mh-hero-value"><span class="mh-badge"><span id="ol-115">检测中...</span></span></div>
+    </div>
+    <div class="mh-hero-cell">
+        <div class="mh-hero-label">夸克网盘挂载</div>
+        <div class="mh-hero-value"><span class="mh-badge"><span id="ol-quark">检测中...</span></span></div>
+    </div>
+</div>
+
+<div class="mh-metrics">
+    <div class="mh-metric">
+        <div class="mh-metric-num"><span id="m-cms">0</span><span class="mh-metric-unit">部</span></div>
+        <div class="mh-metric-label">CMS 片源</div>
+    </div>
+    <div class="mh-metric">
+        <div class="mh-metric-num"><span id="m-115">0</span><span class="mh-metric-unit">部</span></div>
+        <div class="mh-metric-label">115 片源</div>
+    </div>
+    <div class="mh-metric">
+        <div class="mh-metric-num"><span id="m-quark">0</span><span class="mh-metric-unit">部</span></div>
+        <div class="mh-metric-label">夸克片源</div>
+    </div>
+    <div class="mh-metric">
+        <div class="mh-metric-num"><span id="m-search">0</span><span class="mh-metric-unit">次</span></div>
+        <div class="mh-metric-label">累计搜索</div>
+    </div>
+    <div class="mh-metric">
+        <div class="mh-metric-num" id="m-cache">0 B</div>
+        <div class="mh-metric-label">播放缓存占用</div>
+    </div>
+    <div class="mh-metric">
+        <div class="mh-metric-num"><span id="m-poster">0</span><span class="mh-metric-unit">条</span></div>
+        <div class="mh-metric-label">海报已匹配</div>
+    </div>
+    <div class="mh-metric">
+        <div class="mh-metric-num"><span id="m-thumbs">0</span><span class="mh-metric-unit">张</span></div>
+        <div class="mh-metric-label">片源截帧</div>
+    </div>
+</div>
+
+<div class="mh-sec">
+    <div class="mh-sec-head">
+        <span class="mh-sec-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14L21 3"/>
+            </svg>
+        </span>
+        <span class="mh-sec-title">快速访问</span>
+        <span class="mh-sec-note">均为内网地址 · 点击直接打开</span>
+    </div>
+    <div class="mh-link-grid">
+        <a class="mh-link-card" href="http://<%=lan_ip%>:8901/tvbox.json" target="_blank">
+            <span class="mh-link-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="2" y="7" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 3v4"/><path d="M7 8l-4 4"/><path d="M17 8l4 4"/>
+                </svg>
+            </span>
+            <div>
+                <div class="mh-link-title">TVBox APP 配置地址</div>
+                <div class="mh-link-url">http://<%=lan_ip%>:8901/tvbox.json</div>
+            </div>
+        </a>
+        <a class="mh-link-card" href="http://<%=lan_ip%>:8901/sub/pg" target="_blank">
+            <span class="mh-link-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/>
+                </svg>
+            </span>
+            <div>
+                <div class="mh-link-title">PG 订阅 (/sub/pg)</div>
+                <div class="mh-link-url">http://<%=lan_ip%>:8901/sub/pg</div>
+            </div>
+        </a>
+        <a class="mh-link-card" href="http://<%=lan_ip%>:5244/" target="_blank">
+            <span class="mh-link-icon green">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+                </svg>
+            </span>
+            <div>
+                <div class="mh-link-title">网盘网页入口</div>
+                <div class="mh-link-url">http://<%=lan_ip%>:5244/</div>
+            </div>
+        </a>
+        
+        <a class="mh-link-card" href="http://<%=lan_ip%>:8901/cms.php/provide/vod" target="_blank">
+            <span class="mh-link-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 6-6"/>
+                </svg>
+            </span>
+            <div>
+                <div class="mh-link-title">CMS 采集接口</div>
+                <div class="mh-link-url">http://<%=lan_ip%>:8901/cms.php/provide/vod</div>
+            </div>
+        </a>
+
+    </div>
+</div>
+
+<div class="mh-sec">
+    <div class="mh-sec-head">
+        <span class="mh-sec-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/>
+            </svg>
+        </span>
+        <span class="mh-sec-title">运行详情</span>
+    </div>
+    <table class="mh-detail-table">
+        <tr><th>AList 版本</th><td id="d-olver">-</td></tr>
+        <tr><th>CMS 版本</th><td id="d-cmsver">-</td></tr>
+        <tr><th>CMS 站点数</th><td id="d-sites">-</td></tr>
+        <tr><th>全量爬取状态</th><td id="d-crawl">-</td></tr>
+        <tr><th>网盘文件索引</th><td id="d-files">-</td></tr>
+        <tr><th>播放缓存</th><td id="d-climit">-</td></tr>
+        <tr><th>上次全量爬取</th><td id="d-last">-</td></tr>
+        <tr><th>下次全量爬取</th><td id="d-next">-</td></tr>
+        <tr><th>数据磁盘</th><td id="d-disk">-</td></tr>
+        <tr><th>缓存持久化目录</th><td id="d-datadir">-</td></tr>
+        <tr><th>海报匹配模式</th><td id="d-pfmode">-</td></tr>
+        <tr><th>已刮削海报</th><td id="d-extra">-</td></tr>
+        <tr><th>截帧海报</th><td id="d-thumbs">-</td></tr>
+    </table>
+</div>
+
+<div class="mh-sec">
+    <div class="mh-sec-head">
+        <span class="mh-sec-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>
+            </svg>
+        </span>
+        <span class="mh-sec-title">海报刮削进度</span>
+        <span class="mh-sec-note" id="pf-mode">-</span>
+    </div>
+    <div style="background:var(--mh-card-bg); border:1px solid var(--mh-border); border-radius:12px; padding:16px 18px;">
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px; flex-wrap:wrap;">
+            <span class="mh-badge"><span id="pf-status">检测中...</span></span>
+            <span style="font-size:13px; font-weight:600; color:var(--mh-text);" id="pf-count">-</span>
+            <span style="font-size:12px; color:var(--mh-muted);" id="pf-detail">-</span>
+        </div>
+        <div style="background:#e2e8f0; border-radius:8px; height:16px; overflow:hidden; position:relative;">
+            <div id="pf-bar" style="background:linear-gradient(90deg,var(--mh-primary),var(--mh-primary-dark)); height:100%; width:0%; border-radius:8px; transition:width .5s ease;"></div>
+            <div id="pf-bar-text" style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:11px; color:#fff; text-shadow:0 1px 2px rgba(0,0,0,.4); font-weight:600;">0%</div>
+        </div>
+        <p style="font-size:12px; color:var(--mh-muted); margin:10px 0 0 0; line-height:1.6;">网盘片源海报刮削：TMDb/TheTVDB/豆瓣/采集站依次匹配，未匹配的用片源截帧兑底 · 详情见「CMS配置 → 海报刮削设置」</p>
+    </div>
+</div>
+
+<div class="mh-sec">
+    <div class="mh-sec-head">
+        <span class="mh-sec-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 17l6-6-6-6"/><path d="M12 19h8"/>
+            </svg>
+        </span>
+        <span class="mh-sec-title">运行日志</span>
+        <span class="mh-sec-note">保留最近 50 条 · 每 5 秒刷新</span>
+    </div>
+    <pre id="log-area" class="mh-terminal">加载中...</pre>
+</div>
+
+<div class="mh-page-footer">
+    影视中心 · 页面显示地址均为内网地址，外网访问请使用 cs.bcyyt.top（8901 API / 5244 视频流）
+    <div id="page-err"></div>
+</div>
+
+<%+footer%>

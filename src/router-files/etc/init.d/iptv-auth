@@ -1,0 +1,140 @@
+#!/bin/sh /etc/rc.common
+# iptv-auth - 中兴 IPTV 鉴权 + M3U 生成 + RTSP 回看代理
+# 统一管理 rtp2httpd 与 iptv-auth 两个进程实例
+USE_PROCD=1
+START=99
+STOP=10
+
+# 开机延时启动：等待上游接口（IPTV 专线）获取 IP，避免鉴权失败
+# 仅影响开机自启，手动 start/restart 不延时
+boot() {
+    logger -t iptv-auth "开机延迟30秒启动，等待上游接口获取 IP"
+    ( sleep 30 && start ) &
+}
+
+# 首次启动自检：rtp2httpd 缺失时自动下载，uhttpd 2000 端口自动配置
+ensure_runtime() {
+    # 1. rtp2httpd 自检
+    if [ ! -x /usr/bin/rtp2httpd ]; then
+        logger -t iptv-auth "rtp2httpd 缺失，开始自动下载..."
+        local arch ver mirror base api bin
+        arch=$(grep DISTRIB_ARCH /etc/openwrt_release 2>/dev/null | cut -d"'" -f2)
+        mirror=$(uci -q get iptv-auth.main.update_mirror 2>/dev/null)
+        [ -z "$mirror" ] && mirror="https://gh-proxy.com/"
+        api="https://api.github.com/repos/stackia/rtp2httpd/releases/latest"
+        api="$mirror$api"
+        ver=$(uclient-fetch -q -O - "$api" 2>/dev/null | grep "tag_name" | head -1 | sed 's/.*"v\([^"]*\)".*/\1/')
+        [ -z "$ver" ] && ver="3.17.1"
+        base="${mirror}https://github.com/stackia/rtp2httpd/releases/download/v$ver"
+        case "$arch" in
+            x86_64)      bin="rtp2httpd-$ver-x86_64" ;;
+            aarch64*)    bin="rtp2httpd-$ver-aarch64" ;;
+            arm_cortex-a7*|arm_cortex-a9*|arm_cortex-a15*)
+                         bin="rtp2httpd-$ver-armv7-eabihf" ;;
+            arm*)        bin="rtp2httpd-$ver-arm-eabi" ;;
+            *)           bin="rtp2httpd-$ver-$arch" ;;
+        esac
+        uclient-fetch -q -O /tmp/rtp2httpd "$base/$bin" 2>/dev/null
+        if [ ! -s /tmp/rtp2httpd ] && echo "$bin" | grep -q "armv7-eabihf"; then
+            bin="rtp2httpd-$ver-armv7-eabi"
+            uclient-fetch -q -O /tmp/rtp2httpd "$base/$bin" 2>/dev/null
+        fi
+        if [ -s /tmp/rtp2httpd ]; then
+            cp /tmp/rtp2httpd /usr/bin/rtp2httpd
+            chmod 755 /usr/bin/rtp2httpd
+            rm -f /tmp/rtp2httpd
+            logger -t iptv-auth "rtp2httpd v$ver 下载安装成功"
+        else
+            logger -t iptv-auth "rtp2httpd 下载失败，请手动安装"
+            rm -f /tmp/rtp2httpd
+            return 1
+        fi
+    fi
+
+    # 2. uhttpd 2000 端口自检
+    if ! uci -q get uhttpd.main.listen_http 2>/dev/null | grep -q "2000"; then
+        uci add_list uhttpd.main.listen_http='0.0.0.0:2000' >/dev/null 2>&1
+        uci add_list uhttpd.main.listen_http='[::]:2000' >/dev/null 2>&1
+        uci commit uhttpd
+        /etc/init.d/uhttpd restart >/dev/null 2>&1
+        logger -t iptv-auth "uhttpd 2000 端口已自动配置"
+    fi
+
+    # 3. 目录自检
+    mkdir -p /www /var/log/iptv-auth /mnt/data/iptv-auth/logs
+
+    return 0
+}
+
+start_service() {
+    # 服务总开关：iptv-auth.main.enabled=0 时跳过启动（开机同理）
+    if [ "$(uci -q get iptv-auth.main.enabled)" = "0" ]; then
+        logger -t iptv-auth "服务已由总开关关闭，跳过启动"
+        return 0
+    fi
+
+    # 首次启动自检（rtp2httpd 下载 + uhttpd 2000 端口）
+    ensure_runtime || return 1
+
+    # 直接从 UCI 读取 rtp2httpd 参数（单一数据源，避免中转文件陈旧或缺失）
+    local port iface workers rcvbuf bufpool if_mcast if_fcc if_rtsp if_http extra
+    port=$(uci -q get iptv-auth.main.live_port); port=${port:-23234}
+    iface=$(uci -q get iptv-auth.main.upstream_interface)
+    workers=$(uci -q get iptv-auth.main.rtp2h_workers); workers=${workers:-4}
+    rcvbuf=$(uci -q get iptv-auth.main.rtp2h_rcvbuf); rcvbuf=${rcvbuf:-1572864}
+    bufpool=$(uci -q get iptv-auth.main.rtp2h_bufpool); bufpool=${bufpool:-32768}
+
+    # 上游接口（与原版 rtp2httpd 参数语义一致）：
+    # 全局 -i 与细分 -r 组播 / -f FCC / -t RTSP / -y HTTP 全部可留空；
+    # 留空 = 不传参数 = rtp2httpd 按系统路由表（含静态路由）选出口
+    if_mcast=$(uci -q get iptv-auth.main.rtp2h_if_multicast)
+    if_fcc=$(uci -q get iptv-auth.main.rtp2h_if_fcc)
+    if_rtsp=$(uci -q get iptv-auth.main.rtp2h_if_rtsp)
+    if_http=$(uci -q get iptv-auth.main.rtp2h_if_http)
+    # 兼容 2.1.1 的 @global 哨兵：视为留空（跟随全局）
+    [ "$iface" = "@global" ] && iface=""
+    [ "$if_mcast" = "@global" ] && if_mcast=""
+    [ "$if_fcc" = "@global" ] && if_fcc=""
+    [ "$if_rtsp" = "@global" ] && if_rtsp=""
+    [ "$if_http" = "@global" ] && if_http=""
+    extra=""
+    [ -n "$iface" ] && extra="$extra -i $iface"
+    [ -n "$if_mcast" ] && extra="$extra -r $if_mcast"
+    [ -n "$if_fcc" ] && extra="$extra -f $if_fcc"
+    [ -n "$if_rtsp" ] && extra="$extra -t $if_rtsp"
+    [ -n "$if_http" ] && extra="$extra -y $if_http"
+
+    # rtp2httpd：接口参数全部经 $extra 按词拆分追加（接口名不含空格）
+    procd_open_instance "rtp2httpd"
+    procd_set_param command /usr/bin/rtp2httpd \
+        -l "$port" \
+        -w "$workers" \
+        -v 4 \
+        -s /st \
+        -B "$rcvbuf" \
+        -b "$bufpool" \
+        -M file:///www/IPTV.m3u \
+        -I 0 \
+        --noconfig $extra
+    procd_set_param respawn 3600 5 0
+    procd_set_param stdout 1
+    procd_set_param stderr 1
+    procd_close_instance
+
+    # iptv-auth（鉴权 + 频道抓取 + M3U/EPG 生成 + RTSP 回看代理）
+    procd_open_instance "iptv-auth"
+    procd_set_param command python3 /usr/bin/iptv-auth.py
+    procd_set_param respawn 3600 5 0
+    procd_set_param stdout 1
+    procd_set_param stderr 1
+    procd_close_instance
+}
+
+stop_service() {
+    :
+}
+
+reload_service() {
+    stop
+    start
+}

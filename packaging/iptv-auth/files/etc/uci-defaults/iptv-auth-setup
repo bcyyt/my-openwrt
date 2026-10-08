@@ -1,0 +1,40 @@
+#!/bin/sh
+# iptv-auth first-boot setup: OTA URL, cron, pubkey, service enable
+
+OTA_URL='https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/version.json'
+
+[ -f /etc/config/iptv-auth ] || {
+	touch /etc/config/iptv-auth
+	uci -q set iptv-auth.main=iptv-auth
+}
+
+uci -q set iptv-auth.main.ota_url="$OTA_URL"
+uci -q commit iptv-auth
+
+if [ -f /usr/share/iptv-auth/my-openwrt.rsa.pub ]; then
+	mkdir -p /etc/apk/keys
+	cp /usr/share/iptv-auth/my-openwrt.rsa.pub /etc/apk/keys/my-openwrt.rsa.pub
+	chmod 644 /etc/apk/keys/my-openwrt.rsa.pub
+fi
+
+CRON_FILE=/etc/crontabs/root
+mkdir -p /etc/crontabs
+touch "$CRON_FILE"
+if ! grep -q 'iptv-auth-ota-check.sh' "$CRON_FILE" 2>/dev/null; then
+	echo '15 */12 * * * /usr/bin/iptv-auth-ota-check.sh >/dev/null 2>&1' >> "$CRON_FILE"
+fi
+if ! grep -q 'rtp2httpd-ota-check.sh' "$CRON_FILE" 2>/dev/null; then
+	echo '20 */12 * * * /usr/bin/rtp2httpd-ota-check.sh >/dev/null 2>&1' >> "$CRON_FILE"
+fi
+/etc/init.d/cron restart >/dev/null 2>&1 || true
+
+chmod 755 /etc/init.d/iptv-auth /usr/bin/iptv-auth.py \
+	/usr/bin/iptv-auth-ota.sh /usr/bin/iptv-auth-ota-check.sh \
+	/usr/bin/rtp2httpd-ota-check.sh /usr/bin/rtp2httpd-update.sh 2>/dev/null || true
+
+[ -x /etc/init.d/iptv-auth ] && /etc/init.d/iptv-auth enable 2>/dev/null || true
+
+rm -f /tmp/luci-indexcache.*
+rm -rf /tmp/luci-modulecache/
+
+exit 0
