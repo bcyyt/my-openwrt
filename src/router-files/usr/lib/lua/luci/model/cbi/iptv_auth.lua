@@ -21,7 +21,6 @@ s2.addremove = false
 s2:option(Value, "live_port", translate("直播端口")).datatype = "port"
 s2:option(Value, "replay_port", translate("回看端口")).datatype = "port"
 s2:option(Value, "upstream_interface", translate("上游接口"))
-s2:option(Flag, "bind_wan2", translate("绑定 wan2（策略路由，不改主表）"))
 
 local s3 = m:section(TypedSection, "main", translate("频道过滤"))
 s3.addremove = false

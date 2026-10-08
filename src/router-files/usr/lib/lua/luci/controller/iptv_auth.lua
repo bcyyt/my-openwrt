@@ -362,7 +362,7 @@ end
 local CONFIG_KEYS = {
     "iptv_server", "userid", "authenticator", "stbip", "lasttermno",
     "usergroupnmb", "epggroupnmb", "usertoken", "stbid", "stbinfo",
-    "live_port", "replay_port", "upstream_interface", "bind_wan2",
+    "live_port", "replay_port", "upstream_interface",
     "rtp2h_workers", "rtp2h_rcvbuf", "rtp2h_bufpool",
     "rtp2h_if_multicast", "rtp2h_if_fcc", "rtp2h_if_rtsp", "rtp2h_if_http",
     "filter_pip", "filter_keywords", "interval", "epg_enabled",

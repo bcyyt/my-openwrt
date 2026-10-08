@@ -34,14 +34,10 @@ _last_history_cleanup = 0.0
 # ===================== 全局状态 =====================
 config = {}
 upstream_iface = 'eth1'
-upstream_src_ip = ''
-bind_wan2 = False
 rtsp_source_ip = ''     # 原始 RTSP 源站 IP
 rtsp_source_port = 554
 proxy_listening = False
 _log_lock = threading.Lock()   # 日志线程锁：RTSP 代理线程与任务线程并发写保护
-IPTV_RT_TABLE = '100'
-IPTV_RT_PREF = '10000'
 
 def log(msg, error=False):
     """日志：控制台 + 活跃日志(最近500条) + 按天历史日志(持久化)
@@ -103,56 +99,8 @@ def save_status(**kwargs):
         pass
 
 # ===================== UCI 配置读取 =====================
-def _iface_src_ip(iface):
-    if not iface:
-        return ''
-    try:
-        out = subprocess.run(['ip', '-4', '-o', 'addr', 'show', 'dev', iface],
-                             capture_output=True, text=True, timeout=3)
-        m = re.search(r'inet (\d+\.\d+\.\d+\.\d+)', out.stdout or '')
-        return m.group(1) if m else ''
-    except Exception:
-        return ''
-
-def _wan2_gateway(iface):
-    try:
-        out = subprocess.run(['ubus', 'call', 'network.interface.wan2', 'status'],
-                             capture_output=True, text=True, timeout=5)
-        data = json.loads(out.stdout or '{}')
-        for block in (data, data.get('inactive') or {}):
-            if not isinstance(block, dict):
-                continue
-            for rt in block.get('route') or []:
-                if str(rt.get('target')) == '0.0.0.0' and rt.get('nexthop'):
-                    return str(rt['nexthop'])
-    except Exception:
-        pass
-    return ''
-
-def clear_wan2_policy():
-    subprocess.run(['ip', 'rule', 'del', 'pref', IPTV_RT_PREF], capture_output=True, timeout=5)
-    subprocess.run(['ip', 'route', 'flush', 'table', IPTV_RT_TABLE], capture_output=True, timeout=5)
-
-def ensure_wan2_policy():
-    if not bind_wan2 or not upstream_iface or not upstream_src_ip:
-        clear_wan2_policy()
-        return
-    gw = _wan2_gateway(upstream_iface)
-    if not gw:
-        log("绑定 wan2：未拿到 DHCP 网关，跳过策略路由", error=True)
-        return
-    try:
-        subprocess.run(['ip', 'route', 'replace', 'default', 'via', gw, 'dev', upstream_iface, 'table', IPTV_RT_TABLE],
-                       capture_output=True, timeout=5)
-        subprocess.run(['ip', 'rule', 'del', 'pref', IPTV_RT_PREF], capture_output=True, timeout=5)
-        subprocess.run(['ip', 'rule', 'add', 'pref', IPTV_RT_PREF, 'from', upstream_src_ip, 'lookup', IPTV_RT_TABLE],
-                       capture_output=True, timeout=5)
-        log(f"绑定 wan2：源 {upstream_src_ip} via {gw} dev {upstream_iface} table {IPTV_RT_TABLE}")
-    except Exception as e:
-        log(f"绑定 wan2 策略路由失败: {e}", error=True)
-
 def load_config():
-    global config, upstream_iface, upstream_src_ip, bind_wan2
+    global config, upstream_iface
     c = {}
     try:
         out = subprocess.run(['uci', 'show', 'iptv-auth'], capture_output=True, text=True, timeout=5)
@@ -183,10 +131,6 @@ def load_config():
             'ota_url': g('ota_url', ''),
         }
         upstream_iface = g('upstream_interface', 'eth1')
-        bind_wan2 = g('bind_wan2', '0') == '1'
-        upstream_src_ip = _iface_src_ip(upstream_iface) if upstream_iface else ''
-        if bind_wan2:
-            ensure_wan2_policy()
     except Exception as e:
         log(f"读取 UCI 配置失败: {e}", error=True)
 
@@ -203,8 +147,6 @@ def create_session():
         class _IfaceAdapter(requests.adapters.HTTPAdapter):
             def init_poolmanager(self, *a, **kw):
                 kw['socket_options'] = _iface_opts
-                if upstream_src_ip:
-                    kw['source_address'] = (upstream_src_ip, 0)
                 super().init_poolmanager(*a, **kw)
         session.mount('http://', _IfaceAdapter())
         session.mount('https://', _IfaceAdapter())
@@ -462,7 +404,7 @@ def get_lan_ip():
     try:
         out = subprocess.run(['uci', '-q', 'get', 'network.lan.ipaddr'],
                              capture_output=True, text=True, timeout=5)
-        ip = out.stdout.strip().strip("'\"")
+        ip = out.stdout.strip().strip("'\"").split('/')[0]
         if ip:
             return ip
     except Exception:
@@ -665,11 +607,6 @@ def _tune_socket(sock):
         pass
 
 def _bind_upstream(sock):
-    if upstream_src_ip:
-        try:
-            sock.bind((upstream_src_ip, 0))
-        except Exception:
-            pass
     if upstream_iface:
         try:
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_BINDTODEVICE, (upstream_iface + '\0').encode())

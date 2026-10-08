@@ -6,7 +6,7 @@ ImmortalWrt / OpenWrt APK 插件仓库：IPTV 代理、影视中心、状态监�
 
 | 包名 | 版本 | 架构 | 说明 |
 |------|------|------|------|
-| `iptv-auth` | 2.3.9-r0 | noarch | IPTV 鉴权、M3U/EPG、RTSP 回看、rtp2httpd 直播代理、OTA |
+| `iptv-auth` | 2.3.10-r0 | noarch | IPTV 鉴权、M3U/EPG、RTSP 回看、rtp2httpd 直播代理、OTA（2.3.8 + M3U 去掩码） |
 | `luci-app-mediahub` | 1.5.4-r0 | x86_64 | 影视中心（CMS + AList + 静态 ffmpeg） |
 | `luci-app-statusmon` | 4.20 | noarch | 状态监控；内置 luci-app-filemanager 与中文语言包 |
 
@@ -26,7 +26,7 @@ chmod 644 /etc/apk/keys/my-openwrt.rsa.pub
 
 ```bash
 # IPTV 代理
-apk add iptv-auth-2.3.9-r0.apk
+apk add iptv-auth-2.3.10-r0.apk
 
 # 影视中心
 apk add luci-app-mediahub-1.5.4-r0.apk
