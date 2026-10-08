@@ -13,7 +13,7 @@ PUB_KEY="$KEYS/my-openwrt.rsa.pub"
 
 IPTV_VER="${IPTV_VER:-2.3.8-r0}"
 MEDIA_VER="${MEDIA_VER:-1.5.4-r0}"
-STATUS_VER="${STATUS_VER:-4.20}"
+STATUS_VER="${STATUS_VER:-4.21}"
 DATE_STR="$(date +%Y-%m-%d)"
 OTA_URL_BASE="https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages"
 
@@ -148,7 +148,6 @@ install -m 755 "$SRC/etc/init.d/statusmon-acct" "$STATUS_ROOT/etc/init.d/statusm
 install -m 644 "$SRC/usr/lib/lua/luci/controller/statusmon.lua" "$STATUS_ROOT/usr/lib/lua/luci/controller/statusmon.lua"
 install -m 644 "$SRC/usr/lib/lua/luci/view/statusmon/status.htm" "$STATUS_ROOT/usr/lib/lua/luci/view/statusmon/status.htm"
 install -m 755 "$SRC/www/cgi-bin/statusmon" "$STATUS_ROOT/www/cgi-bin/statusmon"
-install -m 644 "$SRC/www/status-monitor.html" "$STATUS_ROOT/www/status-monitor.html"
 install -m 644 "$SRC/lib/apk/packages/luci-app-statusmon.list" "$STATUS_ROOT/lib/apk/packages/luci-app-statusmon.list"
 
 # luci-app-filemanager
@@ -184,7 +183,7 @@ fi
 STATUS_APK="$OUT/luci-app-statusmon/luci-app-statusmon-${STATUS_VER}.apk"
 mkpkg \
 	luci-app-statusmon "$STATUS_VER" noarch \
-	"LuCI 状态监控（statusmon）含流量分类、独立监控页、文件管理器与中文语言包" \
+	"LuCI 状态监控（statusmon）含流量分类、文件管理器与中文语言包" \
 	custom/statusmon GPL-2.0 "https://github.com/bcyyt/my-openwrt" \
 	"$STATUS_ROOT" "$STATUS_APK" \
 	-I "depends:libc luci-base" \

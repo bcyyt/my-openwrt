@@ -25,10 +25,6 @@
 .sm-gcl{display:grid;grid-template-columns:2fr 1fr;gap:14px;margin-bottom:14px}
 @media(max-width:1100px){.sm-g4{grid-template-columns:repeat(2,1fr)}.sm-g2,.sm-gcl{grid-template-columns:1fr}}
 @media(max-width:720px){.sm-g4{grid-template-columns:1fr}.sm-cb{padding:14px}.sm-stat{padding:14px}.sm-sv{font-size:20px}}
-/* WEB 跳转按钮 */
-.sm-webbtn{display:inline-flex;align-items:center;gap:6px;margin-left:auto;padding:7px 15px;border-radius:10px;background:linear-gradient(135deg,var(--sm-p),var(--sm-ac));color:#fff!important;text-decoration:none;font-size:12px;font-weight:600;box-shadow:0 3px 10px rgba(37,99,235,.30);transition:transform .15s,box-shadow .15s;white-space:nowrap}
-.sm-webbtn:hover{transform:translateY(-1px);box-shadow:0 5px 14px rgba(37,99,235,.38);color:#fff!important}
-.sm-webbtn svg{width:13px;height:13px}
 /* 快捷入口 */
 .sm-sc{display:flex;gap:8px;flex-wrap:wrap;padding:2px 0 14px}
 .sm-sc a{display:inline-flex;align-items:center;gap:7px;padding:8px 14px;border-radius:999px;border:1px solid var(--sm-g200);background:#fff;text-decoration:none;color:var(--sm-g600);font-size:12.5px;font-weight:500;transition:all .18s;box-shadow:0 1px 2px rgba(16,24,40,.04)}
@@ -226,7 +222,6 @@
   .sm-cnm{max-width:120px}
   .sm-flow-yaxis{width:40px;font-size:8.5px}
   .sm-table th,.sm-table td{padding:8px 10px}
-  .sm-webbtn{margin-left:0}
 }
 @media(max-width:480px){
   .sm-pg{grid-template-columns:1fr}
@@ -239,10 +234,6 @@
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3-9 4 18 3-9h4"/></svg>
   </span>
   <span>状态监控</span>
-  <a class="sm-webbtn" href="/status-monitor.html" target="_blank" title="在新标签页打开独立 WEB 监控页">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-    WEB 独立页面
-  </a>
   <span style="width:8px;height:8px;border-radius:50%;background:var(--sm-s);animation:sm-pulse 2s infinite;margin-left:8px"></span>
   <span id="sm-last" style="font-size:12px;color:var(--sm-g400);font-weight:400;font-variant-numeric:tabular-nums">--</span>
 </h2>
@@ -250,16 +241,12 @@
 
 <div class="cbi-section" style="padding:0;border:none">
 
-<!-- 快捷入口 -->
-<div class="sm-sc">
+<!-- 快捷入口：文件管理固定；其余由 CGI shortcuts 按已开启服务填充 -->
+<div class="sm-sc" id="sm-sc">
   <a href="/cgi-bin/luci"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>LuCI 首页</a>
-  <a href="/cgi-bin/luci/admin/services/iptv_auth/status"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><polyline points="8 21 12 17 16 21"/></svg>IPTV 代理</a>
-  <a href="/cgi-bin/luci/admin/services/mediahub"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="2"/><circle cx="12" cy="12" r="4"/></svg>影视中心</a>
   <a href="/cgi-bin/luci/admin/network/network"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12.55a11 11 0 0114.08 0"/><path d="M1.42 9a16 16 0 0121.16 0"/><path d="M8.53 16.11a6 6 0 016.95 0"/></svg>网络设置</a>
   <a href="/cgi-bin/luci/admin/system/admin"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>系统管理</a>
   <a href="/cgi-bin/luci/admin/system/filemanager"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>文件管理</a>
-  <a href="http://192.168.10.1:23234/st"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>rtp2httpd</a>
-  <a href="/status-monitor.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>WEB 独立页面</a>
 </div>
 
 <!-- 系统概览 -->
@@ -395,7 +382,7 @@ function sm_calcRates(d){
   sm_prev.ts=now;return d;
 }
 
-/* 趋势历史（与独立页共享 localStorage） */
+ /* 趋势历史（localStorage 持久化） */
 var sm_HMAX=90,hc=[],hm=[],hl=[],hc2=[];
 function sm_histVal(p){return (p&&typeof p==='object')?(+p.v||0):(+p||0)}
 function sm_migrateHist(arr){
@@ -440,7 +427,7 @@ function sm_spark(el,arr,color,fill,maxId){
   if(maxId)document.getElementById(maxId).textContent='峰值 '+Math.round(peak)+'%';
   sm_hoverSpark(el,arr);
 }
-/* WAN 流量图（近 30 分钟，localStorage 持久化，与独立页共享 sm-tflow） */
+/* WAN 流量图（近 30 分钟，localStorage 持久化） */
 var sm_FWIN=1800,sm_flow={};
 try{var smf=JSON.parse(localStorage.getItem('sm-tflow')||'{}');if(typeof smf==='object'&&smf)sm_flow=smf}catch(e){}
 function sm_saveFlow(){try{localStorage.setItem('sm-tflow',JSON.stringify(sm_flow))}catch(e){}}
@@ -564,7 +551,7 @@ function sm_renderMonthTraffic(t){
   document.getElementById('sm-month-cats').innerHTML=html;
 }
 
-/* 客户端排序（与独立页共享偏好） */
+/* 客户端排序偏好 */
 var sm_sort={key:'ip',dir:1},sm_last=null;
 try{var sv=JSON.parse(localStorage.getItem('sm-csort')||'{}');if(sv&&sv.key)sm_sort={key:sv.key,dir:sv.dir||1}}catch(e){}
 var sm_keys={name:function(c){return c.name||c.ip||''},ip:function(c){return c.ip||''},mac:function(c){return c.mac||''},conn:function(c){return c.connections||0},rxr:function(c){return c.rx_rate||0},txr:function(c){return c.tx_rate||0},rxt:function(c){return c.rx||0},txt:function(c){return c.tx||0}};
@@ -683,6 +670,25 @@ function sm_render(d){
   var sh='',run=0,stop=0;
   d.services.forEach(function(s){sh+='<div class="sm-svt '+s.status+'"><span class="sm-sdot"></span><div><div class="sm-svn">'+s.name+'</div><div class="sm-svp">'+(s.pid>0?'PID '+s.pid:(s.status==='running'?'运行中':'已停止'))+'</div></div></div>';if(s.status==='running')run++;else stop++});
   document.getElementById('sm-svc').innerHTML=sh;document.getElementById('sm-svc-sum').textContent=run+' 运行 / '+stop+' 停止';
+  sm_renderShortcuts(d.shortcuts);
+}
+var SM_SC_ICONS={
+  iptv:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><polyline points="8 21 12 17 16 21"/></svg>',
+  mediahub:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="2"/><circle cx="12" cy="12" r="4"/></svg>',
+  rtp2httpd:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>'
+};
+function sm_renderShortcuts(list){
+  var wrap=document.getElementById('sm-sc');if(!wrap)return;
+  Array.prototype.slice.call(wrap.querySelectorAll('a[data-sc]')).forEach(function(n){n.parentNode.removeChild(n)});
+  var fm=wrap.querySelector('a[href="/cgi-bin/luci/admin/system/filemanager"]');
+  (list||[]).forEach(function(s){
+    if(!s||!s.href||!s.label)return;
+    var a=document.createElement('a');
+    a.setAttribute('data-sc',s.id||'');
+    a.href=s.href;
+    a.innerHTML=(SM_SC_ICONS[s.id]||'')+s.label;
+    if(fm)wrap.insertBefore(a,fm);else wrap.appendChild(a);
+  });
 }
 async function sm_showClient(ip,name,mac){
   document.getElementById('sm-modal-title').textContent='设备详情 · '+(name||ip);

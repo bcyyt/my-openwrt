@@ -3,4 +3,3 @@
 /usr/lib/lua/luci/controller/statusmon.lua
 /usr/lib/lua/luci/view/statusmon/status.htm
 /www/cgi-bin/statusmon
-/www/status-monitor.html
