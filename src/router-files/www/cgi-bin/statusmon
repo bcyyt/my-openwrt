@@ -1,5 +1,5 @@
 #!/bin/sh
-# statusmon v4.21 — OpenWrt 系统状态数据采集 CGI
+# statusmon v4.22 — OpenWrt 系统状态数据采集 CGI
 # 部署到 /www/cgi-bin/statusmon
 # v4.1 修复：ip neigh 字段解析（MAC=$5/状态=末字段）、CPU 采样公式、
 #           conntrack 双向归并 + IPv6 地址规范化匹配、活跃客户端过滤（REACHABLE/DELAY/PROBE）
@@ -1552,10 +1552,24 @@ if [ -x /etc/init.d/mediahub-cms ] && /etc/init.d/mediahub-cms enabled 2>/dev/nu
 elif pgrep -f "mediahub-cms.py" >/dev/null 2>&1 || pgrep -x alist >/dev/null 2>&1; then
     media_on=1
 fi
+lucky_on=0
+if [ "$(uci -q get lucky.@lucky[0].enabled)" = "1" ]; then
+    lucky_on=1
+elif pgrep -x lucky >/dev/null 2>&1; then
+    lucky_on=1
+fi
+daed_on=0
+if [ "$(uci -q get daed.config.enabled)" = "1" ]; then
+    daed_on=1
+elif pgrep -x daed >/dev/null 2>&1 || pgrep -x dae >/dev/null 2>&1; then
+    daed_on=1
+fi
 sc_lines=""
 [ "$iptv_on" = "1" ] && sc_lines="${sc_lines}{\"id\":\"iptv\",\"label\":\"IPTV 代理\",\"href\":\"/cgi-bin/luci/admin/services/iptv_auth/status\"},"
 [ "$media_on" = "1" ] && sc_lines="${sc_lines}{\"id\":\"mediahub\",\"label\":\"影视中心\",\"href\":\"/cgi-bin/luci/admin/services/mediahub\"},"
 [ "$iptv_on" = "1" ] && sc_lines="${sc_lines}{\"id\":\"rtp2httpd\",\"label\":\"rtp2httpd\",\"href\":\"http://${lan_ip}:${live_port}/st\"},"
+[ "$lucky_on" = "1" ] && sc_lines="${sc_lines}{\"id\":\"lucky\",\"label\":\"Lucky\",\"href\":\"/cgi-bin/luci/admin/services/lucky\"},"
+[ "$daed_on" = "1" ] && sc_lines="${sc_lines}{\"id\":\"daed\",\"label\":\"Daed\",\"href\":\"/cgi-bin/luci/admin/services/daede/config\"},"
 [ -n "$sc_lines" ] && sc_lines=$(echo "$sc_lines" | sed 's/,$//')
 shortcuts="[$sc_lines]"
 

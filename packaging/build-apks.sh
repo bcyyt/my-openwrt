@@ -13,7 +13,7 @@ PUB_KEY="$KEYS/my-openwrt.rsa.pub"
 
 IPTV_VER="${IPTV_VER:-2.3.8-r0}"
 MEDIA_VER="${MEDIA_VER:-1.5.4-r0}"
-STATUS_VER="${STATUS_VER:-4.21}"
+STATUS_VER="${STATUS_VER:-4.22}"
 DATE_STR="$(date +%Y-%m-%d)"
 OTA_URL_BASE="https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages"
 
