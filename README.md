@@ -8,9 +8,9 @@ ImmortalWrt / OpenWrt APK 插件仓库：IPTV 代理、影视中心、状态监�
 |------|------|------|------|
 | `iptv-auth` | 2.3.11-r0 | noarch | IPTV 鉴权、M3U/EPG、RTSP 回看、rtp2httpd 直播代理；选上游接口后自动走专线策略表（不改主路由） |
 | `luci-app-mediahub` | 1.5.4-r0 | x86_64 | 影视中心（CMS + AList + 静态 ffmpeg） |
-| `luci-app-statusmon` | 4.20 | noarch | 状态监控；内置 luci-app-filemanager 与中文语言包 |
+| `luci-app-statusmon` | 4.23 | noarch | 状态监控；内置 luci-app-filemanager 与中文语言包 |
 | `luci-app-netqueue` | 1.0.5-r0 | noarch | 系统优化：转发、DHCP、DNS |
-| `luci-app-syskeep` | 1.0.2-r0 | noarch | 保留升级：刷机保留配置与数据盘，自动识别数据盘并备份自装插件 |
+| `luci-app-syskeep` | 1.0.4-r0 | noarch | 保留升级：刷机保留配置与数据盘，自动识别数据盘并备份自装插件 |
 
 APK 位于 `packages/`，均用 `keys/my-openwrt.rsa` 签名。
 
@@ -34,13 +34,13 @@ apk add iptv-auth-2.3.11-r0.apk
 apk add luci-app-mediahub-1.5.4-r0.apk
 
 # 状态监控（含文件管理器与中文语言包）
-apk add luci-app-statusmon-4.20.apk
+apk add luci-app-statusmon-4.23.apk
 
 # 系统优化（转发 / DHCP / DNS）
 apk add luci-app-netqueue-1.0.5-r0.apk
 
 # 保留升级
-apk add luci-app-syskeep-1.0.2-r0.apk
+apk add luci-app-syskeep-1.0.4-r0.apk
 ```
 
 若提示 UNTRUSTED signature，确认公钥已放入 `/etc/apk/keys/`，或临时使用：
@@ -117,6 +117,31 @@ UCI 在 `netqueue.main`。DHCP / DNS 仍写在 `dhcp` 配置里。
 - 读写走同一入口的 `?act=info` / `?act=save`，避免子路由未注册导致页面拿到 HTML。
 - 修复 `sys_exec()` 把 `gsub` 计数值传给 `tonumber`、页面「读取失败」、开关全关的问题。
 - 保存时空字段不再删除 DHCP 地址池。
+
+## 影视中心
+
+当前包：`packages/luci-app-mediahub/luci-app-mediahub-1.5.4-r0.apk`。
+
+115 / 夸克播放走本机 `8901` 反代 AList `/p/`（`web_proxy` + Range），APP 与订阅同一端口，不跟 5244 的 302 CDN。
+
+## 状态监控
+
+当前包：`packages/luci-app-statusmon/luci-app-statusmon-4.23.apk`。
+
+## 保留升级
+
+LuCI 菜单：**系统 → 保留升级**。
+
+当前包：`packages/luci-app-syskeep/luci-app-syskeep-1.0.4-r0.apk`。
+
+只写镜像分区 1/2（boot + rootfs），GPT 和数据盘不动。备份时对比 `/rom` 的 world，自装插件能 fetch 就拉 APK，源里没有的打文件包。数据盘按 fstab / 挂载自动识别，写入 `/etc/syskeep/datadir`。
+
+自定义插件清单：`src/router-files/etc/syskeep/custom-apks.txt`。
+
+```bash
+# 查看数据盘、插件备份和固件准备情况
+/usr/bin/syskeep-upgrade.sh status
+```
 
 ## 签名密钥
 

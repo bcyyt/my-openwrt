@@ -4,8 +4,8 @@
 mediahub-cms.py v1.5 — 多网盘自动挂载 + 小雅 PG 完整订阅（融合 CMS 采集 + AList 网盘）
 - 地址跟随访问来源：APP/浏览器用内网地址访问 → 所有返回地址（tvbox.json/播放直链）均为内网地址；
   用外网域名访问 → 返回外网地址。不再强制使用 ext_domain。
-- 播放流直连 AList 公网 5244：115 走 /d/（302 CDN直链），夸克走 /p/（web_proxy 中继）
-  —— 不再经 8901 反代视频流，消除 python 转发瓶颈与 127.0.0.1 重定向问题
+- 播放流经 8901 反代到 AList：115/夸克均走 /p/（web_proxy 中继，Range 代理）
+  —— APP 与订阅同端口，避免 5244 的 302 CDN 在播放器里超时
 - 8901 仅承载轻量 API：tvbox.json / cms.php 聚合搜索 / cloudcms.php 网盘适配 / cmproxy CMS 加速
 - 网盘文件列表缓存（30分钟TTL）：搜索秒回，避免频繁扫描网盘触发风控
 - m3u8 播放缓存带大小上限（UCI mediahub.main.cache_mb），超限逐出最旧，/cache/clear 一键清理
@@ -377,7 +377,7 @@ CLOUD_DRIVE_DEFS = [
     {'key': '115', 'mount': '/115', 'driver': '115 Cloud', 'cred': 'cookie_115', 'kind': 'cookie',
      'addition': lambda v: {'cookie': v, 'qrcode_token': '', 'qrcode_source': 'linux',
                             'page_size': 1000, 'limit_rate': 2, 'root_folder_id': '0'},
-     'web_proxy': False, 'webdav_policy': '302_redirect'},
+     'web_proxy': True, 'webdav_policy': 'use_proxy_url'},
     {'key': 'quark', 'mount': '/quark', 'driver': 'Quark', 'cred': 'cookie_quark', 'kind': 'cookie',
      'addition': lambda v: {'cookie': v, 'root_folder_id': '0',
                             'use_transcoding_address': False, 'only_list_video_file': False},
@@ -429,7 +429,7 @@ def _refresh_mount_meta(force=False):
                 if not mp or mp == '/' or s.get('disabled'):
                     continue
                 bases.append(mp)
-                routes[mp] = 'p' if s.get('web_proxy') else 'd'
+                routes[mp] = 'p'
         if not bases:
             # fallback：admin 接口不可用时按根目录一级子目录（未知驱动按名字特判 115）
             r2 = ol_api('/api/fs/list', {'path': '/', 'page': 1, 'per_page': 200})
@@ -439,7 +439,7 @@ def _refresh_mount_meta(force=False):
                         name = (it.get('name') or '').strip('/')
                         mp = '/' + name
                         bases.append(mp)
-                        routes[mp] = 'd' if name == '115' else 'p'
+                        routes[mp] = 'p'
         if bases:
             with _MOUNT_META_LOCK:
                 _MOUNT_META.update({'ts': time.time(), 'bases': bases, 'routes': routes})
@@ -454,15 +454,8 @@ def cloud_mount_bases():
     return m['bases'] or ['/115', '/quark']
 
 def _mount_route(path):
-    """播放路由：web_proxy 挂载走 /p/（服务器中继），302 挂载走 /d/（CDN 直链）"""
-    routes = _refresh_mount_meta()['routes']
-    best = ''
-    for mp in routes:
-        if path.startswith(mp + '/') and len(mp) > len(best):
-            best = mp
-    if best:
-        return routes[best]
-    return 'd' if path.startswith('/115/') else 'p'
+    """播放路由：一律走 /p/ 中继，APP 不跟 302 CDN。"""
+    return 'p'
 
 def _update_cloud_stats(files):
     """按挂载前缀统计各网盘文件数（cloud_115/cloud_quark 保留，新增 cloud_mounts 全量）"""
