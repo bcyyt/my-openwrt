@@ -2,3 +2,6 @@ src/router-files/mnt/
 src/router-files/tmp/
 *.tar.gz
 /tmp/
+packages/keys/my-openwrt.rsa
+src/router-files/www-retired/
+**/__pycache__/

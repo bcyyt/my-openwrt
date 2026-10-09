@@ -1,0 +1,255 @@
+<%-
+local nq_json = "{}"
+local ok, ctl = pcall(require, "luci.controller.netqueue")
+if ok and ctl and ctl.collect_info then
+	local jsonc = require "luci.jsonc"
+	local ok2, data = pcall(ctl.collect_info)
+	if ok2 and data then
+		nq_json = jsonc.stringify(data) or "{}"
+	end
+end
+-%>
+<%+header%>
+<style>
+.nq-wrap{max-width:920px;margin:0 auto 28px;font-family:ui-sans-serif,system-ui,sans-serif;color:#1b2420}
+.nq-hero{background:linear-gradient(135deg,#16332a 0%,#1b2420 58%,#24362f 100%);color:#e8f0ea;padding:24px 26px;border-radius:14px;margin-bottom:14px;position:relative;overflow:hidden}
+.nq-hero:after{content:"";position:absolute;right:-40px;top:-30px;width:160px;height:160px;border-radius:50%;background:rgba(88,160,122,.18)}
+.nq-hero h2{margin:0 0 6px;font-size:22px;font-weight:650;letter-spacing:.03em}
+.nq-hero p{margin:0;color:#b7c7bb;font-size:13px;line-height:1.6;max-width:640px}
+.nq-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin:14px 0}
+.nq-card{background:#fff;border:1px solid #d7ddd8;border-radius:12px;padding:12px 14px}
+.nq-card b{display:block;font-size:11px;color:#6b776f;letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px}
+.nq-card span{font-size:15px;color:#1b2420;word-break:break-all}
+.nq-box{background:#fff;border:1px solid #d7ddd8;border-radius:12px;padding:6px 18px 14px;margin-bottom:12px}
+.nq-box h3{margin:12px 0 4px;font-size:15px;font-weight:650}
+.nq-lead{margin:0 0 8px;font-size:12px;color:#5c675f;line-height:1.5}
+.nq-item{display:flex;gap:14px;align-items:flex-start;justify-content:space-between;padding:12px 0;border-top:1px solid #eef2ef}
+.nq-item b{display:block;font-size:14px;font-weight:600;margin-bottom:3px}
+.nq-item p{margin:0;font-size:12px;color:#5c675f;line-height:1.45}
+.nq-wrap button.nq-sw{
+  appearance:none;-webkit-appearance:none;position:relative;
+  width:44px!important;height:26px!important;min-width:44px!important;flex:0 0 44px;
+  margin:1px 0 0!important;padding:0!important;border:0!important;border-radius:13px!important;
+  background:#c5cdc8!important;box-shadow:none!important;line-height:0!important;cursor:pointer;
+}
+.nq-wrap button.nq-sw:after{
+  content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;
+  background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.16);transition:left .15s;
+}
+.nq-wrap button.nq-sw.on{background:#2f6f4e!important}
+.nq-wrap button.nq-sw.on:after{left:21px}
+.nq-sub.is-off{opacity:.42;pointer-events:none}
+.nq-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;padding:8px 0 4px}
+.nq-fields label,.nq-field{display:flex;flex-direction:column;gap:5px;font-size:12px;color:#6b776f}
+.nq-wrap .nq-fields input,.nq-wrap .nq-fields select,.nq-wrap .nq-field input,.nq-wrap .nq-field select,.nq-wrap .nq-field textarea{
+  width:100%!important;max-width:none!important;height:auto!important;min-height:34px;
+  border:1px solid #c5cdc8!important;border-radius:8px!important;padding:8px 10px!important;
+  font-size:13px!important;color:#1b2420;background:#fff!important;line-height:1.4!important;
+}
+.nq-field textarea{min-height:72px!important;resize:vertical;font-family:ui-monospace,monospace}
+.nq-hide{display:none}
+.nq-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:4px 0 12px}
+.nq-wrap .nq-btn{border:0;border-radius:8px;padding:9px 16px;cursor:pointer;font-size:13px;line-height:1.2}
+.nq-wrap .nq-btn-pri{background:#2f6f4e!important;color:#fff!important;border:0!important}
+.nq-wrap .nq-btn-pri:disabled{opacity:.6;cursor:default}
+.nq-msg{font-size:12px;color:#2f6f4e}
+.nq-msg.bad{color:#8a3b16}
+.nq-log{height:220px;overflow:auto;background:#121816;color:#c8d6cc;padding:10px 12px;border-radius:8px;font:12px/1.45 ui-monospace,monospace;white-space:pre-wrap;margin:8px 0 12px}
+.nq-ok{color:#2f6f4e} .nq-bad{color:#8a3b16}
+@media (max-width:640px){
+  .nq-hero{padding:18px 16px}
+  .nq-box{padding:4px 14px 12px}
+}
+</style>
+<div class="nq-wrap">
+  <div class="nq-hero">
+    <h2>系统优化</h2>
+    <p>转发、DHCP、DNS 放在一页。保存后立即生效，不断 PPPoE，不改 wan2 / IPTV。DNS 默认跟随运营商。</p>
+  </div>
+  <div class="nq-grid">
+    <div class="nq-card"><b>LAN</b><span id="nq-lan">-</span></div>
+    <div class="nq-card"><b>DHCP</b><span id="nq-dhcpst">-</span></div>
+    <div class="nq-card"><b>租约</b><span id="nq-leases">-</span></div>
+    <div class="nq-card"><b>DNS</b><span id="nq-dnsst">-</span></div>
+    <div class="nq-card"><b>转发</b><span id="nq-fwdst">-</span></div>
+    <div class="nq-card"><b>软件分载</b><span id="nq-flowst">-</span></div>
+  </div>
+
+  <div class="nq-box">
+    <h3>转发</h3>
+    <p class="nq-lead">关总开关会把网卡队列、CPU、PPPoE 队列、GRO、积压和分载恢复默认。</p>
+    <div class="nq-item">
+      <div><b>启用转发优化</b><p>总开关。关掉后下面几项不再套用。</p></div>
+      <button type="button" class="nq-sw" data-k="enabled" aria-pressed="false"></button>
+    </div>
+    <div id="nq-fwd-sub" class="nq-sub">
+      <div class="nq-item"><div><b>网卡队列绑定</b><p>IRQ/XPS 按队列绑核。PPPoE 物理口 RPS 打到全部 CPU，其它口关 RPS 走 RSS。</p></div><button type="button" class="nq-sw" data-k="nic_queues"></button></div>
+      <div class="nq-item"><div><b>CPU 性能模式</b><p>全部 CPU 用 performance，降低小包突发爬频延迟。</p></div><button type="button" class="nq-sw" data-k="cpu_performance"></button></div>
+      <div class="nq-item"><div><b>软件流量分载</b><p>减轻 conntrack 转发开销。家用建议关掉，开了状态监控会少计客户端流量。</p></div><button type="button" class="nq-sw" data-k="flow_offload"></button></div>
+      <div class="nq-item"><div><b>PPPoE 发送队列</b><p>pppoe-wan 的 txqueuelen 从 3 提到 1000，突发上传少卡住。</p></div><button type="button" class="nq-sw" data-k="pppoe_qlen"></button></div>
+      <div class="nq-item"><div><b>UDP GRO 转发</b><p>打开 rx-udp-gro-forwarding，降低 QUIC / IPTV UDP 转发 CPU。</p></div><button type="button" class="nq-sw" data-k="udp_gro"></button></div>
+      <div class="nq-item"><div><b>加大接收积压</b><p>netdev_max_backlog 从 1000 提到 4096，小包突发少丢。</p></div><button type="button" class="nq-sw" data-k="rx_backlog"></button></div>
+    </div>
+  </div>
+
+  <div class="nq-box">
+    <h3>DHCP</h3>
+    <p class="nq-lead">只改 LAN 地址池。起始地址是网段偏移，例如 192.168.10.0/24 填 100 表示 192.168.10.100。</p>
+    <div class="nq-item">
+      <div><b>启用 DHCP</b><p>给 LAN 终端发地址。关掉后终端要自己设 IP。</p></div>
+      <button type="button" class="nq-sw" data-k="dhcp_enable"></button>
+    </div>
+    <div class="nq-item">
+      <div><b>按顺序分配</b><p>从地址池最小 IP 依次发放，方便按接入顺序认设备。关掉则按 MAC 哈希。</p></div>
+      <button type="button" class="nq-sw" data-k="sequential"></button>
+    </div>
+    <div class="nq-fields">
+      <label>起始地址 <input id="start" type="number" min="1" max="254" placeholder="100"></label>
+      <label>地址数量 <input id="limit" type="number" min="1" max="253" placeholder="150"></label>
+      <label>租期 <input id="leasetime" type="text" placeholder="12h"></label>
+    </div>
+    <div class="nq-fields">
+      <label>终端 DNS
+        <select id="client_dns">
+          <option value="router">本机</option>
+          <option value="custom">自定义</option>
+        </select>
+      </label>
+      <label id="client_dns_wrap">终端 DNS 地址 <input id="client_dns_addr" type="text" placeholder="192.168.10.1"></label>
+    </div>
+  </div>
+
+  <div class="nq-box">
+    <h3>DNS</h3>
+    <p class="nq-lead">跟随运营商时用 WAN 拨号拿到的 DNS，不写 223 / 114。</p>
+    <div class="nq-fields">
+      <label>当前运营商 DNS <input id="wan_dns" type="text" readonly></label>
+      <label>DNS 上游
+        <select id="dns_mode">
+          <option value="wan">跟随运营商</option>
+          <option value="custom">自定义</option>
+        </select>
+      </label>
+      <label>缓存条数 <input id="cachesize" type="number" min="0" placeholder="4000"></label>
+    </div>
+    <div id="servers_wrap" class="nq-field">
+      <span>自定义上游（每行一个）</span>
+      <textarea id="servers" placeholder="1.1.1.1"></textarea>
+    </div>
+  </div>
+
+  <div class="nq-bar">
+    <button type="button" class="nq-btn nq-btn-pri" id="nq-save">保存并应用</button>
+    <span class="nq-msg" id="nq-msg"></span>
+  </div>
+
+  <div class="nq-box">
+    <h3>当前生效</h3>
+    <div id="nq-log" class="nq-log">加载中…</div>
+  </div>
+</div>
+<script>
+window.nqInit = <% require("luci.http").write(nq_json) %>;
+function nqApi(act){ return location.pathname.replace(/\/+$/,'') + '?act=' + encodeURIComponent(act); }
+function nqEl(k){ return document.querySelector('.nq-wrap button.nq-sw[data-k="'+k+'"]'); }
+function nqOn(k){ var el = nqEl(k); return !!(el && el.classList.contains('on')); }
+function nqSet(k, on){
+  var el = nqEl(k);
+  if (!el) return;
+  if (on) el.classList.add('on'); else el.classList.remove('on');
+  el.setAttribute('aria-pressed', on ? 'true' : 'false');
+}
+function nqVal(id){ var el = document.getElementById(id); return el ? String(el.value || '') : ''; }
+function nqPut(id, v){ var el = document.getElementById(id); if (el) el.value = (v == null ? '' : v); }
+function nqFlag(v){ return v === true || v === 1 || v === '1'; }
+function nqFwd(){
+  var sub = document.getElementById('nq-fwd-sub');
+  if (sub) sub.className = nqOn('enabled') ? 'nq-sub' : 'nq-sub is-off';
+}
+function nqDnsUi(){
+  var customClient = nqVal('client_dns') === 'custom';
+  var customDns = nqVal('dns_mode') === 'custom';
+  document.getElementById('client_dns_wrap').className = customClient ? '' : 'nq-hide';
+  document.getElementById('servers_wrap').className = customDns ? 'nq-field' : 'nq-field nq-hide';
+}
+function nqFill(d){
+  try {
+  d = d || {};
+  var f = d.fwd || {}, h = d.dhcp || {}, n = d.dns || {};
+  nqSet('enabled', nqFlag(f.enabled));
+  nqSet('nic_queues', nqFlag(f.nic_queues));
+  nqSet('cpu_performance', nqFlag(f.cpu_performance));
+  nqSet('flow_offload', nqFlag(f.flow_offload));
+  nqSet('pppoe_qlen', nqFlag(f.pppoe_qlen));
+  nqSet('udp_gro', nqFlag(f.udp_gro));
+  nqSet('rx_backlog', nqFlag(f.rx_backlog));
+  nqSet('dhcp_enable', nqFlag(h.enable));
+  nqSet('sequential', nqFlag(h.sequential));
+  nqPut('start', h.start); nqPut('limit', h.limit); nqPut('leasetime', h.leasetime);
+  nqPut('client_dns', h.client_dns || 'router'); nqPut('client_dns_addr', h.client_dns_addr);
+  nqPut('wan_dns', n.wan || '-'); nqPut('dns_mode', n.mode || 'wan');
+  nqPut('cachesize', n.cachesize);
+  nqPut('servers', (n.servers && n.servers.join) ? n.servers.join('\n') : '');
+  document.getElementById('nq-lan').textContent = h.lan || '-';
+  document.getElementById('nq-dhcpst').textContent = nqFlag(h.enable) ? '开启' : '关闭';
+  document.getElementById('nq-dhcpst').className = nqFlag(h.enable) ? 'nq-ok' : 'nq-bad';
+  document.getElementById('nq-leases').textContent = d.leases || 0;
+  document.getElementById('nq-dnsst').textContent = (n.mode === 'custom') ? '自定义' : '运营商';
+  document.getElementById('nq-fwdst').textContent = nqFlag(f.enabled) ? '开启' : '关闭';
+  document.getElementById('nq-flowst').textContent = nqFlag(f.flow_offload) ? '开启' : '关闭';
+  document.getElementById('nq-log').textContent = d.status || '暂无';
+  nqFwd(); nqDnsUi();
+  } catch (e) {
+    document.getElementById('nq-log').textContent = '读取失败 ' + (e && e.message ? e.message : e);
+  }
+}
+function nqLoad(){
+  fetch(nqApi('info'), {credentials:'same-origin', headers:{'Accept':'application/json'}}).then(function(r){
+    if (!r.ok) throw new Error('http '+r.status);
+    return r.json();
+  }).then(nqFill).catch(function(e){
+    document.getElementById('nq-log').textContent = '读取失败 ' + (e && e.message ? e.message : '');
+  });
+}
+function nqSave(){
+  var btn = document.getElementById('nq-save'), msg = document.getElementById('nq-msg');
+  btn.disabled = true; msg.className = 'nq-msg'; msg.textContent = '正在保存…';
+  var servers = nqVal('servers').split(/\n+/).map(function(s){ return s.trim(); }).filter(Boolean);
+  var body = {
+    fwd: {
+      enabled: nqOn('enabled'), nic_queues: nqOn('nic_queues'), cpu_performance: nqOn('cpu_performance'),
+      flow_offload: nqOn('flow_offload'), pppoe_qlen: nqOn('pppoe_qlen'), udp_gro: nqOn('udp_gro'), rx_backlog: nqOn('rx_backlog')
+    },
+    dhcp: {
+      enable: nqOn('dhcp_enable'), sequential: nqOn('sequential'),
+      start: nqVal('start'), limit: nqVal('limit'), leasetime: nqVal('leasetime'),
+      client_dns: nqVal('client_dns'), client_dns_addr: nqVal('client_dns_addr')
+    },
+    dns: { mode: nqVal('dns_mode'), servers: servers, cachesize: nqVal('cachesize') }
+  };
+  fetch(nqApi('save'), {
+    method:'POST', credentials:'same-origin',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(body)
+  }).then(function(r){ return r.json(); }).then(function(d){
+    btn.disabled = false;
+    if (d && d.ok) { msg.textContent = '已应用'; if (d.info) nqFill(d.info); else nqLoad(); }
+    else { msg.className = 'nq-msg bad'; msg.textContent = '保存失败'; }
+  }).catch(function(){
+    btn.disabled = false; msg.className = 'nq-msg bad'; msg.textContent = '保存失败';
+  });
+}
+document.querySelectorAll('.nq-wrap button.nq-sw[data-k]').forEach(function(el){
+  el.addEventListener('click', function(ev){
+    ev.preventDefault();
+    nqSet(el.getAttribute('data-k'), !nqOn(el.getAttribute('data-k')));
+    if (el.getAttribute('data-k') === 'enabled') nqFwd();
+  });
+});
+document.getElementById('client_dns').addEventListener('change', nqDnsUi);
+document.getElementById('dns_mode').addEventListener('change', nqDnsUi);
+document.getElementById('nq-save').addEventListener('click', nqSave);
+if (window.nqInit && window.nqInit.fwd) nqFill(window.nqInit);
+else nqLoad();
+</script>
+<%+footer%>

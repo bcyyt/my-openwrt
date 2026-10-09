@@ -15,7 +15,7 @@ PUB_KEY="$KEYS/my-openwrt.rsa.pub"
 IPTV_VER="${IPTV_VER:-2.3.11-r0}"
 MEDIA_VER="${MEDIA_VER:-1.5.4-r0}"
 STATUS_VER="${STATUS_VER:-4.23}"
-NETQ_VER="${NETQ_VER:-1.0.1-r0}"
+NETQ_VER="${NETQ_VER:-1.0.5-r0}"
 SYSKEEP_VER="${SYSKEEP_VER:-1.0.2-r0}"
 DATE_STR="$(date +%Y-%m-%d)"
 OTA_URL_BASE="https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages"
@@ -197,24 +197,24 @@ mkpkg \
 	-I "tags:openwrt:section=luci" \
 	-s "post-install:$PACK/luci-app-statusmon/post-install.sh"
 
-# ---------- 转发优化 ----------
+# ---------- 系统优化 ----------
 NETQ_ROOT="$(mktemp -d /tmp/pkg-netq.XXXXXX)"
 install -d "$NETQ_ROOT/etc/config" "$NETQ_ROOT/etc/init.d" "$NETQ_ROOT/etc/uci-defaults" \
 	"$NETQ_ROOT/usr/bin" \
 	"$NETQ_ROOT/usr/lib/lua/luci/controller" \
-	"$NETQ_ROOT/usr/lib/lua/luci/model/cbi"
+	"$NETQ_ROOT/usr/lib/lua/luci/view/netqueue"
 
 install -m 644 "$PACK/luci-app-netqueue/files/etc/config/netqueue" "$NETQ_ROOT/etc/config/netqueue"
 install -m 755 "$PACK/luci-app-netqueue/files/etc/uci-defaults/netqueue-setup" "$NETQ_ROOT/etc/uci-defaults/netqueue-setup"
 install -m 755 "$SRC/etc/init.d/netqueue" "$NETQ_ROOT/etc/init.d/netqueue"
 install -m 755 "$SRC/usr/bin/netqueue-apply.sh" "$NETQ_ROOT/usr/bin/netqueue-apply.sh"
 install -m 644 "$SRC/usr/lib/lua/luci/controller/netqueue.lua" "$NETQ_ROOT/usr/lib/lua/luci/controller/netqueue.lua"
-install -m 644 "$SRC/usr/lib/lua/luci/model/cbi/netqueue.lua" "$NETQ_ROOT/usr/lib/lua/luci/model/cbi/netqueue.lua"
+install -m 644 "$SRC/usr/lib/lua/luci/view/netqueue/index.htm" "$NETQ_ROOT/usr/lib/lua/luci/view/netqueue/index.htm"
 
 NETQ_APK="$OUT/luci-app-netqueue/luci-app-netqueue-${NETQ_VER}.apk"
 mkpkg \
 	luci-app-netqueue "$NETQ_VER" noarch \
-	"LuCI 转发优化：队列绑定、CPU、PPPoE 队列、UDP GRO、接收积压、软件分载" \
+	"LuCI 系统优化：转发、DHCP、DNS" \
 	luci-app-netqueue GPL-2.0 "https://github.com/bcyyt/my-openwrt" \
 	"$NETQ_ROOT" "$NETQ_APK" \
 	-I "depends:libc luci-base" \

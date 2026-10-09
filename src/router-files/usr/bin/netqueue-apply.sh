@@ -194,7 +194,7 @@ apply_backlog() {
 }
 
 print_status() {
-	local d q i irq name gov freq epp def
+	local d q i irq name gov freq epp def lan mask opt6 sec reso
 	load_cfg
 	echo "总开关: $enabled"
 	echo "网卡队列: $nic"
@@ -254,6 +254,38 @@ print_status() {
 	if [ -n "$def" ]; then
 		echo "flow_offloading=$(uci -q get "$def.flow_offloading")"
 		echo "flow_offloading_hw=$(uci -q get "$def.flow_offloading_hw")"
+	fi
+	echo
+	lan=$(uci -q get network.lan.ipaddr)
+	mask=$(uci -q get network.lan.netmask)
+	case "$lan" in
+		*/*) echo "LAN: $lan" ;;
+		*) echo "LAN: ${lan:-n/a}${mask:+/$mask}" ;;
+	esac
+	if [ "$(uci -q get dhcp.lan.ignore)" = "1" ]; then
+		echo "DHCP: 关闭"
+	else
+		echo "DHCP: 开启 start=$(uci -q get dhcp.lan.start) limit=$(uci -q get dhcp.lan.limit) lease=$(uci -q get dhcp.lan.leasetime)"
+	fi
+	opt6=$(uci -q get dhcp.lan.dhcp_option 2>/dev/null | tr ' ' '\n' | sed -n 's/^6,//p' | head -n 1)
+	if [ -n "$opt6" ]; then
+		echo "终端DNS: $opt6"
+	else
+		echo "终端DNS: 本机"
+	fi
+	sec=$(uci -q show dhcp 2>/dev/null | sed -n 's/^\(dhcp\.[^=]*\)=dnsmasq$/\1/p' | head -n 1)
+	if [ -n "$sec" ]; then
+		echo "顺序分配: $(uci -q get "$sec.sequential_ip")"
+		echo "dnsmasq noresolv=$(uci -q get "$sec.noresolv") cache=$(uci -q get "$sec.cachesize") server=$(uci -q get "$sec.server")"
+	fi
+	reso=/tmp/resolv.conf.d/resolv.conf.auto
+	[ -s "$reso" ] || reso=/tmp/resolv.conf.auto
+	if [ -s "$reso" ]; then
+		echo -n "运营商DNS:"
+		awk '/^nameserver/{printf " %s", $2}' "$reso"
+		echo
+	else
+		echo "运营商DNS: -"
 	fi
 }
 
