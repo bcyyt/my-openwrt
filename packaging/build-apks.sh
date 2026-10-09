@@ -1,5 +1,6 @@
 #!/bin/bash
-# Build signed OpenWrt APKv3 packages for iptv-auth / mediahub / statusmon
+# Build signed OpenWrt APKv3 packages for iptv-auth / mediahub / statusmon / netqueue
+
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -14,6 +15,7 @@ PUB_KEY="$KEYS/my-openwrt.rsa.pub"
 IPTV_VER="${IPTV_VER:-2.3.11-r0}"
 MEDIA_VER="${MEDIA_VER:-1.5.4-r0}"
 STATUS_VER="${STATUS_VER:-4.23}"
+NETQ_VER="${NETQ_VER:-1.0.1-r0}"
 DATE_STR="$(date +%Y-%m-%d)"
 OTA_URL_BASE="https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages"
 
@@ -26,7 +28,7 @@ if [ ! -f "$SIGN_KEY" ] || [ ! -f "$PUB_KEY" ]; then
 	exit 1
 fi
 
-mkdir -p "$OUT/iptv-auth" "$OUT/luci-app-mediahub" "$OUT/luci-app-statusmon" "$OUT/keys"
+mkdir -p "$OUT/iptv-auth" "$OUT/luci-app-mediahub" "$OUT/luci-app-statusmon" "$OUT/luci-app-netqueue" "$OUT/keys"
 cp -a "$PUB_KEY" "$OUT/keys/my-openwrt.rsa.pub"
 install -m 600 "$SIGN_KEY" "$OUT/keys/my-openwrt.rsa"
 
@@ -53,7 +55,7 @@ mkpkg() {
 
 # ---------- IPTV 代理 ----------
 IPTV_ROOT="$(mktemp -d /tmp/pkg-iptv.XXXXXX)"
-trap 'rm -rf "$IPTV_ROOT" "$MEDIA_ROOT" "$STATUS_ROOT"' EXIT
+trap 'rm -rf "$IPTV_ROOT" "$MEDIA_ROOT" "$STATUS_ROOT" "$NETQ_ROOT"' EXIT
 
 install -d "$IPTV_ROOT/etc/config" "$IPTV_ROOT/etc/init.d" "$IPTV_ROOT/etc/uci-defaults" \
 	"$IPTV_ROOT/etc/hotplug.d/iface" \
@@ -193,6 +195,30 @@ mkpkg \
 	-I "replaces:statusmon luci-app-filemanager luci-i18n-filemanager-zh-cn" \
 	-I "tags:openwrt:section=luci" \
 	-s "post-install:$PACK/luci-app-statusmon/post-install.sh"
+
+# ---------- 转发优化 ----------
+NETQ_ROOT="$(mktemp -d /tmp/pkg-netq.XXXXXX)"
+install -d "$NETQ_ROOT/etc/config" "$NETQ_ROOT/etc/init.d" "$NETQ_ROOT/etc/uci-defaults" \
+	"$NETQ_ROOT/usr/bin" \
+	"$NETQ_ROOT/usr/lib/lua/luci/controller" \
+	"$NETQ_ROOT/usr/lib/lua/luci/model/cbi"
+
+install -m 644 "$PACK/luci-app-netqueue/files/etc/config/netqueue" "$NETQ_ROOT/etc/config/netqueue"
+install -m 755 "$PACK/luci-app-netqueue/files/etc/uci-defaults/netqueue-setup" "$NETQ_ROOT/etc/uci-defaults/netqueue-setup"
+install -m 755 "$SRC/etc/init.d/netqueue" "$NETQ_ROOT/etc/init.d/netqueue"
+install -m 755 "$SRC/usr/bin/netqueue-apply.sh" "$NETQ_ROOT/usr/bin/netqueue-apply.sh"
+install -m 644 "$SRC/usr/lib/lua/luci/controller/netqueue.lua" "$NETQ_ROOT/usr/lib/lua/luci/controller/netqueue.lua"
+install -m 644 "$SRC/usr/lib/lua/luci/model/cbi/netqueue.lua" "$NETQ_ROOT/usr/lib/lua/luci/model/cbi/netqueue.lua"
+
+NETQ_APK="$OUT/luci-app-netqueue/luci-app-netqueue-${NETQ_VER}.apk"
+mkpkg \
+	luci-app-netqueue "$NETQ_VER" noarch \
+	"LuCI 转发优化：队列绑定、CPU、PPPoE 队列、UDP GRO、接收积压、软件分载" \
+	luci-app-netqueue GPL-2.0 "https://github.com/bcyyt/my-openwrt" \
+	"$NETQ_ROOT" "$NETQ_APK" \
+	-I "depends:libc luci-base" \
+	-I "tags:openwrt:section=luci" \
+	-s "post-install:$PACK/luci-app-netqueue/post-install.sh"
 
 echo
 echo "==== packages ===="

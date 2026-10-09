@@ -1,6 +1,6 @@
 # my-openwrt
 
-ImmortalWrt / OpenWrt APK 插件仓库：IPTV 代理、影视中心、状态监控。
+ImmortalWrt / OpenWrt APK 插件仓库：IPTV 代理、影视中心、状态监控、转发优化。
 
 ## 软件包
 
@@ -9,6 +9,7 @@ ImmortalWrt / OpenWrt APK 插件仓库：IPTV 代理、影视中心、状态监�
 | `iptv-auth` | 2.3.11-r0 | noarch | IPTV 鉴权、M3U/EPG、RTSP 回看、rtp2httpd 直播代理；选上游接口后自动走专线策略表（不改主路由） |
 | `luci-app-mediahub` | 1.5.4-r0 | x86_64 | 影视中心（CMS + AList + 静态 ffmpeg） |
 | `luci-app-statusmon` | 4.20 | noarch | 状态监控；内置 luci-app-filemanager 与中文语言包 |
+| `luci-app-netqueue` | 1.0.1-r0 | noarch | 转发优化：队列绑定、CPU、PPPoE 队列、UDP GRO、接收积压、软件分载 |
 
 APK 位于 `packages/`，均用 `keys/my-openwrt.rsa` 签名。
 
@@ -33,6 +34,9 @@ apk add luci-app-mediahub-1.5.4-r0.apk
 
 # 状态监控（含文件管理器与中文语言包）
 apk add luci-app-statusmon-4.20.apk
+
+# 转发优化
+apk add luci-app-netqueue-1.0.1-r0.apk
 ```
 
 若提示 UNTRUSTED signature，确认公钥已放入 `/etc/apk/keys/`，或临时使用：

@@ -1,0 +1,25 @@
+#!/bin/sh
+[ -f /etc/config/netqueue ] || {
+	touch /etc/config/netqueue
+	uci -q set netqueue.main=main
+	uci -q set netqueue.main.enabled='1'
+	uci -q set netqueue.main.nic_queues='1'
+	uci -q set netqueue.main.cpu_performance='1'
+	uci -q set netqueue.main.flow_offload='0'
+	uci -q set netqueue.main.pppoe_qlen='1'
+	uci -q set netqueue.main.udp_gro='1'
+	uci -q set netqueue.main.rx_backlog='1'
+	uci -q commit netqueue
+}
+
+chmod 755 /etc/init.d/netqueue /usr/bin/netqueue-apply.sh 2>/dev/null || true
+[ -x /etc/init.d/netqueue ] && /etc/init.d/netqueue enable 2>/dev/null || true
+
+if [ -x /etc/init.d/igc-queues ]; then
+	/etc/init.d/igc-queues disable 2>/dev/null || true
+	/etc/init.d/igc-queues stop 2>/dev/null || true
+fi
+
+rm -f /tmp/luci-indexcache.*
+rm -rf /tmp/luci-modulecache/
+exit 0
