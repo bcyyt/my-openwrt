@@ -1,0 +1,6 @@
+# name url  (downloaded to /mnt/data/syskeep/apks before flash)
+iptv-auth https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth-2.3.11-r0.apk
+luci-app-mediahub https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/luci-app-mediahub/luci-app-mediahub-1.5.4-r0.apk
+luci-app-statusmon https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/luci-app-statusmon/luci-app-statusmon-4.23.apk
+luci-app-netqueue https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/luci-app-netqueue/luci-app-netqueue-1.0.1-r0.apk
+luci-app-syskeep https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/luci-app-syskeep/luci-app-syskeep-1.0.0-r0.apk

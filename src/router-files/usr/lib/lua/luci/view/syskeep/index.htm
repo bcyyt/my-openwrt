@@ -1,0 +1,114 @@
+<%+header%>
+<style>
+.sk-wrap{max-width:920px;margin:0 auto 24px;font-family:ui-sans-serif,system-ui,sans-serif}
+.sk-hero{background:#1b2420;color:#e8f0ea;padding:22px 24px;border-radius:12px;margin-bottom:16px}
+.sk-hero h2{margin:0 0 6px;font-size:20px;font-weight:650;letter-spacing:.02em}
+.sk-hero p{margin:0;color:#b7c7bb;font-size:13px;line-height:1.55}
+.sk-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin:16px 0}
+.sk-card{background:#fff;border:1px solid #d7ddd8;border-radius:10px;padding:12px 14px}
+.sk-card b{display:block;font-size:11px;color:#6b776f;letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px}
+.sk-card span{font-size:15px;color:#1b2420;word-break:break-all}
+.sk-box{background:#fff;border:1px solid #d7ddd8;border-radius:10px;padding:16px 18px;margin-bottom:12px}
+.sk-box h3{margin:0 0 10px;font-size:15px}
+.sk-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0}
+.sk-row input[type=text]{flex:1;min-width:220px;padding:8px 10px;border:1px solid #c5cdc8;border-radius:8px}
+.sk-btn{border:0;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px}
+.sk-btn-pri{background:#2f6f4e;color:#fff}
+.sk-btn-warn{background:#8a3b16;color:#fff}
+.sk-btn-dim{background:#eef2ef;color:#1b2420}
+.sk-note{font-size:12px;color:#5c675f;line-height:1.5}
+.sk-log{height:220px;overflow:auto;background:#121816;color:#c8d6cc;padding:10px;border-radius:8px;font:12px/1.45 ui-monospace,monospace;white-space:pre-wrap}
+.sk-ok{color:#2f6f4e} .sk-bad{color:#8a3b16}
+</style>
+<div class="sk-wrap">
+  <div class="sk-hero">
+    <h2>保留升级</h2>
+    <p>只刷 boot 和 rootfs，GPT 和数据盘不动。点备份或升级时自动找出后来装的插件，能拉 APK 就拉，源里没有的打文件包，不用手工拷到数据盘。</p>
+  </div>
+  <div class="sk-grid">
+    <div class="sk-card"><b>当前系统</b><span id="sk-rel">-</span></div>
+    <div class="sk-card"><b>数据盘</b><span id="sk-data">-</span></div>
+    <div class="sk-card"><b>已装包</b><span id="sk-world">-</span></div>
+    <div class="sk-card"><b>自装插件</b><span id="sk-overlay">-</span></div>
+    <div class="sk-card"><b>已备份 APK</b><span id="sk-apks">-</span></div>
+    <div class="sk-card"><b>固件文件</b><span id="sk-fw">-</span></div>
+    <div class="sk-card"><b>步骤</b><span id="sk-phase">-</span></div>
+  </div>
+  <div class="sk-box">
+    <h3>1. 准备固件</h3>
+    <p class="sk-note">用 ImmortalWrt x86_64 <code>squashfs-combined-efi.img.gz</code>。不要用完整磁盘安装器。</p>
+    <div class="sk-row">
+      <input id="sk-url" type="text" placeholder="https://downloads.immortalwrt.org/snapshots/targets/x86/64/immortalwrt-x86-64-generic-squashfs-combined-efi.img.gz">
+      <button class="sk-btn sk-btn-pri" onclick="skDownload()">下载</button>
+    </div>
+    <div class="sk-row">
+      <input id="sk-file" type="file" accept=".gz,.img">
+      <button class="sk-btn sk-btn-dim" onclick="skUpload()">上传到数据盘</button>
+    </div>
+  </div>
+  <div class="sk-box">
+    <h3>2. 校验并刷写</h3>
+    <p class="sk-note">「只备份」会把自装插件存到数据盘的 syskeep 目录。刷写开始后页面会断开，等 2-3 分钟再打开。若插件没齐，点「重新恢复」。</p>
+    <div class="sk-row">
+      <button class="sk-btn sk-btn-dim" onclick="skPost('backup')">只备份</button>
+      <button class="sk-btn sk-btn-dim" onclick="skPost('test')">仅校验</button>
+      <button class="sk-btn sk-btn-warn" onclick="skFlash()">开始升级</button>
+      <button class="sk-btn sk-btn-dim" onclick="skPost('restore')">重新恢复插件</button>
+    </div>
+  </div>
+  <div class="sk-box">
+    <h3>日志</h3>
+    <div id="sk-log" class="sk-log">加载中…</div>
+  </div>
+</div>
+<script>
+function skApi(path){ return '<%=luci.dispatcher.build_url("admin/system/syskeep")%>/' + path; }
+function skBytes(n){
+  n = parseInt(n, 10) || 0;
+  if (n < 1024) return n + ' B';
+  if (n < 1048576) return (n/1024).toFixed(1) + ' KB';
+  return (n/1048576).toFixed(1) + ' MB';
+}
+function skRefresh(){
+  fetch(skApi('info'), {credentials:'same-origin'}).then(function(r){ return r.json(); }).then(function(d){
+    document.getElementById('sk-rel').textContent = d.release || '-';
+    var dm = document.getElementById('sk-data');
+    dm.textContent = d.data_mounted ? ((d.data_path || '') + ' 已挂载') : '未检测到';
+    dm.className = d.data_mounted ? 'sk-ok' : 'sk-bad';
+    document.getElementById('sk-world').textContent = d.world || 0;
+    document.getElementById('sk-overlay').textContent = d.overlay || 0;
+    document.getElementById('sk-apks').textContent = (d.apks || 0) + ' apk / ' + (d.filepacks || 0) + ' 文件包';
+    document.getElementById('sk-fw').textContent = skBytes(d.firmware_bytes);
+    var st = d.status || {};
+    document.getElementById('sk-phase').textContent = (st.phase || 'idle') + (st.message ? ' · ' + st.message : '');
+  }).catch(function(){});
+  fetch(skApi('log'), {credentials:'same-origin'}).then(function(r){ return r.text(); }).then(function(t){
+    var el = document.getElementById('sk-log');
+    el.textContent = t || '暂无日志';
+    el.scrollTop = el.scrollHeight;
+  }).catch(function(){});
+}
+function skPost(name){
+  fetch(skApi(name), {method:'POST', credentials:'same-origin'}).then(function(){ skRefresh(); });
+}
+function skDownload(){
+  var url = document.getElementById('sk-url').value.trim();
+  if (!url) { alert('填写固件 URL'); return; }
+  var body = 'url=' + encodeURIComponent(url);
+  fetch(skApi('download'), {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:body}).then(function(){ skRefresh(); });
+}
+function skUpload(){
+  var f = document.getElementById('sk-file').files[0];
+  if (!f) { alert('先选择固件文件'); return; }
+  var fd = new FormData();
+  fd.append('firmware', f);
+  fetch(skApi('upload'), {method:'POST', credentials:'same-origin', body:fd}).then(function(){ skRefresh(); });
+}
+function skFlash(){
+  if (!confirm('将只写入 boot 与 rootfs，保留数据盘和现有分区表。确定开始？')) return;
+  skPost('flash');
+}
+skRefresh();
+setInterval(skRefresh, 3000);
+</script>
+<%+footer%>

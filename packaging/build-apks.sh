@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build signed OpenWrt APKv3 packages for iptv-auth / mediahub / statusmon / netqueue
+# Build signed OpenWrt APKv3 packages for iptv-auth / mediahub / statusmon / netqueue / syskeep
 
 set -euo pipefail
 
@@ -16,6 +16,7 @@ IPTV_VER="${IPTV_VER:-2.3.11-r0}"
 MEDIA_VER="${MEDIA_VER:-1.5.4-r0}"
 STATUS_VER="${STATUS_VER:-4.23}"
 NETQ_VER="${NETQ_VER:-1.0.1-r0}"
+SYSKEEP_VER="${SYSKEEP_VER:-1.0.2-r0}"
 DATE_STR="$(date +%Y-%m-%d)"
 OTA_URL_BASE="https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages"
 
@@ -28,7 +29,7 @@ if [ ! -f "$SIGN_KEY" ] || [ ! -f "$PUB_KEY" ]; then
 	exit 1
 fi
 
-mkdir -p "$OUT/iptv-auth" "$OUT/luci-app-mediahub" "$OUT/luci-app-statusmon" "$OUT/luci-app-netqueue" "$OUT/keys"
+mkdir -p "$OUT/iptv-auth" "$OUT/luci-app-mediahub" "$OUT/luci-app-statusmon" "$OUT/luci-app-netqueue" "$OUT/luci-app-syskeep" "$OUT/keys"
 cp -a "$PUB_KEY" "$OUT/keys/my-openwrt.rsa.pub"
 install -m 600 "$SIGN_KEY" "$OUT/keys/my-openwrt.rsa"
 
@@ -55,7 +56,7 @@ mkpkg() {
 
 # ---------- IPTV 代理 ----------
 IPTV_ROOT="$(mktemp -d /tmp/pkg-iptv.XXXXXX)"
-trap 'rm -rf "$IPTV_ROOT" "$MEDIA_ROOT" "$STATUS_ROOT" "$NETQ_ROOT"' EXIT
+trap 'rm -rf "$IPTV_ROOT" "$MEDIA_ROOT" "$STATUS_ROOT" "$NETQ_ROOT" "$SYSKEEP_ROOT"' EXIT
 
 install -d "$IPTV_ROOT/etc/config" "$IPTV_ROOT/etc/init.d" "$IPTV_ROOT/etc/uci-defaults" \
 	"$IPTV_ROOT/etc/hotplug.d/iface" \
@@ -219,6 +220,35 @@ mkpkg \
 	-I "depends:libc luci-base" \
 	-I "tags:openwrt:section=luci" \
 	-s "post-install:$PACK/luci-app-netqueue/post-install.sh"
+
+# ---------- 保留升级 ----------
+SYSKEEP_ROOT="$(mktemp -d /tmp/pkg-syskeep.XXXXXX)"
+install -d "$SYSKEEP_ROOT/etc/init.d" "$SYSKEEP_ROOT/etc/uci-defaults" "$SYSKEEP_ROOT/etc/syskeep" \
+	"$SYSKEEP_ROOT/usr/bin" \
+	"$SYSKEEP_ROOT/lib/upgrade/keep.d" \
+	"$SYSKEEP_ROOT/usr/lib/lua/luci/controller" \
+	"$SYSKEEP_ROOT/usr/lib/lua/luci/view/syskeep"
+
+install -m 755 "$PACK/luci-app-syskeep/files/etc/uci-defaults/syskeep-setup" "$SYSKEEP_ROOT/etc/uci-defaults/syskeep-setup"
+install -m 755 "$SRC/etc/init.d/syskeep" "$SYSKEEP_ROOT/etc/init.d/syskeep"
+install -m 755 "$SRC/etc/syskeep/restore.sh" "$SYSKEEP_ROOT/etc/syskeep/restore.sh"
+install -m 644 "$SRC/etc/syskeep/datadir.sh" "$SYSKEEP_ROOT/etc/syskeep/datadir.sh"
+install -m 644 "$SRC/etc/syskeep/custom-apks.txt" "$SYSKEEP_ROOT/etc/syskeep/custom-apks.txt"
+install -m 755 "$SRC/usr/bin/syskeep-upgrade.sh" "$SYSKEEP_ROOT/usr/bin/syskeep-upgrade.sh"
+install -m 755 "$SRC/lib/upgrade/syskeep-hook.sh" "$SYSKEEP_ROOT/lib/upgrade/syskeep-hook.sh"
+install -m 644 "$SRC/lib/upgrade/keep.d/syskeep" "$SYSKEEP_ROOT/lib/upgrade/keep.d/syskeep"
+install -m 644 "$SRC/usr/lib/lua/luci/controller/syskeep.lua" "$SYSKEEP_ROOT/usr/lib/lua/luci/controller/syskeep.lua"
+install -m 644 "$SRC/usr/lib/lua/luci/view/syskeep/index.htm" "$SYSKEEP_ROOT/usr/lib/lua/luci/view/syskeep/index.htm"
+
+SYSKEEP_APK="$OUT/luci-app-syskeep/luci-app-syskeep-${SYSKEEP_VER}.apk"
+mkpkg \
+	luci-app-syskeep "$SYSKEEP_VER" noarch \
+	"LuCI 保留升级：刷机保留配置、分区和插件清单，开机重装 apk" \
+	luci-app-syskeep GPL-2.0 "https://github.com/bcyyt/my-openwrt" \
+	"$SYSKEEP_ROOT" "$SYSKEEP_APK" \
+	-I "depends:libc luci-base" \
+	-I "tags:openwrt:section=luci" \
+	-s "post-install:$PACK/luci-app-syskeep/post-install.sh"
 
 echo
 echo "==== packages ===="

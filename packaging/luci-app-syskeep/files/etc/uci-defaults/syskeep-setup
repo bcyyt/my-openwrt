@@ -1,0 +1,12 @@
+#!/bin/sh
+chmod 755 /etc/init.d/syskeep /usr/bin/syskeep-upgrade.sh /etc/syskeep/restore.sh /lib/upgrade/syskeep-hook.sh 2>/dev/null || true
+[ -x /etc/init.d/syskeep ] && /etc/init.d/syskeep enable 2>/dev/null || true
+
+if [ -f /etc/sysupgrade.conf ]; then
+	grep -q '^/etc/syskeep/' /etc/sysupgrade.conf 2>/dev/null || echo '/etc/syskeep/' >> /etc/sysupgrade.conf
+	grep -q '^/etc/init.d/syskeep' /etc/sysupgrade.conf 2>/dev/null || echo '/etc/init.d/syskeep' >> /etc/sysupgrade.conf
+fi
+
+rm -f /tmp/luci-indexcache.*
+rm -rf /tmp/luci-modulecache/
+exit 0
