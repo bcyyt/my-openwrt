@@ -13,6 +13,7 @@ if [ -f /etc/config/netqueue ]; then
 	[ -n "$(uci -q get netqueue.main.pppoe_qlen)" ] || uci -q set netqueue.main.pppoe_qlen='1'
 	[ -n "$(uci -q get netqueue.main.udp_gro)" ] || uci -q set netqueue.main.udp_gro='1'
 	[ -n "$(uci -q get netqueue.main.rx_backlog)" ] || uci -q set netqueue.main.rx_backlog='1'
+	[ -n "$(uci -q get netqueue.main.neigh_gc)" ] || uci -q set netqueue.main.neigh_gc='60'
 	uci -q commit netqueue
 fi
 

@@ -11,7 +11,7 @@ end
 -%>
 <%+header%>
 <style>
-.nq-wrap{max-width:920px;margin:0 auto 28px;font-family:ui-sans-serif,system-ui,sans-serif;color:#1b2420}
+.nq-wrap{max-width:1080px;margin:0 auto 28px;font-family:ui-sans-serif,system-ui,sans-serif;color:#1b2420}
 .nq-hero{background:linear-gradient(135deg,#16332a 0%,#1b2420 58%,#24362f 100%);color:#e8f0ea;padding:24px 26px;border-radius:14px;margin-bottom:14px;position:relative;overflow:hidden}
 .nq-hero:after{content:"";position:absolute;right:-40px;top:-30px;width:160px;height:160px;border-radius:50%;background:rgba(88,160,122,.18)}
 .nq-hero h2{margin:0 0 6px;font-size:22px;font-weight:650;letter-spacing:.03em}
@@ -56,6 +56,15 @@ end
 .nq-msg.bad{color:#8a3b16}
 .nq-log{height:220px;overflow:auto;background:#121816;color:#c8d6cc;padding:10px 12px;border-radius:8px;font:12px/1.45 ui-monospace,monospace;white-space:pre-wrap;margin:8px 0 12px}
 .nq-ok{color:#2f6f4e} .nq-bad{color:#8a3b16}
+.nq-table-wrap{overflow-x:auto;margin:8px 0 4px}
+.nq-table{width:100%;border-collapse:collapse;font-size:12px}
+.nq-table th{text-align:left;font-size:11px;color:#6b776f;letter-spacing:.04em;padding:8px 6px;border-bottom:1px solid #eef2ef;white-space:nowrap}
+.nq-table td{padding:8px 6px;border-bottom:1px solid #eef2ef;vertical-align:middle}
+.nq-mono{font-family:ui-monospace,monospace;font-size:12px}
+.nq-wrap .nq-table input.nq-ip{width:128px!important;min-width:128px!important;min-height:30px!important;padding:5px 8px!important;font-size:12px!important}
+.nq-wrap .nq-btn-sm{padding:6px 10px;font-size:12px;border-radius:6px;margin:0 4px 0 0}
+.nq-wrap .nq-btn-ghost{background:#eef2ef!important;color:#1b2420!important;border:0!important}
+.nq-add{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;align-items:end;margin-top:8px}
 @media (max-width:640px){
   .nq-hero{padding:18px 16px}
   .nq-box{padding:4px 14px 12px}
@@ -94,7 +103,7 @@ end
 
   <div class="nq-box">
     <h3>DHCP</h3>
-    <p class="nq-lead">只改 LAN 地址池。起始地址是网段偏移，例如 192.168.10.0/24 填 100 表示 192.168.10.100。</p>
+    <p class="nq-lead">地址池、租期和邻居清理。静态 IP 单独绑定，马上清旧租约并重载 dnsmasq，不断 PPPoE。</p>
     <div class="nq-item">
       <div><b>启用 DHCP</b><p>给 LAN 终端发地址。关掉后终端要自己设 IP。</p></div>
       <button type="button" class="nq-sw" data-k="dhcp_enable"></button>
@@ -106,7 +115,8 @@ end
     <div class="nq-fields">
       <label>起始地址 <input id="start" type="number" min="1" max="254" placeholder="100"></label>
       <label>地址数量 <input id="limit" type="number" min="1" max="253" placeholder="150"></label>
-      <label>租期 <input id="leasetime" type="text" placeholder="12h"></label>
+      <label>租期 / 清理时间 <input id="leasetime" type="text" placeholder="12h"></label>
+      <label>邻居清理（秒） <input id="neigh_gc" type="number" min="5" max="86400" placeholder="60"></label>
     </div>
     <div class="nq-fields">
       <label>终端 DNS
@@ -116,6 +126,17 @@ end
         </select>
       </label>
       <label id="client_dns_wrap">终端 DNS 地址 <input id="client_dns_addr" type="text" placeholder="192.168.10.1"></label>
+    </div>
+    <div class="nq-item" style="border-top:0;padding-top:4px">
+      <div><b>DHCP 邻居</b><p>过期租约会从列表拿掉。绑定静态 IP 后立刻重分配；终端若仍握着旧地址，续租或重连即可拿到新 IP。</p></div>
+      <button type="button" class="nq-btn nq-btn-ghost nq-btn-sm" id="nq-refresh">刷新</button>
+    </div>
+    <div id="nq-clients" class="nq-table-wrap"></div>
+    <div class="nq-add">
+      <label>MAC <input id="add_mac" type="text" placeholder="aa:bb:cc:dd:ee:ff"></label>
+      <label>静态 IP <input id="add_ip" type="text" placeholder="192.168.10.20"></label>
+      <label>名称 <input id="add_name" type="text" placeholder="可选"></label>
+      <button type="button" class="nq-btn nq-btn-pri nq-btn-sm" id="nq-add-static">添加静态</button>
     </div>
   </div>
 
@@ -172,6 +193,59 @@ function nqDnsUi(){
   document.getElementById('client_dns_wrap').className = customClient ? '' : 'nq-hide';
   document.getElementById('servers_wrap').className = customDns ? 'nq-field' : 'nq-field nq-hide';
 }
+function nqEsc(s){
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function(ch){
+    return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[ch];
+  });
+}
+function nqRemain(s){
+  s = parseInt(s, 10) || 0;
+  if (s <= 0) return '-';
+  if (s < 60) return s + '秒';
+  if (s < 3600) return Math.floor(s / 60) + '分';
+  return Math.floor(s / 3600) + '时' + Math.floor((s % 3600) / 60) + '分';
+}
+function nqClients(list){
+  var tb = document.getElementById('nq-clients');
+  if (!tb) return;
+  list = list || [];
+  if (!list.length){
+    tb.innerHTML = '<p class="nq-lead">暂无在线租约或静态绑定</p>';
+    return;
+  }
+  var h = '<table class="nq-table"><thead><tr><th>主机</th><th>MAC</th><th>当前IP</th><th>剩余</th><th>状态</th><th>绑定IP</th><th></th></tr></thead><tbody>';
+  list.forEach(function(c){
+    var sip = c.sip || c.ip || '';
+    var st = (c.static ? '静态' : '动态') + (c.neigh ? ' / ' + c.neigh : '');
+    h += '<tr data-mac="'+nqEsc(c.mac)+'" data-name="'+nqEsc(c.name||'')+'">'
+      +'<td>'+nqEsc(c.name||'-')+'</td>'
+      +'<td class="nq-mono">'+nqEsc(c.mac)+'</td>'
+      +'<td class="nq-mono">'+nqEsc(c.ip||'-')+'</td>'
+      +'<td>'+nqRemain(c.remain)+'</td>'
+      +'<td>'+nqEsc(st)+'</td>'
+      +'<td><input class="nq-ip" value="'+nqEsc(sip)+'"></td>'
+      +'<td><button type="button" class="nq-btn nq-btn-sm nq-btn-pri" data-act="static">绑定</button>'
+      +(c.static ? '<button type="button" class="nq-btn nq-btn-sm nq-btn-ghost" data-act="dynamic">取消</button>' : '')
+      +'</td></tr>';
+  });
+  h += '</tbody></table>';
+  tb.innerHTML = h;
+}
+function nqPost(act, body){
+  var msg = document.getElementById('nq-msg');
+  msg.className = 'nq-msg'; msg.textContent = '正在应用…';
+  return fetch(nqApi(act), {
+    method:'POST', credentials:'same-origin',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(body || {})
+  }).then(function(r){ return r.json(); }).then(function(d){
+    if (d && d.ok) { msg.textContent = '已应用'; if (d.info) nqFill(d.info); else nqLoad(); }
+    else { msg.className = 'nq-msg bad'; msg.textContent = (d && d.error) ? d.error : '失败'; }
+    return d;
+  }).catch(function(){
+    msg.className = 'nq-msg bad'; msg.textContent = '失败';
+  });
+}
 function nqFill(d){
   try {
   d = d || {};
@@ -185,7 +259,7 @@ function nqFill(d){
   nqSet('rx_backlog', nqFlag(f.rx_backlog));
   nqSet('dhcp_enable', nqFlag(h.enable));
   nqSet('sequential', nqFlag(h.sequential));
-  nqPut('start', h.start); nqPut('limit', h.limit); nqPut('leasetime', h.leasetime);
+  nqPut('start', h.start); nqPut('limit', h.limit); nqPut('leasetime', h.leasetime); nqPut('neigh_gc', h.neigh_gc || '60');
   nqPut('client_dns', h.client_dns || 'router'); nqPut('client_dns_addr', h.client_dns_addr);
   nqPut('wan_dns', n.wan || '-'); nqPut('dns_mode', n.mode || 'wan');
   nqPut('cachesize', n.cachesize);
@@ -194,6 +268,7 @@ function nqFill(d){
   document.getElementById('nq-dhcpst').textContent = nqFlag(h.enable) ? '开启' : '关闭';
   document.getElementById('nq-dhcpst').className = nqFlag(h.enable) ? 'nq-ok' : 'nq-bad';
   document.getElementById('nq-leases').textContent = d.leases || 0;
+  nqClients(d.clients);
   document.getElementById('nq-dnsst').textContent = (n.mode === 'custom') ? '自定义' : '运营商';
   document.getElementById('nq-fwdst').textContent = nqFlag(f.enabled) ? '开启' : '关闭';
   document.getElementById('nq-flowst').textContent = nqFlag(f.flow_offload) ? '开启' : '关闭';
@@ -222,7 +297,7 @@ function nqSave(){
     },
     dhcp: {
       enable: nqOn('dhcp_enable'), sequential: nqOn('sequential'),
-      start: nqVal('start'), limit: nqVal('limit'), leasetime: nqVal('leasetime'),
+      start: nqVal('start'), limit: nqVal('limit'), leasetime: nqVal('leasetime'), neigh_gc: nqVal('neigh_gc'),
       client_dns: nqVal('client_dns'), client_dns_addr: nqVal('client_dns_addr')
     },
     dns: { mode: nqVal('dns_mode'), servers: servers, cachesize: nqVal('cachesize') }
@@ -249,6 +324,22 @@ document.querySelectorAll('.nq-wrap button.nq-sw[data-k]').forEach(function(el){
 document.getElementById('client_dns').addEventListener('change', nqDnsUi);
 document.getElementById('dns_mode').addEventListener('change', nqDnsUi);
 document.getElementById('nq-save').addEventListener('click', nqSave);
+document.getElementById('nq-refresh').addEventListener('click', nqLoad);
+document.getElementById('nq-add-static').addEventListener('click', function(){
+  nqPost('static', {mac: nqVal('add_mac'), ip: nqVal('add_ip'), name: nqVal('add_name')});
+});
+document.getElementById('nq-clients').addEventListener('click', function(ev){
+  var btn = ev.target.closest ? ev.target.closest('button[data-act]') : null;
+  if (!btn) return;
+  var tr = btn.closest('tr');
+  if (!tr) return;
+  var mac = tr.getAttribute('data-mac') || '';
+  var name = tr.getAttribute('data-name') || '';
+  var ipEl = tr.querySelector('input.nq-ip');
+  var ip = ipEl ? ipEl.value : '';
+  if (btn.getAttribute('data-act') === 'static') nqPost('static', {mac: mac, ip: ip, name: name});
+  else nqPost('dynamic', {mac: mac});
+});
 if (window.nqInit && window.nqInit.fwd) nqFill(window.nqInit);
 else nqLoad();
 </script>

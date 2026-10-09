@@ -4,8 +4,7 @@
 mediahub-cms.py v1.5 — 多网盘自动挂载 + 小雅 PG 完整订阅（融合 CMS 采集 + AList 网盘）
 - 地址跟随访问来源：APP/浏览器用内网地址访问 → 所有返回地址（tvbox.json/播放直链）均为内网地址；
   用外网域名访问 → 返回外网地址。不再强制使用 ext_domain。
-- 播放流经 8901 反代到 AList：115/夸克均走 /p/（web_proxy 中继，Range 代理）
-  —— APP 与订阅同端口，避免 5244 的 302 CDN 在播放器里超时
+- 播放走 8901 /play 反代：Range 先打 AList /p/，失败再跟 raw_url；APP 与订阅同端口
 - 8901 仅承载轻量 API：tvbox.json / cms.php 聚合搜索 / cloudcms.php 网盘适配 / cmproxy CMS 加速
 - 网盘文件列表缓存（30分钟TTL）：搜索秒回，避免频繁扫描网盘触发风控
 - m3u8 播放缓存带大小上限（UCI mediahub.main.cache_mb），超限逐出最旧，/cache/clear 一键清理
@@ -15,13 +14,14 @@ mediahub-cms.py v1.5 — 多网盘自动挂载 + 小雅 PG 完整订阅（融合
 """
 import json, os, sys, time, threading, urllib.request, urllib.parse, urllib.error
 import signal
+import hashlib
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
 from concurrent.futures import ThreadPoolExecutor, wait as _cf_wait
 import subprocess, re, base64, mimetypes
 
 # 部署版本（LuCI 状态页显示）
-CMS_VERSION = '1.5'
+CMS_VERSION = '1.5.6'
 
 # ============================================================
 # 配置
@@ -493,6 +493,14 @@ def _host_only(host):
         return host.split(']', 1)[0][1:]
     return host.rsplit(':', 1)[0]
 
+def _cloud_play_url(host, path, sign=''):
+    """网盘播放地址：与订阅同主机同端口的 /play 反代。"""
+    encoded = urllib.parse.quote(path or '/', safe='/')
+    url = f'http://{host}/play{encoded}'
+    if sign:
+        url += f'?sign={urllib.parse.quote(sign)}'
+    return url
+
 def _rewrite_play_url(play_url, host):
     """把 CMS 直链 m3u8/mp4 改为经过 /cmproxy/ 代理（加速+缓存）
     苹果CMS 标准格式：播放组间 $$$ 分隔，组内剧集 # 分隔，每集 标签$url
@@ -628,7 +636,6 @@ def _remote_search_fetch(wd, local_results):
     for item in results:
         if not item.get('vod_remarks', '').startswith('['):
             item['vod_remarks'] = item.get('vod_remarks', '') or ''
-    return results
     return results
 
 def cms_search(wd):
@@ -780,6 +787,7 @@ def _get_ol_admin_token():
             return _ol_token_cache['token']
     pw = uci_get('mediahub.main.alist_pw') or uci_get('mediahub.main.alist_pw')
     if not pw:
+        _log('alist login skipped: mediahub.main.alist_pw empty')
         return ''
     try:
         body = json.dumps({'username': 'admin', 'password': pw}).encode()
@@ -794,8 +802,11 @@ def _get_ol_admin_token():
             with _ol_token_lock:
                 _ol_token_cache['token'] = token
                 _ol_token_cache['ts'] = now
+            return token
+        _log(f'alist login failed: code={d.get("code")} msg={d.get("message")}')
         return token
-    except Exception:
+    except Exception as e:
+        _log(f'alist login error: {e}')
         return ''
 
 def ol_list_videos(base_path, depth=6, max_count=8000):
@@ -1329,14 +1340,7 @@ def _calc_thumb_seek(duration, size=0):
         return 90
 
 def _grab_head_and_thumb(path, out_jpg, mb=16):
-    """fs/get 拿 raw_url → 截帧出海报图。
-    两种路径（自动选择）：
-    1) raw_url 是 AList 本地代理（127.0.0.1）→ ffmpeg 直读 URL 流式截帧
-       （MP4 moov atom 可能在文件尾部，只下载头部 16MB 读不到元数据；
-        本地代理无 DNS/UA 问题，ffmpeg HTTP protocol 自动 seek 到 moov + 指定时间点）
-    2) raw_url 是外部 CDN（如 115cdn.net）→ curl 下载头部 16MB + ffmpeg 本地截帧
-       （静态 ffmpeg 对 CDN 域名 DNS 解析异常 + 115 UA 绑定，必须 curl 中转）
-    """
+    """优先对 AList 本地 /p/ seek 截帧；失败再走 raw_url / CDN 头部下载。"""
     FF = _ffmpeg_path()
     if not FF:
         return False
@@ -1352,34 +1356,50 @@ def _grab_head_and_thumb(path, out_jpg, mb=16):
                                      method='POST')
         with urllib.request.urlopen(req, timeout=15) as resp:
             d = json.loads(resp.read().decode('utf-8', errors='replace'))
-        ru = (d.get('data') or {}).get('raw_url') or ''
-        if not ru.startswith('http'):
-            return False
+        info = d.get('data') or {}
+        ru = info.get('raw_url') or ''
+        size = int(info.get('size') or 0)
+        sign = info.get('sign') or get_sign(path)
         import subprocess as _sp
 
-        # 本地代理 URL：ffmpeg 直读（流式 seek，不怕 moov atom 在文件尾部）
-        # v1.5.4：跳片头截正片——先解析总时长，seek 到 15% 处（clamp 45s~15min）
-        if '127.0.0.1' in ru or 'localhost' in ru:
-            dur = _ffprobe_duration(ru, FF)
-            seek = _calc_thumb_seek(dur, int((d.get('data') or {}).get('size') or 0))
-            p = _sp.run([FF, '-y', '-ss', str(seek), '-i', ru, '-frames:v', '1', '-q:v', '4', out_jpg],
-                        capture_output=True, timeout=120)
+        def _ffmpeg_url(src):
+            dur = _ffprobe_duration(src, FF)
+            seek = _calc_thumb_seek(dur, size)
+            cmd = [FF, '-y', '-user_agent', _GRAB_UA, '-ss', str(seek), '-i', src,
+                   '-frames:v', '1', '-q:v', '4', out_jpg]
+            _sp.run(cmd, capture_output=True, timeout=120)
             if not (os.path.exists(out_jpg) and os.path.getsize(out_jpg) > 2048) and seek > 3:
-                # 正片位截帧失败（流异常/越界/时长错）→ 回退头部 3s，保证不劣化
                 try:
                     os.remove(out_jpg)
                 except Exception:
                     pass
-                _sp.run([FF, '-y', '-ss', '3', '-i', ru, '-frames:v', '1', '-q:v', '4', out_jpg],
+                _sp.run([FF, '-y', '-user_agent', _GRAB_UA, '-ss', '3', '-i', src,
+                         '-frames:v', '1', '-q:v', '4', out_jpg],
                         capture_output=True, timeout=120)
             return os.path.exists(out_jpg) and os.path.getsize(out_jpg) > 2048
+
+        local_p = 'http://127.0.0.1:%d/p%s' % (CFG['ol_port'], urllib.parse.quote(path, safe='/'))
+        if sign:
+            local_p += '?sign=' + urllib.parse.quote(sign)
+        try:
+            if _ffmpeg_url(local_p):
+                return True
+        except Exception:
+            pass
+        if ru.startswith('http') and ('127.0.0.1' in ru or 'localhost' in ru):
+            try:
+                if _ffmpeg_url(ru):
+                    return True
+            except Exception:
+                pass
+        if not ru.startswith('http'):
+            return False
 
         # 外部 CDN：curl 下载头部 + ffmpeg 本地截帧
         # v1.5.4：跳片头截正片——16MB 头部只够开头几十秒，按 seek 点动态加大下载量
         import tempfile
         part = tempfile.NamedTemporaryFile(suffix='.part', delete=False)
         part.close()
-        size = int((d.get('data') or {}).get('size') or 0)
         _sp.run(['curl', '-sL', '-m', '120', '-A', _GRAB_UA, '-r', '0-%d' % (mb * 1048576 - 1), '-o', part.name, ru],
                 timeout=150)
         ok = False
@@ -1423,9 +1443,16 @@ def _grab_head_and_thumb(path, out_jpg, mb=16):
 
 def _thumb_file_path(path):
     """网盘路径 → 海报缓存文件路径（<data_dir>/thumbs/）"""
-    import hashlib
     h = hashlib.md5(path.encode()).hexdigest()[:16]
     return os.path.join(_PERSIST_DIR, 'thumbs', h + '.jpg')
+
+def _existing_thumb(path):
+    if not path:
+        return None
+    tf = _thumb_file_path(path)
+    if os.path.exists(tf) and os.path.getsize(tf) > 2048:
+        return tf
+    return None
 
 def _cms_remote_search(kw):
     """CMS 远端站点搜索兜底（轮询前 3 个站，取首个有结果的）。
@@ -1459,8 +1486,6 @@ def _scrape_one(name, cloud_path=None, info=None):
     norm = _norm_title(clean)
     eng = ' '.join(w for w in re.findall(r'[A-Za-z]{2,}', clean))
     kws = [k for k in (cjk, norm, eng) if k and len(k) >= 2]
-    if not kws:
-        return None
     sy = _src_year(name or '')
 
     def _pick(cands, label):
@@ -1469,6 +1494,27 @@ def _scrape_one(name, cloud_path=None, info=None):
             if _accept_match(clean, t, y, sy, mode):
                 return (pic, y, t, label)
         return None
+
+    def _frame():
+        tf = _existing_thumb(cloud_path)
+        if tf:
+            _pic_register(name, 'thumb://' + tf, '')
+            if info is not None:
+                info['matched'], info['source'] = '片源截帧', '截帧'
+            return ('thumb://' + tf, '')
+        if not cloud_path:
+            return None
+        tf = _thumb_file_path(cloud_path)
+        os.makedirs(os.path.dirname(tf), exist_ok=True)
+        if _grab_head_and_thumb(cloud_path, tf):
+            _pic_register(name, 'thumb://' + tf, '')
+            if info is not None:
+                info['matched'], info['source'] = '片源截帧', '截帧'
+            return ('thumb://' + tf, '')
+        return None
+
+    if not kws:
+        return _frame()
 
     hit = None
     for kw in kws:
@@ -1505,19 +1551,7 @@ def _scrape_one(name, cloud_path=None, info=None):
                     info['matched'], info['source'] = got[2], got[3]
                 break
     if not hit and cloud_path:
-        # 最后兜底：从片源截帧做海报（所有模式共用）
-        tf = _thumb_file_path(cloud_path)
-        if not os.path.exists(tf):
-            os.makedirs(os.path.dirname(tf), exist_ok=True)
-            if not _grab_head_and_thumb(cloud_path, tf):
-                return None
-        else:
-            return None  # 已有截帧但仍未命中（前次截过），不再重截
-        # 截帧成功：注册为本地相对路径（响应时再拼 host）
-        _pic_register(name, 'thumb://' + tf, '')
-        if info is not None:
-            info['matched'], info['source'] = '片源截帧', '截帧'
-        return ('thumb://' + tf, '')
+        return _frame()
     if hit:
         _pic_register(name, hit[0], hit[1])
     return hit
@@ -1565,7 +1599,7 @@ def _poster_fill_worker(force=False):
     _log('poster fill thread started')
     _POSTER_FILL_STATUS.update({'running': True, 'total': 0, 'done': 0, 'scraped': 0, 'framed': 0, 'started': int(time.time())})
     try:
-        time.sleep(90)  # 等挂载自愈 + 网盘文件索引就绪
+        time.sleep(5 if not force else 0)
         files = []
         for attempt in range(6):
             try:
@@ -1576,20 +1610,30 @@ def _poster_fill_worker(force=False):
             if files:
                 break
             _log(f'poster fill: no cloud files yet, retry {attempt + 1}/6 in 60s')
-            time.sleep(60)
+            time.sleep(15)
         if not files:
             _log('poster fill: no cloud files after retries, skip')
             return
         _has_cjk = lambda s: bool(re.search(r'[\u4e00-\u9fff]', s or ''))
         todo = []
+        recovered = 0
         for f in files:
             fname = f.get('name', '')
             if not _has_cjk(fname[:20]) and _has_cjk(f.get('dir', '')):
                 name = f.get('dir', '')
             else:
                 name = fname.rsplit('.', 1)[0] if '.' in fname else fname
-            if not _pic_lookup(name):
-                todo.append((name, f.get('path', '')))
+            if _pic_lookup(name):
+                continue
+            tf = _existing_thumb(f.get('path', ''))
+            if tf:
+                _pic_register(name, 'thumb://' + tf, '')
+                recovered += 1
+                continue
+            todo.append((name, f.get('path', '')))
+        if recovered:
+            _log(f'poster fill: recovered {recovered} existing thumbs')
+            _save_pic_index()
         if not todo:
             _log(f'poster fill: all {len(files)} files already have posters')
             return
@@ -1597,25 +1641,34 @@ def _poster_fill_worker(force=False):
         _log(f'poster fill: {len(todo)}/{len(files)} files to scrape (mode={_get_scrape_mode()}, tmdb/tvdb/douban/cms/frame)')
         _POSTER_FILL_STATUS['total'] = len(todo)
         ok = 0
-        for i, (name, cpath) in enumerate(todo):
+        lock = threading.Lock()
+
+        def _one(item):
+            nonlocal ok
+            name, cpath = item
             try:
                 hit = _scrape_one(name, cloud_path=cpath)
-                if hit:
-                    ok += 1
-                    if hit[0].startswith('thumb://'):
-                        _POSTER_FILL_STATUS['framed'] += 1
-                    else:
-                        _POSTER_FILL_STATUS['scraped'] += 1
+                with lock:
+                    if hit:
+                        ok += 1
+                        if hit[0].startswith('thumb://'):
+                            _POSTER_FILL_STATUS['framed'] += 1
+                        else:
+                            _POSTER_FILL_STATUS['scraped'] += 1
+                    _POSTER_FILL_STATUS['done'] += 1
+                    if _POSTER_FILL_STATUS['done'] % 20 == 0:
+                        _log(f'poster fill: {_POSTER_FILL_STATUS["done"]}/{len(todo)} done, scraped {ok}')
+                        try:
+                            _save_pic_index()
+                        except Exception:
+                            pass
             except Exception as se:
-                _log(f'poster fill: item error at {i}: {se}')
-            _POSTER_FILL_STATUS['done'] = i + 1
-            time.sleep(0.3)
-            if (i + 1) % 20 == 0:
-                _log(f'poster fill: {i + 1}/{len(todo)} done, scraped {ok}')
-                try:
-                    _save_pic_index()
-                except Exception:
-                    pass
+                with lock:
+                    _POSTER_FILL_STATUS['done'] += 1
+                _log(f'poster fill: item error {name}: {se}')
+
+        with ThreadPoolExecutor(max_workers=3) as ex:
+            list(ex.map(_one, todo))
         _log(f'poster fill complete: {ok}/{len(todo)} scraped')
     except Exception as e:
         _log(f'poster fill error: {e}')
@@ -1666,11 +1719,8 @@ def cloud_cms_response(params, method, host):
     def build_entry(f):
         fname = f['name']
         vod_class = '电视剧' if any(k in fname for k in ['S0', 'E0', '第']) else ('4K' if '4K' in fname or '2160p' in fname else '电影')
-        # 播放直连 AList 公网：115 走 /d/（302直链，AList /p/ 对302存储返回403），
-        # 夸克等 web_proxy 存储走 /p/（服务器中继，CDN校验UA必须中继）
         # v2.8: 优先用扫描时 fs/list 自带的 sign（零远程），get_sign 纯本地兜底
         sign = f.get('sign') or get_sign(f['path'])
-        encoded_path = urllib.parse.quote(f['path'], safe='/')
         ext = fname.rsplit('.', 1)[1].lower() if '.' in fname else ''
         size_gb = f'{f.get("size", 0) / 1073741824:.1f}GB' if f.get('size') else ''
         # 原盘 ISO/超大 REMUX：安卓 APP 播放器基本无法直接播放，标注提醒
@@ -1681,12 +1731,7 @@ def cloud_cms_response(params, method, host):
             extra = ' | 超大原盘'
         else:
             extra = ''
-        play_host = _host_only(host) or _host_only(CFG.get('ext_domain') or '') or '127.0.0.1'
-        route = _mount_route(f['path'])   # v1.5: 按挂载 web_proxy 动态选 /d/ 直链 或 /p/ 中继
-        play_port = CFG.get('play_port', 5244)
-        play_url = f'http://{play_host}:{play_port}/{route}{encoded_path}'
-        if sign:
-            play_url += f'?sign={sign}'
+        play_url = _cloud_play_url(host, f['path'], sign)
         # 片名显示：文件名主体为英文（前20字符无中文）+ 中文目录名 → 用中文目录名
         # （网盘资源目录名通常是中文片名；文件名常为英文+尾部中文发布组名如"-老K"）
         _has_cjk = lambda s: bool(re.search(r'[\u4e00-\u9fff]', s or ''))
@@ -1697,6 +1742,11 @@ def cloud_cms_response(params, method, host):
         # 海报：刮削结果/本地库按片名匹配（显示名优先，原始文件名兑底）；
         # 列表阶段不触发截帧（耗时），只有刮削动作（手动/批量）才会截
         hit = _pic_lookup(vod_name) or _pic_lookup(fname)
+        if not hit:
+            tf = _existing_thumb(f['path'])
+            if tf:
+                hit = ('thumb://' + tf, '')
+                _pic_register(vod_name, hit[0], '')
         return {
             'type_name': vod_class,
             'vod_id': base64.b64encode(f['path'].encode()).decode(),
@@ -1874,12 +1924,14 @@ class CMSHandler(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
 
-    def _send_json(self, data, code=200):
+    def _send_json(self, data, code=200, cache_sec=None):
         body = json.dumps(data, ensure_ascii=False).encode('utf-8') if isinstance(data, (dict, list)) else data
         self.send_response(code)
         self.send_header('Content-Type', 'application/json; charset=utf-8')
         self.send_header('Content-Length', str(len(body)))
         self.send_header('Access-Control-Allow-Origin', '*')
+        if cache_sec:
+            self.send_header('Cache-Control', 'public, max-age=%d' % int(cache_sec))
         self.end_headers()
         if self.command != 'HEAD':
             self.wfile.write(body)
@@ -1968,7 +2020,7 @@ class CMSHandler(BaseHTTPRequestHandler):
             ],
             'spider': '',
         }
-        self._send_json(tvbox)
+        self._send_json(tvbox, cache_sec=60)
 
 
 
@@ -2151,7 +2203,7 @@ class CMSHandler(BaseHTTPRequestHandler):
             ],
             'spider': '',
         }
-        self._send_json(tvbox)
+        self._send_json(tvbox, cache_sec=60)
 
     def do_GET(self):
         self.do_request('GET')
@@ -2168,6 +2220,10 @@ class CMSHandler(BaseHTTPRequestHandler):
         # 原实现会落入 AList 代理返回 HTML，APP 解析失败导致分类列表为空
         rpath = path.rstrip('/') or path
         host = self._get_host()
+
+        if path.startswith('/play/') or path == '/play':
+            self._handle_play(method)
+            return
 
         # /tvbox.json
         if path == '/tvbox.json':
@@ -2222,7 +2278,7 @@ class CMSHandler(BaseHTTPRequestHandler):
         # /sub/pg — v1.5 小雅完整订阅（PG spider jar + 79 站点 + mediahub 自有源）
         #   需 <data_dir>/pg/ 部署小雅 PG 资源；未部署自动回退精简版
         if path == '/sub/pg':
-            self._send_json(self._build_sub_pg_full(host))
+            self._send_json(self._build_sub_pg_full(host), cache_sec=60)
             return
 
         # /pg/* — v1.5 小雅 PG 静态资源（pg.jar/lib/js）+ tokenm.json 动态注入多网盘凭证
@@ -2313,11 +2369,30 @@ class CMSHandler(BaseHTTPRequestHandler):
                 else:
                     referer = 'https://thetvdb.com/'
                 try:
+                    cache_dir = os.path.join(_PERSIST_DIR, 'picproxy')
+                    os.makedirs(cache_dir, exist_ok=True)
+                    cf = os.path.join(cache_dir, hashlib.md5(raw.encode()).hexdigest()[:16])
+                    if os.path.exists(cf) and os.path.getsize(cf) > 100:
+                        with open(cf, 'rb') as f:
+                            body = f.read()
+                        self.send_response(200)
+                        self.send_header('Content-Type', 'image/jpeg')
+                        self.send_header('Content-Length', str(len(body)))
+                        self.send_header('Cache-Control', 'public, max-age=86400')
+                        self.end_headers()
+                        if method != 'HEAD':
+                            self.wfile.write(body)
+                        return
                     req = urllib.request.Request(raw, headers={
                         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                         'Referer': referer})
-                    with urllib.request.urlopen(req, timeout=15) as resp:
+                    with urllib.request.urlopen(req, timeout=3) as resp:
                         body = resp.read()
+                        try:
+                            with open(cf, 'wb') as f:
+                                f.write(body)
+                        except Exception:
+                            pass
                         self.send_response(200)
                         self.send_header('Content-Type', resp.headers.get('Content-Type', 'image/jpeg'))
                         self.send_header('Content-Length', str(len(body)))
@@ -2435,16 +2510,16 @@ class CMSHandler(BaseHTTPRequestHandler):
                 results = [_rewrite_vod_play(v, host) for v in results]
                 resp = {'code': 1, 'limit': 20, 'list': results,
                         'pagecount': 1, 'total': len(results)}
-                self._send_json(resp)
+                self._send_json(resp, cache_sec=10)
             elif ac == 'detail' and ids:
                 resp = cms_detail(ids)
                 resp['list'] = [_rewrite_vod_play(v, host) for v in resp.get('list', [])]
-                self._send_json(resp)
+                self._send_json(resp, cache_sec=10)
             else:
                 # 列表（支持 t 分类过滤）
                 resp = cms_list(pg, t)
                 resp['list'] = [_rewrite_vod_play(v, host) for v in resp.get('list', [])]
-                self._send_json(resp)
+                self._send_json(resp, cache_sec=10)
             return
 
         # /cloudcms.php/provide/vod — 网盘 CMS 适配器（兼容尾斜杠与省略 /provide/vod）
@@ -2458,6 +2533,7 @@ class CMSHandler(BaseHTTPRequestHandler):
             self.send_header('Content-Type', 'application/json; charset=utf-8')
             self.send_header('Content-Length', str(len(body)))
             self.send_header('Access-Control-Allow-Origin', '*')
+            self.send_header('Cache-Control', 'public, max-age=10')
             self.end_headers()
             if method != 'HEAD':
                 self.wfile.write(body)
@@ -2610,6 +2686,103 @@ class CMSHandler(BaseHTTPRequestHandler):
         except Exception as e:
             _log('115 qrcode API error: ' + str(e))
             self._send_json({'code': 500, 'message': '二维码接口错误: ' + str(e)})
+
+    def _stream_url(self, method, url, rng, timeout=8, ua=None, hops=0):
+        if hops > 4 or not (url or '').startswith('http'):
+            return False
+        try:
+            import http.client
+            u = urllib.parse.urlsplit(url)
+            port = u.port or (443 if u.scheme == 'https' else 80)
+            if u.scheme == 'https':
+                conn = http.client.HTTPSConnection(u.hostname, port, timeout=timeout)
+            else:
+                conn = http.client.HTTPConnection(u.hostname, port, timeout=timeout)
+            path = u.path or '/'
+            if u.query:
+                path += '?' + u.query
+            hdrs = {'Accept': '*/*', 'Host': u.netloc, 'Connection': 'close'}
+            if ua:
+                hdrs['User-Agent'] = ua
+            if rng:
+                hdrs['Range'] = rng
+            conn.request('HEAD' if method == 'HEAD' else 'GET', path, headers=hdrs)
+            resp = conn.getresponse()
+            if resp.status in (301, 302, 303, 307, 308):
+                loc = resp.getheader('Location') or ''
+                conn.close()
+                if loc.startswith('/'):
+                    loc = '%s://%s%s' % (u.scheme, u.netloc, loc)
+                return self._stream_url(method, loc, rng, timeout=timeout, ua=ua, hops=hops + 1)
+            if resp.status >= 400:
+                conn.close()
+                return False
+            if conn.sock:
+                conn.sock.settimeout(300)
+            self.send_response(resp.status)
+            sent_ar = False
+            for key, val in resp.getheaders():
+                low = key.lower()
+                if low in ('transfer-encoding', 'connection', 'host'):
+                    continue
+                if low == 'accept-ranges':
+                    sent_ar = True
+                self.send_header(key, val)
+            if not sent_ar:
+                self.send_header('Accept-Ranges', 'bytes')
+            self.send_header('Cache-Control', 'no-store')
+            self.end_headers()
+            if method != 'HEAD':
+                while True:
+                    chunk = resp.read(256 * 1024)
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+            conn.close()
+            return True
+        except Exception as e:
+            _log(f'play stream error: {e}')
+            return False
+
+    def _handle_play(self, method):
+        parsed = urllib.parse.urlparse(self.path)
+        fs_path = urllib.parse.unquote(parsed.path[5:] or '/')
+        if not fs_path.startswith('/'):
+            fs_path = '/' + fs_path
+        qs = urllib.parse.parse_qs(parsed.query)
+        sign = (qs.get('sign', [''])[0] or '').strip()
+        rng = self.headers.get('Range') or ''
+        alist_p = '/p' + urllib.parse.quote(fs_path, safe='/')
+        if sign:
+            alist_p += '?sign=' + urllib.parse.quote(sign)
+        local = 'http://127.0.0.1:%d%s' % (CFG['ol_port'], alist_p)
+        if self._stream_url(method, local, rng, timeout=8, ua=_GRAB_UA):
+            return
+        ru = ''
+        try:
+            token = _get_ol_admin_token()
+            if token:
+                req = urllib.request.Request(
+                    'http://127.0.0.1:%d/api/fs/get' % CFG['ol_port'],
+                    data=json.dumps({'path': fs_path}).encode(),
+                    headers={'Content-Type': 'application/json', 'Authorization': token},
+                    method='POST')
+                with urllib.request.urlopen(req, timeout=8) as resp:
+                    d = json.loads(resp.read().decode('utf-8', errors='replace'))
+                info = d.get('data') or {}
+                ru = info.get('raw_url') or ''
+                if not sign:
+                    sign = info.get('sign') or ''
+        except Exception as e:
+            _log(f'play fs/get error: {e}')
+        if ru.startswith('http') and self._stream_url(method, ru, rng, timeout=8, ua=_GRAB_UA):
+            return
+        if sign:
+            alist_p = '/p' + urllib.parse.quote(fs_path, safe='/') + '?sign=' + urllib.parse.quote(sign)
+            local = 'http://127.0.0.1:%d%s' % (CFG['ol_port'], alist_p)
+            if self._stream_url(method, local, rng, timeout=8, ua=_GRAB_UA):
+                return
+        self._send_json({'error': 'play upstream failed'}, 502)
 
     def _handle_cmproxy(self, method, params, path):
         """CMS 播放代理：缓存 m3u8 + 代理分片，加速播放
@@ -3072,7 +3245,7 @@ _CLOUD_SEARCH_CACHE_TTL = 600
 def search_cloud_resources(kw, host):
     """搜索全网网盘公共分享资源（聚合多个资源站索引）
     目前支持：115 网盘分享搜索 + 夸克资源站搜索
-    返回 CMS 格式结果，播放链接指向 AList /d/ 或 /p/ 直链。"""
+    返回 CMS 格式结果，播放链接指向 8901 /play 反代。"""
     now = time.time()
     if kw in _CLOUD_SEARCH_CACHE:
         ts, cached = _CLOUD_SEARCH_CACHE[kw]
@@ -3089,15 +3262,15 @@ def search_cloud_resources(kw, host):
             if kw_lower in f.get('name', '').lower():
                 fname = f['name']
                 sign = f.get('sign') or get_sign(f['path'])
-                encoded_path = urllib.parse.quote(f['path'], safe='/')
-                route = _mount_route(f['path'])   # v1.5: 多网盘动态路由
-                play_port = CFG.get('play_port', 5244)
-                play_url = f'http://{_host_only(host)}:{play_port}/{route}{encoded_path}'
-                if sign:
-                    play_url += f'?sign={sign}'
+                play_url = _cloud_play_url(host, f['path'], sign)
                 size_str = f'{f.get("size", 0) / 1073741824:.1f}GB' if f.get('size') else ''
                 _name = fname.rsplit('.', 1)[0] if '.' in fname else fname
                 _hit = _pic_lookup(_name) or _pic_lookup(f.get('dir', ''))
+                if not _hit:
+                    tf = _existing_thumb(f['path'])
+                    if tf:
+                        _hit = ('thumb://' + tf, '')
+                        _pic_register(_name, _hit[0], '')
                 results.append({
                     'vod_name': _name,
                     'vod_id': base64.b64encode(f['path'].encode()).decode(),
@@ -3187,7 +3360,7 @@ def main():
     crawl_t = threading.Thread(target=crawl_loop, daemon=True, kwargs={'skip_if_disk': disk_loaded})
     crawl_t.start()
 
-    # 启动海报补全线程（延迟 90 秒等挂载同步；本地索引 miss 的网盘文件去远端站点搜索）
+    # 启动海报补全线程（先回收已有 thumbs，再刮削/截帧补缺封面）
     threading.Thread(target=_poster_fill_worker, daemon=True).start()
 
     # SIGTERM 优雅退出：procd stop/restart 发 SIGTERM，默认直接杀进程会丢

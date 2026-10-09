@@ -137,6 +137,40 @@ mkdir -p "$ALIST_DATA/data"
 mkdir -p "$ALIST_DATA/data/log"
 mkdir -p "$ALIST_DATA/data/temp"
 
+# 把 UCI alist_pw 同步到 AList admin（升级时只跑这一步，避免重装覆盖 init / 重启打断已有挂载）
+sync_admin_pw() {
+    OLPW=$(uci -q get mediahub.main.alist_pw 2>/dev/null)
+    if [ -z "$OLPW" ]; then
+        if command -v openssl >/dev/null 2>&1; then
+            OLPW=$(openssl rand -hex 6 2>/dev/null)
+        else
+            OLPW=$(cat /proc/sys/kernel/random/uuid 2>/dev/null | cut -c1-12)
+        fi
+        uci set mediahub.main.alist_pw="$OLPW"
+        uci commit mediahub
+        echo "[mediahub] Generated AList password"
+    fi
+    if [ ! -x "$ALIST_BIN" ]; then
+        echo "[mediahub] WARN: alist binary missing, skip admin set"
+        return 0
+    fi
+    if cd "$ALIST_DATA" && "$ALIST_BIN" admin set "$OLPW" >/dev/null 2>&1; then
+        echo "[mediahub] AList admin password synced with UCI"
+        return 0
+    fi
+    echo "[mediahub] WARN: admin set failed while running, retrying with service stopped"
+    /etc/init.d/alist stop >/dev/null 2>&1 || true
+    sleep 1
+    cd "$ALIST_DATA" && "$ALIST_BIN" admin set "$OLPW" >/dev/null 2>&1 \
+        || echo "[mediahub] WARN: admin set failed (will be set on first service start)"
+    /etc/init.d/alist start >/dev/null 2>&1 || true
+}
+
+if [ "${1:-}" = "--sync-pw" ]; then
+    sync_admin_pw
+    exit 0
+fi
+
 # 生成默认配置（如果不存在）
 if [ ! -f "$ALIST_DATA/data/config.json" ]; then
     # 生成随机 JWT_SECRET（OpenWrt busybox 无 od，依次回退 openssl / hexdump / uuid）
@@ -374,21 +408,7 @@ start_service() {
 INITEOF
 chmod 755 "$ALIST_INIT"
 
-# 同步 AList admin 密码与 UCI 配置（扫码登录后的挂载同步依赖此密码登录 AList API）
-OLPW=$(uci -q get mediahub.main.alist_pw 2>/dev/null)
-if [ -z "$OLPW" ] || [ "$OLPW" = "" ]; then
-    # UCI 中没有密码则先生成
-    if command -v openssl >/dev/null 2>&1; then
-        OLPW=$(openssl rand -hex 6 2>/dev/null)
-    else
-        OLPW=$(cat /proc/sys/kernel/random/uuid 2>/dev/null | cut -c1-12)
-    fi
-    uci set mediahub.main.alist_pw="$OLPW"
-    uci commit mediahub
-    echo "[mediahub] Generated AList password"
-fi
-# 设置 AList admin 密码与 UCI 一致（非致命：新数据目录下数据库可能未初始化，服务启动后会自动建）
-cd "$ALIST_DATA" && "$ALIST_BIN" admin set "$OLPW" >/dev/null 2>&1 || echo "[mediahub] WARN: admin set failed (will be set on first service start)"
-echo "[mediahub] AList admin password synced with UCI"
+# 同步 AList admin 密码与 UCI（扫码登录后的挂载同步依赖此密码登录 AList API）
+sync_admin_pw
 
 echo "[mediahub] AList ${ALIST_VER} deployed successfully."

@@ -6,7 +6,12 @@ chmod 755 /usr/bin/mediahub-cms.py /usr/bin/mediahub-alist-setup.sh \
 	/etc/init.d/mediahub-cms /etc/init.d/alist 2>/dev/null || true
 
 if [ -x /usr/bin/mediahub-alist-setup.sh ]; then
-	/usr/bin/mediahub-alist-setup.sh >/tmp/mediahub-alist-setup.log 2>&1 || true
+	if [ -x /usr/bin/alist ]; then
+		# 升级：只同步 admin 密码，不重装二进制、不覆盖 init
+		/usr/bin/mediahub-alist-setup.sh --sync-pw >/tmp/mediahub-alist-setup.log 2>&1 || true
+	else
+		/usr/bin/mediahub-alist-setup.sh >/tmp/mediahub-alist-setup.log 2>&1 || true
+	fi
 fi
 
 [ -x /etc/init.d/alist ] && /etc/init.d/alist enable 2>/dev/null || true

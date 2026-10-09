@@ -188,9 +188,52 @@ apply_backlog() {
 	local val
 	val=1000
 	[ "$rx_backlog" = "1" ] && val=4096
-	sysctl -w net.core.netdev_max_backlog="$val" >/dev/null 2>&1 || true
+	apply_sysctl "$val"
+}
+
+apply_sysctl() {
+	local backlog="$1" t
+	[ -n "$backlog" ] || backlog=1000
+	t=$(uci_get netqueue.main.neigh_gc)
+	case "$t" in
+		''|*[!0-9]*) t=60 ;;
+	esac
+	[ "$t" -ge 5 ] 2>/dev/null || t=5
+	[ "$t" -le 86400 ] 2>/dev/null || t=86400
 	mkdir -p /etc/sysctl.d
-	echo "net.core.netdev_max_backlog=$val" > /etc/sysctl.d/11-netqueue.conf
+	cat > /etc/sysctl.d/11-netqueue.conf <<EOF
+net.core.netdev_max_backlog=$backlog
+net.ipv4.neigh.default.gc_stale_time=$t
+net.ipv6.neigh.default.gc_stale_time=$t
+EOF
+	sysctl -w net.core.netdev_max_backlog="$backlog" >/dev/null 2>&1 || true
+	sysctl -w net.ipv4.neigh.default.gc_stale_time="$t" >/dev/null 2>&1 || true
+	sysctl -w net.ipv6.neigh.default.gc_stale_time="$t" >/dev/null 2>&1 || true
+	if [ -d /sys/class/net/br-lan ]; then
+		sysctl -w net.ipv4.neigh.br-lan.gc_stale_time="$t" >/dev/null 2>&1 || true
+		sysctl -w net.ipv6.neigh.br-lan.gc_stale_time="$t" >/dev/null 2>&1 || true
+	fi
+}
+
+dhcp_kick() {
+	local mac="$1" oldip="$2" newip="$3" lf=/tmp/dhcp.leases now tmp=/tmp/netqueue-leases.new
+	mac=$(echo "$mac" | tr 'A-F' 'a-f')
+	now=$(date +%s)
+	if [ -f "$lf" ]; then
+		awk -v mac="$mac" -v now="$now" '
+			BEGIN { mac = tolower(mac) }
+			{
+				m = tolower($2)
+				if (m == mac) next
+				if (($1 + 0) > 0 && ($1 + 0) < now) next
+				print
+			}
+		' "$lf" > "$tmp"
+		cat "$tmp" > "$lf"
+	fi
+	/etc/init.d/dnsmasq restart >/dev/null 2>&1 || true
+	[ -n "$oldip" ] && [ "$oldip" != "-" ] && ip neigh del "$oldip" dev br-lan 2>/dev/null || true
+	[ -n "$newip" ] && [ "$newip" != "-" ] && [ "$newip" != "$oldip" ] && ip neigh del "$newip" dev br-lan 2>/dev/null || true
 }
 
 print_status() {
@@ -267,6 +310,7 @@ print_status() {
 	else
 		echo "DHCP: 开启 start=$(uci -q get dhcp.lan.start) limit=$(uci -q get dhcp.lan.limit) lease=$(uci -q get dhcp.lan.leasetime)"
 	fi
+	echo "邻居清理: $(uci -q get netqueue.main.neigh_gc)s gc_stale=$(sysctl -n net.ipv4.neigh.br-lan.gc_stale_time 2>/dev/null || sysctl -n net.ipv4.neigh.default.gc_stale_time 2>/dev/null)"
 	opt6=$(uci -q get dhcp.lan.dhcp_option 2>/dev/null | tr ' ' '\n' | sed -n 's/^6,//p' | head -n 1)
 	if [ -n "$opt6" ]; then
 		echo "终端DNS: $opt6"
@@ -310,8 +354,11 @@ case "$cmd" in
 	status)
 		print_status
 		;;
+	dhcp-kick)
+		dhcp_kick "$2" "$3" "$4"
+		;;
 	*)
-		echo "usage: $0 apply|apply-nic|status" >&2
+		echo "usage: $0 apply|apply-nic|status|dhcp-kick" >&2
 		exit 1
 		;;
 esac

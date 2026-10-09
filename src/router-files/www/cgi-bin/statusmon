@@ -1,6 +1,7 @@
 #!/bin/sh
-# statusmon v4.23 — OpenWrt 系统状态数据采集 CGI
+# statusmon v4.24 — OpenWrt 系统状态数据采集 CGI
 # 部署到 /www/cgi-bin/statusmon
+# v4.24 修复：同一 MAC 多 IPv4 时优先 REACHABLE/DELAY/PROBE，其次 DHCP 租约，避免 STALE 旧地址盖住当前 IP
 # v4.1 修复：ip neigh 字段解析（MAC=$5/状态=末字段）、CPU 采样公式、
 #           conntrack 双向归并 + IPv6 地址规范化匹配、活跃客户端过滤（REACHABLE/DELAY/PROBE）
 # v4.2 修复：tx 速率解析（state 条目格式 key:rx=N,tx=M 需 sed 提取，不能用 key:tx= 匹配）、
@@ -1439,7 +1440,8 @@ FILENAME==CTF{
   if(!(mac in seen)){seen[mac]=1;order[++k]=mac}
   if(st!="STALE")act[mac]=1
   if(ver==4){
-    if(!(mac in m4))m4[mac]=ip
+    if(st!="STALE"){m4live[mac]=ip; m4[mac]=ip}
+    else if(!(mac in m4))m4[mac]=ip
   } else {
     if(m6[mac]=="")m6[mac]=ip;else m6[mac]=m6[mac] "," ip
   }
@@ -1457,8 +1459,9 @@ END{
     else if((m in m4)||(m in m6))st="idle"
     nm=(m in host)?host[m]:""
     v4=""
-    if(m in m4)v4=m4[m]
+    if(m in m4live)v4=m4live[m]
     else if(m in lip)v4=lip[m]
+    else if(m in m4)v4=m4[m]
     v6=(m in m6)?m6[m]:""
     ip=v4
     if(ip==""){if(v6!=""){split(v6,t6,",");ip=t6[1]}}

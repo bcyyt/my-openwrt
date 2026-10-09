@@ -7,9 +7,9 @@ ImmortalWrt / OpenWrt APK 插件仓库：IPTV 代理、影视中心、状态监�
 | 包名 | 版本 | 架构 | 说明 |
 |------|------|------|------|
 | `iptv-auth` | 2.3.11-r0 | noarch | IPTV 鉴权、M3U/EPG、RTSP 回看、rtp2httpd 直播代理；选上游接口后自动走专线策略表（不改主路由） |
-| `luci-app-mediahub` | 1.5.4-r0 | x86_64 | 影视中心（CMS + AList + 静态 ffmpeg） |
-| `luci-app-statusmon` | 4.23 | noarch | 状态监控；内置 luci-app-filemanager 与中文语言包 |
-| `luci-app-netqueue` | 1.0.5-r0 | noarch | 系统优化：转发、DHCP、DNS |
+| `luci-app-mediahub` | 1.5.6-r0 | x86_64 | 影视中心（CMS + AList + 静态 ffmpeg） |
+| `luci-app-statusmon` | 4.24 | noarch | 状态监控；内置 luci-app-filemanager 与中文语言包 |
+| `luci-app-netqueue` | 1.0.6-r0 | noarch | 系统优化：转发、DHCP、DNS、邻居清理、静态 IP |
 | `luci-app-syskeep` | 1.0.4-r0 | noarch | 保留升级：刷机保留配置与数据盘，自动识别数据盘并备份自装插件 |
 
 APK 位于 `packages/`，均用 `keys/my-openwrt.rsa` 签名。
@@ -31,13 +31,13 @@ chmod 644 /etc/apk/keys/my-openwrt.rsa.pub
 apk add iptv-auth-2.3.11-r0.apk
 
 # 影视中心
-apk add luci-app-mediahub-1.5.4-r0.apk
+apk add luci-app-mediahub-1.5.6-r0.apk
 
 # 状态监控（含文件管理器与中文语言包）
-apk add luci-app-statusmon-4.23.apk
+apk add luci-app-statusmon-4.24.apk
 
-# 系统优化（转发 / DHCP / DNS）
-apk add luci-app-netqueue-1.0.5-r0.apk
+# 系统优化（转发 / DHCP / DNS / 静态 IP）
+apk add luci-app-netqueue-1.0.6-r0.apk
 
 # 保留升级
 apk add luci-app-syskeep-1.0.4-r0.apk
@@ -68,7 +68,7 @@ LuCI 菜单：**网络 → 系统优化**。
 
 转发、DHCP、DNS 在同一页。点「保存并应用」后立即生效，不断开 PPPoE，也不改 wan2 / IPTV 路由。
 
-当前包：`packages/luci-app-netqueue/luci-app-netqueue-1.0.5-r0.apk`。
+当前包：`packages/luci-app-netqueue/luci-app-netqueue-1.0.6-r0.apk`。
 
 ### 转发
 
@@ -91,6 +91,12 @@ LuCI 菜单：**网络 → 系统优化**。
 - **终端 DNS**：默认「本机」。选「自定义」后写入 DHCP option 6。
 
 空着起始地址、数量、租期再保存时，不会删掉路由器上已有的值。
+
+### 邻居与静态 IP
+
+- 页面列出当前租约、静态绑定和 `br-lan` ARP。过期动态租约会从列表拿掉。
+- **邻居清理（秒）**：ARP `gc_stale_time`，STALE 邻居按这个时间回收。
+- **绑定静态 IP**：写 `dhcp.host`，删掉该 MAC 的旧租约，重载 dnsmasq，清掉旧/新 IP 的邻居条目。主「保存并应用」不会动静态绑定。
 
 ### DNS
 
@@ -118,15 +124,24 @@ UCI 在 `netqueue.main`。DHCP / DNS 仍写在 `dhcp` 配置里。
 - 修复 `sys_exec()` 把 `gsub` 计数值传给 `tonumber`、页面「读取失败」、开关全关的问题。
 - 保存时空字段不再删除 DHCP 地址池。
 
+### 1.0.6
+
+- DHCP 邻居表：租约、静态绑定、`br-lan` ARP。
+- 邻居清理秒数：ARP `gc_stale_time`。
+- 静态 IP 绑定走独立 `?act=static|dynamic`，保存后 `dhcp-kick` 删租约、重载 dnsmasq、清 ARP。
+
 ## 影视中心
 
-当前包：`packages/luci-app-mediahub/luci-app-mediahub-1.5.4-r0.apk`。
+当前包：`packages/luci-app-mediahub/luci-app-mediahub-1.5.6-r0.apk`。
 
-115 / 夸克播放走本机 `8901` 反代 AList `/p/`（`web_proxy` + Range），APP 与订阅同一端口，不跟 5244 的 302 CDN。
+网盘播放走 `8901 /play` 反代（Range 先 AList `/p/`，失败再 `raw_url`），APP 与订阅同一端口。已有截帧会登记进海报库；刮削失败再补截帧。
+升级时若本机已有 AList，只同步管理员密码（`--sync-pw`），不重下二进制、不覆盖 init。
 
 ## 状态监控
 
-当前包：`packages/luci-app-statusmon/luci-app-statusmon-4.23.apk`。
+当前包：`packages/luci-app-statusmon/luci-app-statusmon-4.24.apk`。
+
+同一 MAC 多 IPv4 时优先 `REACHABLE/DELAY/PROBE` 邻居，其次 DHCP 租约，避免 STALE 旧地址盖住当前 IP。
 
 ## 保留升级
 
