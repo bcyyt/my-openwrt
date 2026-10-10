@@ -236,6 +236,61 @@ dhcp_kick() {
 	[ -n "$newip" ] && [ "$newip" != "-" ] && [ "$newip" != "$oldip" ] && ip neigh del "$newip" dev br-lan 2>/dev/null || true
 }
 
+neigh_keep_ips() {
+	local now lf=/tmp/dhcp.leases
+	now=$(date +%s)
+	if [ -f "$lf" ]; then
+		awk -v now="$now" 'NF>=3 { ts=$1+0; if (ts==0 || ts>=now) print $3 }' "$lf"
+	fi
+	uci show dhcp 2>/dev/null | sed -n "s/^dhcp\\.@host\\[[0-9][0-9]*\\]\\.ip='\\([^']*\\)'$/\\1/p"
+	uci -q get network.lan.ipaddr 2>/dev/null | awk -F/ '{print $1}'
+}
+
+neigh_clean() {
+	local auto t stamp=/tmp/netqueue-neigh-clean.stamp keep=/tmp/netqueue-neigh-keep now last addr st force="$1"
+	auto=$(uci_get netqueue.main.neigh_auto)
+	[ "$auto" = "0" ] && return 0
+	[ -d /sys/class/net/br-lan ] || return 0
+	t=$(uci_get netqueue.main.neigh_gc)
+	case "$t" in
+		''|*[!0-9]*) t=60 ;;
+	esac
+	[ "$t" -ge 5 ] 2>/dev/null || t=5
+	now=$(date +%s)
+	if [ "$force" != "1" ] && [ -f "$stamp" ]; then
+		last=$(cat "$stamp" 2>/dev/null || echo 0)
+		[ "$((now - last))" -lt "$t" ] && return 0
+	fi
+	neigh_keep_ips | awk 'NF{print}' | sort -u > "$keep"
+	ip -4 neigh show dev br-lan 2>/dev/null | while read -r line; do
+		addr=$(echo "$line" | awk '{print $1}')
+		st=$(echo "$line" | awk '{print $NF}')
+		case "$addr" in
+			*.*.*.*) ;;
+			*) continue ;;
+		esac
+		case "$st" in
+			REACHABLE|PERMANENT) continue ;;
+		esac
+		grep -qx "$addr" "$keep" 2>/dev/null && continue
+		ip neigh del "$addr" dev br-lan 2>/dev/null || true
+	done
+	echo "$now" > "$stamp"
+}
+
+apply_neigh_cron() {
+	local auto line='* * * * * /usr/bin/netqueue-apply.sh neigh-clean' tmp=/tmp/netqueue-cron.new
+	auto=$(uci_get netqueue.main.neigh_auto)
+	mkdir -p /etc/crontabs
+	touch /etc/crontabs/root
+	grep -vF 'netqueue-apply.sh neigh-clean' /etc/crontabs/root > "$tmp" 2>/dev/null || true
+	if [ "$auto" != "0" ]; then
+		echo "$line" >> "$tmp"
+	fi
+	cat "$tmp" > /etc/crontabs/root
+	/etc/init.d/cron restart >/dev/null 2>&1 || true
+}
+
 print_status() {
 	local d q i irq name gov freq epp def lan mask opt6 sec reso
 	load_cfg
@@ -310,7 +365,7 @@ print_status() {
 	else
 		echo "DHCP: 开启 start=$(uci -q get dhcp.lan.start) limit=$(uci -q get dhcp.lan.limit) lease=$(uci -q get dhcp.lan.leasetime)"
 	fi
-	echo "邻居清理: $(uci -q get netqueue.main.neigh_gc)s gc_stale=$(sysctl -n net.ipv4.neigh.br-lan.gc_stale_time 2>/dev/null || sysctl -n net.ipv4.neigh.default.gc_stale_time 2>/dev/null)"
+	echo "邻居清理: $(uci -q get netqueue.main.neigh_gc)s auto=$(uci -q get netqueue.main.neigh_auto) gc_stale=$(sysctl -n net.ipv4.neigh.br-lan.gc_stale_time 2>/dev/null || sysctl -n net.ipv4.neigh.default.gc_stale_time 2>/dev/null)"
 	opt6=$(uci -q get dhcp.lan.dhcp_option 2>/dev/null | tr ' ' '\n' | sed -n 's/^6,//p' | head -n 1)
 	if [ -n "$opt6" ]; then
 		echo "终端DNS: $opt6"
@@ -343,6 +398,8 @@ case "$cmd" in
 		apply_pppoe_qlen
 		apply_udp_gro
 		apply_backlog
+		apply_neigh_cron
+		neigh_clean 1
 		;;
 	apply-nic)
 		if [ "$nic" = "1" ]; then
@@ -357,8 +414,11 @@ case "$cmd" in
 	dhcp-kick)
 		dhcp_kick "$2" "$3" "$4"
 		;;
+	neigh-clean)
+		neigh_clean
+		;;
 	*)
-		echo "usage: $0 apply|apply-nic|status|dhcp-kick" >&2
+		echo "usage: $0 apply|apply-nic|status|dhcp-kick|neigh-clean" >&2
 		exit 1
 		;;
 esac

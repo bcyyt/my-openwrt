@@ -11,12 +11,14 @@ end
 -%>
 <%+header%>
 <style>
-.nq-wrap{max-width:1080px;margin:0 auto 28px;font-family:ui-sans-serif,system-ui,sans-serif;color:#1b2420}
+.nq-wrap,.nq-wrap *{box-sizing:border-box}
+.nq-wrap{max-width:1080px;width:100%;margin:0 auto 28px;padding:0 2px;font-family:ui-sans-serif,system-ui,sans-serif;color:#1b2420;overflow-x:hidden}
 .nq-hero{background:linear-gradient(135deg,#16332a 0%,#1b2420 58%,#24362f 100%);color:#e8f0ea;padding:24px 26px;border-radius:14px;margin-bottom:14px;position:relative;overflow:hidden}
 .nq-hero:after{content:"";position:absolute;right:-40px;top:-30px;width:160px;height:160px;border-radius:50%;background:rgba(88,160,122,.18)}
 .nq-hero h2{margin:0 0 6px;font-size:22px;font-weight:650;letter-spacing:.03em}
 .nq-hero p{margin:0;color:#b7c7bb;font-size:13px;line-height:1.6;max-width:640px}
-.nq-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin:14px 0}
+.nq-hero p{max-width:100%}
+.nq-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(140px,100%),1fr));gap:10px;margin:14px 0}
 .nq-card{background:#fff;border:1px solid #d7ddd8;border-radius:12px;padding:12px 14px}
 .nq-card b{display:block;font-size:11px;color:#6b776f;letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px}
 .nq-card span{font-size:15px;color:#1b2420;word-break:break-all}
@@ -24,8 +26,9 @@ end
 .nq-box h3{margin:12px 0 4px;font-size:15px;font-weight:650}
 .nq-lead{margin:0 0 8px;font-size:12px;color:#5c675f;line-height:1.5}
 .nq-item{display:flex;gap:14px;align-items:flex-start;justify-content:space-between;padding:12px 0;border-top:1px solid #eef2ef}
+.nq-item > div{min-width:0;flex:1}
 .nq-item b{display:block;font-size:14px;font-weight:600;margin-bottom:3px}
-.nq-item p{margin:0;font-size:12px;color:#5c675f;line-height:1.45}
+.nq-item p{margin:0;font-size:12px;color:#5c675f;line-height:1.45;overflow-wrap:anywhere}
 .nq-wrap button.nq-sw{
   appearance:none;-webkit-appearance:none;position:relative;
   width:44px!important;height:26px!important;min-width:44px!important;flex:0 0 44px;
@@ -39,7 +42,7 @@ end
 .nq-wrap button.nq-sw.on{background:#2f6f4e!important}
 .nq-wrap button.nq-sw.on:after{left:21px}
 .nq-sub.is-off{opacity:.42;pointer-events:none}
-.nq-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;padding:8px 0 4px}
+.nq-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(160px,100%),1fr));gap:10px;padding:8px 0 4px}
 .nq-fields label,.nq-field{display:flex;flex-direction:column;gap:5px;font-size:12px;color:#6b776f}
 .nq-wrap .nq-fields input,.nq-wrap .nq-fields select,.nq-wrap .nq-field input,.nq-wrap .nq-field select,.nq-wrap .nq-field textarea{
   width:100%!important;max-width:none!important;height:auto!important;min-height:34px;
@@ -57,17 +60,33 @@ end
 .nq-log{height:220px;overflow:auto;background:#121816;color:#c8d6cc;padding:10px 12px;border-radius:8px;font:12px/1.45 ui-monospace,monospace;white-space:pre-wrap;margin:8px 0 12px}
 .nq-ok{color:#2f6f4e} .nq-bad{color:#8a3b16}
 .nq-table-wrap{overflow-x:auto;margin:8px 0 4px}
-.nq-table{width:100%;border-collapse:collapse;font-size:12px}
-.nq-table th{text-align:left;font-size:11px;color:#6b776f;letter-spacing:.04em;padding:8px 6px;border-bottom:1px solid #eef2ef;white-space:nowrap}
-.nq-table td{padding:8px 6px;border-bottom:1px solid #eef2ef;vertical-align:middle}
 .nq-mono{font-family:ui-monospace,monospace;font-size:12px}
-.nq-wrap .nq-table input.nq-ip{width:128px!important;min-width:128px!important;min-height:30px!important;padding:5px 8px!important;font-size:12px!important}
 .nq-wrap .nq-btn-sm{padding:6px 10px;font-size:12px;border-radius:6px;margin:0 4px 0 0}
 .nq-wrap .nq-btn-ghost{background:#eef2ef!important;color:#1b2420!important;border:0!important}
-.nq-add{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;align-items:end;margin-top:8px}
+.nq-add{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(140px,100%),1fr));gap:8px;align-items:end;margin-top:8px}
+.nq-add label{display:flex;flex-direction:column;gap:5px;font-size:12px;color:#6b776f}
+.nq-wrap .nq-add input{width:100%!important;min-height:34px;border:1px solid #c5cdc8!important;border-radius:8px!important;padding:8px 10px!important;font-size:13px!important}
+.nq-devs{display:flex;flex-direction:column;gap:8px;margin:8px 0 4px}
+.nq-dev{border:1px solid #eef2ef;border-radius:10px;padding:10px 12px}
+.nq-dev-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.nq-dev-top b{display:block;font-size:13px}
+.nq-dev-meta{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:#5c675f;margin:6px 0}
+.nq-dev-act{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.nq-wrap .nq-dev input.nq-ip{flex:1 1 120px;min-width:0!important;width:auto!important;max-width:100%!important;min-height:30px!important;padding:5px 8px!important;font-size:12px!important;border:1px solid #c5cdc8!important;border-radius:8px!important}
+.nq-pill{font-size:11px;color:#2f6f4e;background:#eef2ef;border-radius:999px;padding:2px 8px;white-space:nowrap;flex:0 0 auto}
 @media (max-width:640px){
-  .nq-hero{padding:18px 16px}
-  .nq-box{padding:4px 14px 12px}
+  .nq-wrap{padding:0 4px;margin-bottom:16px}
+  .nq-hero{padding:16px 14px;border-radius:12px}
+  .nq-hero h2{font-size:18px}
+  .nq-hero p{font-size:12px}
+  .nq-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .nq-card{padding:10px 12px}
+  .nq-box{padding:4px 12px 12px;overflow:hidden}
+  .nq-item{gap:10px}
+  .nq-fields,.nq-add{grid-template-columns:1fr}
+  .nq-bar .nq-btn-pri{width:100%}
+  .nq-add .nq-btn{width:100%}
+  .nq-log{height:180px;font-size:11px}
 }
 </style>
 <div class="nq-wrap">
@@ -117,6 +136,10 @@ end
       <label>地址数量 <input id="limit" type="number" min="1" max="253" placeholder="150"></label>
       <label>租期 / 清理时间 <input id="leasetime" type="text" placeholder="12h"></label>
       <label>邻居清理（秒） <input id="neigh_gc" type="number" min="5" max="86400" placeholder="60"></label>
+    </div>
+    <div class="nq-item">
+      <div><b>自动清理过期邻居</b><p>按上面的秒数定时执行。只删 FAILED 和已不在租约/静态绑定里的残留 ARP（例如换过地址后留下的旧 IP）。REACHABLE 和当前仍在用的租约/静态 IP 保留。</p></div>
+      <button type="button" class="nq-sw" data-k="neigh_auto"></button>
     </div>
     <div class="nq-fields">
       <label>终端 DNS
@@ -213,22 +236,20 @@ function nqClients(list){
     tb.innerHTML = '<p class="nq-lead">暂无在线租约或静态绑定</p>';
     return;
   }
-  var h = '<table class="nq-table"><thead><tr><th>主机</th><th>MAC</th><th>当前IP</th><th>剩余</th><th>状态</th><th>绑定IP</th><th></th></tr></thead><tbody>';
+  var h = '<div class="nq-devs">';
   list.forEach(function(c){
     var sip = c.sip || c.ip || '';
     var st = (c.static ? '静态' : '动态') + (c.neigh ? ' / ' + c.neigh : '');
-    h += '<tr data-mac="'+nqEsc(c.mac)+'" data-name="'+nqEsc(c.name||'')+'">'
-      +'<td>'+nqEsc(c.name||'-')+'</td>'
-      +'<td class="nq-mono">'+nqEsc(c.mac)+'</td>'
-      +'<td class="nq-mono">'+nqEsc(c.ip||'-')+'</td>'
-      +'<td>'+nqRemain(c.remain)+'</td>'
-      +'<td>'+nqEsc(st)+'</td>'
-      +'<td><input class="nq-ip" value="'+nqEsc(sip)+'"></td>'
-      +'<td><button type="button" class="nq-btn nq-btn-sm nq-btn-pri" data-act="static">绑定</button>'
+    h += '<div class="nq-dev" data-mac="'+nqEsc(c.mac)+'" data-name="'+nqEsc(c.name||'')+'">'
+      +'<div class="nq-dev-top"><div><b>'+nqEsc(c.name||'-')+'</b><span class="nq-mono">'+nqEsc(c.mac)+'</span></div>'
+      +'<span class="nq-pill">'+nqEsc(st)+'</span></div>'
+      +'<div class="nq-dev-meta"><span class="nq-mono">'+nqEsc(c.ip||'-')+'</span><span>'+nqRemain(c.remain)+'</span></div>'
+      +'<div class="nq-dev-act"><input class="nq-ip" value="'+nqEsc(sip)+'">'
+      +'<button type="button" class="nq-btn nq-btn-sm nq-btn-pri" data-act="static">绑定</button>'
       +(c.static ? '<button type="button" class="nq-btn nq-btn-sm nq-btn-ghost" data-act="dynamic">取消</button>' : '')
-      +'</td></tr>';
+      +'</div></div>';
   });
-  h += '</tbody></table>';
+  h += '</div>';
   tb.innerHTML = h;
 }
 function nqPost(act, body){
@@ -259,6 +280,7 @@ function nqFill(d){
   nqSet('rx_backlog', nqFlag(f.rx_backlog));
   nqSet('dhcp_enable', nqFlag(h.enable));
   nqSet('sequential', nqFlag(h.sequential));
+  nqSet('neigh_auto', h.neigh_auto !== 0 && h.neigh_auto !== '0');
   nqPut('start', h.start); nqPut('limit', h.limit); nqPut('leasetime', h.leasetime); nqPut('neigh_gc', h.neigh_gc || '60');
   nqPut('client_dns', h.client_dns || 'router'); nqPut('client_dns_addr', h.client_dns_addr);
   nqPut('wan_dns', n.wan || '-'); nqPut('dns_mode', n.mode || 'wan');
@@ -298,6 +320,7 @@ function nqSave(){
     dhcp: {
       enable: nqOn('dhcp_enable'), sequential: nqOn('sequential'),
       start: nqVal('start'), limit: nqVal('limit'), leasetime: nqVal('leasetime'), neigh_gc: nqVal('neigh_gc'),
+      neigh_auto: nqOn('neigh_auto'),
       client_dns: nqVal('client_dns'), client_dns_addr: nqVal('client_dns_addr')
     },
     dns: { mode: nqVal('dns_mode'), servers: servers, cachesize: nqVal('cachesize') }
@@ -331,7 +354,7 @@ document.getElementById('nq-add-static').addEventListener('click', function(){
 document.getElementById('nq-clients').addEventListener('click', function(ev){
   var btn = ev.target.closest ? ev.target.closest('button[data-act]') : null;
   if (!btn) return;
-  var tr = btn.closest('tr');
+  var tr = btn.closest('[data-mac]');
   if (!tr) return;
   var mac = tr.getAttribute('data-mac') || '';
   var name = tr.getAttribute('data-name') || '';

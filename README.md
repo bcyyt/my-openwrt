@@ -8,9 +8,9 @@ ImmortalWrt / OpenWrt APK 插件仓库：IPTV 代理、影视中心、状态监�
 |------|------|------|------|
 | `iptv-auth` | 2.3.11-r0 | noarch | IPTV 鉴权、M3U/EPG、RTSP 回看、rtp2httpd 直播代理；选上游接口后自动走专线策略表（不改主路由） |
 | `luci-app-mediahub` | 1.5.6-r0 | x86_64 | 影视中心（CMS + AList + 静态 ffmpeg） |
-| `luci-app-statusmon` | 4.24 | noarch | 状态监控；内置 luci-app-filemanager 与中文语言包 |
-| `luci-app-netqueue` | 1.0.6-r0 | noarch | 系统优化：转发、DHCP、DNS、邻居清理、静态 IP |
-| `luci-app-syskeep` | 1.0.4-r0 | noarch | 保留升级：刷机保留配置与数据盘，自动识别数据盘并备份自装插件 |
+| `luci-app-statusmon` | 4.25 | noarch | 状态监控；内置 luci-app-filemanager 与中文语言包 |
+| `luci-app-netqueue` | 1.0.8-r0 | noarch | 系统优化：转发、DHCP、DNS、邻居清理、静态 IP |
+| `luci-app-syskeep` | 1.0.5-r0 | noarch | 保留升级：刷机保留配置与数据盘，自动识别数据盘并备份自装插件 |
 
 APK 位于 `packages/`，均用 `keys/my-openwrt.rsa` 签名。
 
@@ -34,13 +34,13 @@ apk add iptv-auth-2.3.11-r0.apk
 apk add luci-app-mediahub-1.5.6-r0.apk
 
 # 状态监控（含文件管理器与中文语言包）
-apk add luci-app-statusmon-4.24.apk
+apk add luci-app-statusmon-4.25.apk
 
 # 系统优化（转发 / DHCP / DNS / 静态 IP）
-apk add luci-app-netqueue-1.0.6-r0.apk
+apk add luci-app-netqueue-1.0.8-r0.apk
 
 # 保留升级
-apk add luci-app-syskeep-1.0.4-r0.apk
+apk add luci-app-syskeep-1.0.5-r0.apk
 ```
 
 若提示 UNTRUSTED signature，确认公钥已放入 `/etc/apk/keys/`，或临时使用：
@@ -68,7 +68,7 @@ LuCI 菜单：**网络 → 系统优化**。
 
 转发、DHCP、DNS 在同一页。点「保存并应用」后立即生效，不断开 PPPoE，也不改 wan2 / IPTV 路由。
 
-当前包：`packages/luci-app-netqueue/luci-app-netqueue-1.0.6-r0.apk`。
+当前包：`packages/luci-app-netqueue/luci-app-netqueue-1.0.8-r0.apk`。
 
 ### 转发
 
@@ -96,6 +96,7 @@ LuCI 菜单：**网络 → 系统优化**。
 
 - 页面列出当前租约、静态绑定和 `br-lan` ARP。过期动态租约会从列表拿掉。
 - **邻居清理（秒）**：ARP `gc_stale_time`，STALE 邻居按这个时间回收。
+- **自动清理过期邻居**：按秒数定时执行。只删 FAILED 和已不在租约/静态绑定里的残留 ARP；REACHABLE 和当前仍在用的地址保留。
 - **绑定静态 IP**：写 `dhcp.host`，删掉该 MAC 的旧租约，重载 dnsmasq，清掉旧/新 IP 的邻居条目。主「保存并应用」不会动静态绑定。
 
 ### DNS
@@ -130,6 +131,14 @@ UCI 在 `netqueue.main`。DHCP / DNS 仍写在 `dhcp` 配置里。
 - 邻居清理秒数：ARP `gc_stale_time`。
 - 静态 IP 绑定走独立 `?act=static|dynamic`，保存后 `dhcp-kick` 删租约、重载 dnsmasq、清 ARP。
 
+### 1.0.7
+
+- 自动清理过期邻居：cron 按「邻居清理（秒）」执行，只删残留 ARP，保留在用租约/静态 IP 和 REACHABLE。
+
+### 1.0.8
+
+- LuCI 页手机自适应：邻居改卡片、开关与输入框不再撑出屏幕。
+
 ## 影视中心
 
 当前包：`packages/luci-app-mediahub/luci-app-mediahub-1.5.6-r0.apk`。
@@ -139,15 +148,17 @@ UCI 在 `netqueue.main`。DHCP / DNS 仍写在 `dhcp` 配置里。
 
 ## 状态监控
 
-当前包：`packages/luci-app-statusmon/luci-app-statusmon-4.24.apk`。
+当前包：`packages/luci-app-statusmon/luci-app-statusmon-4.25.apk`。
 
-同一 MAC 多 IPv4 时优先 `REACHABLE/DELAY/PROBE` 邻居，其次 DHCP 租约，避免 STALE 旧地址盖住当前 IP。
+同一 MAC 多 IPv4 时优先 `REACHABLE/DELAY/PROBE` 邻居，其次 DHCP 租约。已连接客户端按全部 / 活跃 / 空闲 / 离线筛选，每页 10 台。
 
 ## 保留升级
 
 LuCI 菜单：**系统 → 保留升级**。
 
-当前包：`packages/luci-app-syskeep/luci-app-syskeep-1.0.4-r0.apk`。
+当前包：`packages/luci-app-syskeep/luci-app-syskeep-1.0.5-r0.apk`。
+
+1.0.5：LuCI 页手机自适应，下载地址与按钮在窄屏单列显示。
 
 只写镜像分区 1/2（boot + rootfs），GPT 和数据盘不动。备份时对比 `/rom` 的 world，自装插件能 fetch 就拉 APK，源里没有的打文件包。数据盘按 fstab / 挂载自动识别，写入 `/etc/syskeep/datadir`。
 

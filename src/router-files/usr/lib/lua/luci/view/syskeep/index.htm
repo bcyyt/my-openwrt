@@ -1,17 +1,19 @@
 <%+header%>
 <style>
-.sk-wrap{max-width:920px;margin:0 auto 24px;font-family:ui-sans-serif,system-ui,sans-serif}
+.sk-wrap,.sk-wrap *{box-sizing:border-box}
+.sk-wrap{max-width:920px;width:100%;margin:0 auto 24px;padding:0 2px;font-family:ui-sans-serif,system-ui,sans-serif;overflow-x:hidden}
 .sk-hero{background:#1b2420;color:#e8f0ea;padding:22px 24px;border-radius:12px;margin-bottom:16px}
 .sk-hero h2{margin:0 0 6px;font-size:20px;font-weight:650;letter-spacing:.02em}
 .sk-hero p{margin:0;color:#b7c7bb;font-size:13px;line-height:1.55}
-.sk-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin:16px 0}
+.sk-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(160px,100%),1fr));gap:10px;margin:16px 0}
 .sk-card{background:#fff;border:1px solid #d7ddd8;border-radius:10px;padding:12px 14px}
 .sk-card b{display:block;font-size:11px;color:#6b776f;letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px}
 .sk-card span{font-size:15px;color:#1b2420;word-break:break-all}
 .sk-box{background:#fff;border:1px solid #d7ddd8;border-radius:10px;padding:16px 18px;margin-bottom:12px}
 .sk-box h3{margin:0 0 10px;font-size:15px}
 .sk-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0}
-.sk-row input[type=text]{flex:1;min-width:220px;padding:8px 10px;border:1px solid #c5cdc8;border-radius:8px}
+.sk-row input[type=text]{flex:1 1 160px;min-width:0;width:100%;padding:8px 10px;border:1px solid #c5cdc8;border-radius:8px}
+.sk-row input[type=file]{flex:1 1 160px;min-width:0;max-width:100%}
 .sk-btn{border:0;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px}
 .sk-btn-pri{background:#2f6f4e;color:#fff}
 .sk-btn-warn{background:#8a3b16;color:#fff}
@@ -19,6 +21,17 @@
 .sk-note{font-size:12px;color:#5c675f;line-height:1.5}
 .sk-log{height:220px;overflow:auto;background:#121816;color:#c8d6cc;padding:10px;border-radius:8px;font:12px/1.45 ui-monospace,monospace;white-space:pre-wrap}
 .sk-ok{color:#2f6f4e} .sk-bad{color:#8a3b16}
+@media (max-width:640px){
+  .sk-wrap{padding:0 4px}
+  .sk-hero{padding:16px 14px}
+  .sk-hero h2{font-size:18px}
+  .sk-hero p{font-size:12px}
+  .sk-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .sk-box{padding:14px 12px}
+  .sk-row{flex-direction:column;align-items:stretch}
+  .sk-row input[type=text],.sk-row input[type=file],.sk-row .sk-btn{width:100%}
+  .sk-log{height:180px;font-size:11px}
+}
 </style>
 <div class="sk-wrap">
   <div class="sk-hero">

@@ -10,8 +10,13 @@
 	uci -q set netqueue.main.udp_gro='1'
 	uci -q set netqueue.main.rx_backlog='1'
 	uci -q set netqueue.main.neigh_gc='60'
+	uci -q set netqueue.main.neigh_auto='1'
 	uci -q commit netqueue
 }
+
+[ -n "$(uci -q get netqueue.main.neigh_auto)" ] || uci -q set netqueue.main.neigh_auto='1'
+[ -n "$(uci -q get netqueue.main.neigh_gc)" ] || uci -q set netqueue.main.neigh_gc='60'
+uci -q commit netqueue
 
 chmod 755 /etc/init.d/netqueue /usr/bin/netqueue-apply.sh 2>/dev/null || true
 [ -x /etc/init.d/netqueue ] && /etc/init.d/netqueue enable 2>/dev/null || true

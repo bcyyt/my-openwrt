@@ -317,7 +317,8 @@ function collect_info()
 			client_dns = (opt6 ~= "") and "custom" or "router",
 			client_dns_addr = opt6,
 			lan = first_str(uci:get("network", "lan", "ipaddr")),
-			neigh_gc = first_str(uci:get("netqueue", "main", "neigh_gc"))
+			neigh_gc = first_str(uci:get("netqueue", "main", "neigh_gc")),
+			neigh_auto = (uci:get("netqueue", "main", "neigh_auto") == "0") and 0 or 1
 		},
 		dns = {
 			mode = (noresolv == "1" and has_val(server)) and "custom" or "wan",
@@ -410,6 +411,7 @@ function action_save()
 	if gc < 5 then gc = 5 end
 	if gc > 86400 then gc = 86400 end
 	uci:set("netqueue", "main", "neigh_gc", tostring(gc))
+	uci:set("netqueue", "main", "neigh_auto", flag(dhcp.neigh_auto) and "1" or "0")
 	uci:commit("netqueue")
 
 	if flag(dhcp.enable) then
