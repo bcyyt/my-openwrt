@@ -1,5 +1,5 @@
 #!/bin/sh
-# statusmon v4.24 — OpenWrt 系统状态数据采集 CGI
+# statusmon v4.26 — OpenWrt 系统状态数据采集 CGI
 # 部署到 /www/cgi-bin/statusmon
 # v4.24 修复：同一 MAC 多 IPv4 时优先 REACHABLE/DELAY/PROBE，其次 DHCP 租约，避免 STALE 旧地址盖住当前 IP
 # v4.1 修复：ip neigh 字段解析（MAC=$5/状态=末字段）、CPU 采样公式、
@@ -74,6 +74,8 @@
 # v4.20 修复：HTTPS 直播仍进网页 —— 静态 nslookup 拿不到 CDN 节点；改为
 #           dnsmasq nftset 按域名动态灌 vidips，并从 QUIC(udp443)/大流量
 #           TCP443 回填 CDN IP（须在 web 规则之前命中）
+# v4.26 修复：网络接口里 PPPoE 收发字节跨重拨累计 —— 逻辑口重建后内核计数归零，
+#           用上次采样做偏移，页面总量不随重拨清零（重启 /tmp 仍会从 0 计）
 
 echo "Content-Type: application/json"
 echo "Access-Control-Allow-Origin: *"
@@ -737,6 +739,79 @@ wan_accumulate() {
     [ -s "$WAN_STATE.new" ] && mv -f "$WAN_STATE.new" "$WAN_STATE"
 }
 
+# ===== PPPoE 接口字节跨重拨累计（v4.26）=====
+# 内核计数随 pppoe-wan 重建归零；LAST 为上次内核值，OFF 为已结束会话的累计。
+# 当前内核值小于 LAST，或 ifindex 变了，把 LAST 加进 OFF。展示值 = 当前 + OFF。
+PPPOE_ACCT=/tmp/statusmon-pppoe-acct.txt
+PPPACC_NAMES=""
+
+_sm_pppoe_acct_load() {
+    PPPACC_NAMES=""
+    [ -s "$PPPOE_ACCT" ] || return 0
+    while read _n _lr _lt _or _ot _ifi _; do
+        case "$_n" in pppoe-*|ppp-*) ;; *) continue ;; esac
+        _m=${_n//-/_}; _m=${_m//./_}
+        eval "PPPACC_${_m}='${_lr:-0} ${_lt:-0} ${_or:-0} ${_ot:-0} ${_ifi:-0}'"
+        PPPACC_NAMES="$PPPACC_NAMES $_n"
+    done < "$PPPOE_ACCT"
+}
+
+_sm_pppoe_fold() {
+    _m=${iface//-/_}; _m=${_m//./_}
+    _rx=$rx_bytes; _tx=$tx_bytes
+    eval "_v=\${PPPACC_${_m}:-0 0 0 0 0}"
+    _lr=${_v%% *}; _v=${_v#* }
+    _lt=${_v%% *}; _v=${_v#* }
+    _or=${_v%% *}; _v=${_v#* }
+    _ot=${_v%% *}; _oldif=${_v#* }
+    _oldif=${_oldif%% *}
+    _lr=${_lr:-0}; _lt=${_lt:-0}; _or=${_or:-0}; _ot=${_ot:-0}; _oldif=${_oldif:-0}
+    _ifi=$(cat "/sys/class/net/$iface/ifindex" 2>/dev/null)
+    _ifi=${_ifi:-0}
+    if [ "$_oldif" != "0" ] && [ "$_ifi" != "0" ] && [ "$_ifi" != "$_oldif" ]; then
+        _or=$((_or + _lr))
+        _ot=$((_ot + _lt))
+    else
+        if [ "$_rx" -lt "$_lr" ] 2>/dev/null; then
+            _or=$((_or + _lr))
+        fi
+        if [ "$_tx" -lt "$_lt" ] 2>/dev/null; then
+            _ot=$((_ot + _lt))
+        fi
+    fi
+    rx_bytes=$((_rx + _or))
+    tx_bytes=$((_tx + _ot))
+    eval "PPPACC_${_m}='$_rx $_tx $_or $_ot $_ifi'"
+    case " $PPPACC_NAMES " in
+        *" $iface "*) ;;
+        *) PPPACC_NAMES="$PPPACC_NAMES $iface" ;;
+    esac
+}
+
+_sm_pppoe_acct_tick() {
+    _sm_pppoe_acct_load
+    for iface in /sys/class/net/pppoe-* /sys/class/net/ppp-*; do
+        [ -e "$iface" ] || continue
+        iface=$(basename "$iface")
+        case "$iface" in pppoe-*|ppp-*) ;; *) continue ;; esac
+        _cnt=$(awk -v n="$iface:" '$1==n{print $2" "$10; exit}' /proc/net/dev 2>/dev/null)
+        rx_bytes=${_cnt%% *}; tx_bytes=${_cnt#* }
+        rx_bytes=${rx_bytes:-0}; tx_bytes=${tx_bytes:-0}
+        _sm_pppoe_fold
+    done
+    [ -n "$PPPACC_NAMES" ] && _sm_pppoe_acct_save
+}
+
+_sm_pppoe_acct_save() {
+    : > "$PPPOE_ACCT.new"
+    for _n in $PPPACC_NAMES; do
+        _m=${_n//-/_}; _m=${_m//./_}
+        eval "_v=\${PPPACC_${_m}:-}"
+        [ -n "$_v" ] && echo "$_n $_v" >> "$PPPOE_ACCT.new"
+    done
+    [ -s "$PPPOE_ACCT.new" ] && mv -f "$PPPOE_ACCT.new" "$PPPOE_ACCT"
+}
+
 # ===== 客户端流量持久累计引擎（v4.13，nft inet 动态 set 计数）=====
 # 原理：inet/forward 动态 set 按客户端 IP 累计字节，不受 conntrack 过期清零影响；
 #       每次采样与上次快照做差，增量按 MAC 归属累加到当日文件。
@@ -911,6 +986,7 @@ if [ -n "$_qs_accumulate" ]; then
     client_accumulate
     _sm_sets_seed
     sys_hist_sample
+    _sm_pppoe_acct_tick
     echo '{"result":"ok"}'
     exit 0
 fi
@@ -1284,6 +1360,12 @@ for _sec in $(uci show network 2>/dev/null | sed -n "s/^network\.\([^.]*\)\.prot
 done
 _uci_all=$(uci show network 2>/dev/null | grep "device=")
 
+if command -v flock >/dev/null 2>&1; then
+    exec 9>/tmp/statusmon-pppoe-acct.lock
+    timeout 3 flock -x 9 2>/dev/null || true
+fi
+_sm_pppoe_acct_load
+
 for iface_dir in /sys/class/net/*; do
     iface=$(basename "$iface_dir")
     case "$iface" in
@@ -1343,9 +1425,13 @@ for iface_dir in /sys/class/net/*; do
         esac
     fi
     # v4.6：速率计算移至前端，CGI 不再计算 rx_rate/tx_rate
+    case "$iface" in
+        pppoe-*|ppp-*) _sm_pppoe_fold ;;
+    esac
     net_lines="$net_lines{\"name\":\"$iface\",\"type\":\"$iface_type\",\"state\":\"$operstate\",\"rx\":$rx_bytes,\"tx\":$tx_bytes,\"rx_pkts\":$rx_pkts,\"tx_pkts\":$tx_pkts,\"ip\":\"$ip_addr\",\"ip4\":\"$ip4\",\"ip6\":\"$ip6\"},"
     net_state="${net_state}${iface}:rx=${rx_bytes},tx=${tx_bytes};"
 done
+[ -n "$PPPACC_NAMES" ] && _sm_pppoe_acct_save
 [ -n "$net_lines" ] && net_lines=${net_lines%,} && net_ifs="[$net_lines]"
 
 # ===== 客户端（DHCP 租约底册 + 邻居状态 + conntrack 流量，按设备合并）=====

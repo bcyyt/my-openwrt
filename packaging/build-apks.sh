@@ -12,11 +12,11 @@ APK="${APK:-/tmp/apk-tools/build/src/apk}"
 SIGN_KEY="$KEYS/my-openwrt.rsa"
 PUB_KEY="$KEYS/my-openwrt.rsa.pub"
 
-IPTV_VER="${IPTV_VER:-2.3.11-r0}"
-MEDIA_VER="${MEDIA_VER:-1.5.6-r0}"
-STATUS_VER="${STATUS_VER:-4.25}"
-NETQ_VER="${NETQ_VER:-1.0.8-r0}"
-SYSKEEP_VER="${SYSKEEP_VER:-1.0.5-r0}"
+IPTV_VER="${IPTV_VER:-2.3.12-r0}"
+MEDIA_VER="${MEDIA_VER:-1.5.7-r0}"
+STATUS_VER="${STATUS_VER:-4.26}"
+NETQ_VER="${NETQ_VER:-1.0.16-r0}"
+SYSKEEP_VER="${SYSKEEP_VER:-1.0.6-r0}"
 DATE_STR="$(date +%Y-%m-%d)"
 OTA_URL_BASE="https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages"
 
@@ -94,7 +94,7 @@ cat > "$OUT/iptv-auth/version.json" <<EOF
 {
   "version": "${IPTV_VER}",
   "date": "${DATE_STR}",
-	"changelog": "选上游接口后自动把鉴权/回看/rtp2httpd 出站绑到该口 DHCP 网关（专用策略表，不改主路由、不加静态路由）。",
+	"changelog": "4K 频道运营商未返回节目单时，按去掉 4K 后的台名回填同名高清台 EPG。",
   "url": "${OTA_URL_BASE}/iptv-auth/iptv-auth-${IPTV_VER}.apk",
   "ipk_url": ""
 }
@@ -197,7 +197,7 @@ mkpkg \
 	-I "tags:openwrt:section=luci" \
 	-s "post-install:$PACK/luci-app-statusmon/post-install.sh"
 
-# ---------- 系统优化 ----------
+# ---------- 网络优化 ----------
 NETQ_ROOT="$(mktemp -d /tmp/pkg-netq.XXXXXX)"
 install -d "$NETQ_ROOT/etc/config" "$NETQ_ROOT/etc/init.d" "$NETQ_ROOT/etc/uci-defaults" \
 	"$NETQ_ROOT/usr/bin" \
@@ -214,7 +214,7 @@ install -m 644 "$SRC/usr/lib/lua/luci/view/netqueue/index.htm" "$NETQ_ROOT/usr/l
 NETQ_APK="$OUT/luci-app-netqueue/luci-app-netqueue-${NETQ_VER}.apk"
 mkpkg \
 	luci-app-netqueue "$NETQ_VER" noarch \
-	"LuCI 系统优化：转发、DHCP、DNS" \
+	"LuCI 网络优化：转发、DHCP、DNS" \
 	luci-app-netqueue GPL-2.0 "https://github.com/bcyyt/my-openwrt" \
 	"$NETQ_ROOT" "$NETQ_APK" \
 	-I "depends:libc luci-base" \

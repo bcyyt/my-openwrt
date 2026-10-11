@@ -348,7 +348,7 @@ function index()
 	if not require("nixio.fs").access("/usr/bin/netqueue-apply.sh") then
 		return
 	end
-	entry({"admin", "network", "netqueue"}, call("action_page"), _("系统优化"), 90).dependent = false
+	entry({"admin", "network", "netqueue"}, call("action_page"), _("网络优化"), 90).dependent = false
 end
 
 function action_page()
@@ -393,72 +393,93 @@ function action_save()
 	local req = jsonc.parse(raw or "") or {}
 	local ok, err = pcall(function()
 	local uci = uci_cur()
-	local fwd = req.fwd or {}
-	local dhcp = req.dhcp or {}
-	local dns = req.dns or {}
+	local fwd = req.fwd
+	local dhcp = req.dhcp
+	local dns = req.dns
+	local touch_nq, touch_dhcp = false, false
 
-	uci:set("netqueue", "main", "enabled", flag(fwd.enabled) and "1" or "0")
-	uci:set("netqueue", "main", "nic_queues", flag(fwd.nic_queues) and "1" or "0")
-	uci:set("netqueue", "main", "cpu_performance", flag(fwd.cpu_performance) and "1" or "0")
-	uci:set("netqueue", "main", "flow_offload", flag(fwd.flow_offload) and "1" or "0")
-	uci:set("netqueue", "main", "pppoe_qlen", flag(fwd.pppoe_qlen) and "1" or "0")
-	uci:set("netqueue", "main", "udp_gro", flag(fwd.udp_gro) and "1" or "0")
-	uci:set("netqueue", "main", "rx_backlog", flag(fwd.rx_backlog) and "1" or "0")
-	local gc = tonumber(tostring(dhcp.neigh_gc or ""):match("^%d+"))
-	if not gc then
-		gc = 60
-	end
-	if gc < 5 then gc = 5 end
-	if gc > 86400 then gc = 86400 end
-	uci:set("netqueue", "main", "neigh_gc", tostring(gc))
-	uci:set("netqueue", "main", "neigh_auto", flag(dhcp.neigh_auto) and "1" or "0")
-	uci:commit("netqueue")
-
-	if flag(dhcp.enable) then
-		uci:delete("dhcp", "lan", "ignore")
-	else
-		uci:set("dhcp", "lan", "ignore", "1")
-	end
-	if dhcp.start and tostring(dhcp.start) ~= "" then
-		uci:set("dhcp", "lan", "start", tostring(dhcp.start))
-	end
-	if dhcp.limit and tostring(dhcp.limit) ~= "" then
-		uci:set("dhcp", "lan", "limit", tostring(dhcp.limit))
-	end
-	if dhcp.leasetime and tostring(dhcp.leasetime) ~= "" then
-		uci:set("dhcp", "lan", "leasetime", tostring(dhcp.leasetime))
-	end
-	if dhcp.client_dns == "custom" and dhcp.client_dns_addr and dhcp.client_dns_addr ~= "" then
-		set_option6(uci, tostring(dhcp.client_dns_addr):gsub("%s+", ","))
-	else
-		set_option6(uci, "")
+	if type(fwd) == "table" then
+		uci:set("netqueue", "main", "enabled", flag(fwd.enabled) and "1" or "0")
+		uci:set("netqueue", "main", "nic_queues", flag(fwd.nic_queues) and "1" or "0")
+		uci:set("netqueue", "main", "cpu_performance", flag(fwd.cpu_performance) and "1" or "0")
+		uci:set("netqueue", "main", "flow_offload", flag(fwd.flow_offload) and "1" or "0")
+		uci:set("netqueue", "main", "pppoe_qlen", flag(fwd.pppoe_qlen) and "1" or "0")
+		uci:set("netqueue", "main", "udp_gro", flag(fwd.udp_gro) and "1" or "0")
+		uci:set("netqueue", "main", "rx_backlog", flag(fwd.rx_backlog) and "1" or "0")
+		touch_nq = true
 	end
 
-	local names = dns_names(uci)
-	local servers, i, s, n = {}
-	for i, s in ipairs(as_list(dns.servers)) do
-		s = tostring(s or ""):gsub("%s+", "")
-		if s ~= "" then
-			servers[#servers + 1] = s
-		end
-	end
-	for i, n in ipairs(names) do
-		uci:set("dhcp", n, "sequential_ip", flag(dhcp.sequential) and "1" or "0")
-		if dns.cachesize and tostring(dns.cachesize) ~= "" then
-			uci:set("dhcp", n, "cachesize", tostring(dns.cachesize))
-		end
-		if dns.mode == "custom" and #servers > 0 then
-			uci:set("dhcp", n, "server", servers)
-			uci:set("dhcp", n, "noresolv", "1")
+	if type(dhcp) == "table" then
+		if flag(dhcp.enable) then
+			uci:delete("dhcp", "lan", "ignore")
 		else
-			uci:delete("dhcp", n, "server")
-			uci:set("dhcp", n, "noresolv", "0")
-			uci:set("dhcp", n, "resolvfile", "/tmp/resolv.conf.d/resolv.conf.auto")
+			uci:set("dhcp", "lan", "ignore", "1")
 		end
+		if dhcp.start and tostring(dhcp.start) ~= "" then
+			uci:set("dhcp", "lan", "start", tostring(dhcp.start))
+		end
+		if dhcp.limit and tostring(dhcp.limit) ~= "" then
+			uci:set("dhcp", "lan", "limit", tostring(dhcp.limit))
+		end
+		if dhcp.leasetime and tostring(dhcp.leasetime) ~= "" then
+			uci:set("dhcp", "lan", "leasetime", tostring(dhcp.leasetime))
+		end
+		if dhcp.client_dns == "custom" and dhcp.client_dns_addr and dhcp.client_dns_addr ~= "" then
+			set_option6(uci, tostring(dhcp.client_dns_addr):gsub("%s+", ","))
+		else
+			set_option6(uci, "")
+		end
+		local i, n
+		for i, n in ipairs(dns_names(uci)) do
+			uci:set("dhcp", n, "sequential_ip", flag(dhcp.sequential) and "1" or "0")
+		end
+		touch_dhcp = true
 	end
-	uci:commit("dhcp")
-	sys.call("/etc/init.d/netqueue reload >/dev/null 2>&1")
-	sys.call("/etc/init.d/dnsmasq restart >/dev/null 2>&1")
+
+	if type(req.neigh) == "table" then
+		local gc = tonumber(tostring(req.neigh.neigh_gc or ""):match("^%d+"))
+		if not gc then
+			gc = 60
+		end
+		if gc < 5 then gc = 5 end
+		if gc > 86400 then gc = 86400 end
+		uci:set("netqueue", "main", "neigh_gc", tostring(gc))
+		uci:set("netqueue", "main", "neigh_auto", flag(req.neigh.neigh_auto) and "1" or "0")
+		touch_nq = true
+	end
+
+	if type(dns) == "table" then
+		local servers, i, s, n = {}
+		for i, s in ipairs(as_list(dns.servers)) do
+			s = tostring(s or ""):gsub("%s+", "")
+			if s ~= "" then
+				servers[#servers + 1] = s
+			end
+		end
+		for i, n in ipairs(dns_names(uci)) do
+			if dns.cachesize and tostring(dns.cachesize) ~= "" then
+				uci:set("dhcp", n, "cachesize", tostring(dns.cachesize))
+			end
+			if dns.mode == "custom" and #servers > 0 then
+				uci:set("dhcp", n, "server", servers)
+				uci:set("dhcp", n, "noresolv", "1")
+			else
+				uci:delete("dhcp", n, "server")
+				uci:set("dhcp", n, "noresolv", "0")
+				uci:set("dhcp", n, "resolvfile", "/tmp/resolv.conf.d/resolv.conf.auto")
+			end
+		end
+		touch_dhcp = true
+	end
+
+	if touch_nq then
+		uci:commit("netqueue")
+		sys.call("/etc/init.d/netqueue reload >/dev/null 2>&1")
+	end
+	if touch_dhcp then
+		uci:commit("dhcp")
+		sys.call("/etc/init.d/dnsmasq restart >/dev/null 2>&1")
+	end
 	end)
 	http.prepare_content("application/json")
 	if not ok then

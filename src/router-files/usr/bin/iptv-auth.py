@@ -599,6 +599,48 @@ def generate_m3u(channels):
                 pass
 
 # ===================== 节目单 =====================
+def _epg_base_name(name):
+    n = (name or '').strip()
+    for suffix in ('超高清', ' 8K', '8K', ' 4K', '4K'):
+        if n.endswith(suffix):
+            n = n[:-len(suffix)].rstrip()
+            break
+    return n
+
+def _epg_prog_count(days):
+    return sum(len(d) for d in days)
+
+def backfill_4k_epg(playlistdata):
+    """4K 频道运营商返回空单时，按去掉 4K 后的台名回填同名高清台节目单。"""
+    by_name = {}
+    for item in playlistdata:
+        by_name.setdefault(item[1], []).append(item)
+    filled = 0
+    out = []
+    for index, name, days in playlistdata:
+        if _epg_prog_count(days) > 0 or '4K' not in name:
+            out.append((index, name, days))
+            continue
+        base = _epg_base_name(name)
+        source = None
+        best = 0
+        for cand in (base + '高清', base, base + ' HD'):
+            for item in by_name.get(cand, []):
+                n = _epg_prog_count(item[2])
+                if n > best:
+                    best = n
+                    source = item
+        if source and best > 0:
+            copied = [list(d) for d in source[2]]
+            out.append((index, name, copied))
+            filled += 1
+            log(f"4K节目单回填: {name} <- {source[1]} ({best} 条)")
+        else:
+            out.append((index, name, days))
+    if filled:
+        log(f"4K节目单回填完成: {filled} 个频道")
+    return out
+
 def fetch_epg(session, channels):
     if not config.get('epg_enabled', True): return
     iptv_server = config['IPTVServer']
@@ -627,7 +669,7 @@ def fetch_epg(session, channels):
                 days_data.append([])
             start_date += timedelta(days=1)
         playlistdata.append((index, name, days_data))
-    generate_epg_xml(playlistdata)
+    generate_epg_xml(backfill_4k_epg(playlistdata))
 
 def parse_day_data(text):
     """解析节目单（formatdayplaydata：JSON 风格 prevueName/beginTime/endTime）"""

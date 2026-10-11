@@ -215,7 +215,7 @@ fi
 # 异常升级：apk 直接覆盖了配置（用户字段丢失）→ 用 0.5 的备份整体恢复
 if [ -f /tmp/mediahub.conf.apk-protect ]; then
     NEED_RESTORE=0
-    for opt in data_dir cookie_115 cookie_quark; do
+    for opt in data_dir cookie_115 cookie_quark token_115_open; do
         CUR=$(uci -q get "mediahub.main.$opt" 2>/dev/null || true)
         if [ -z "$CUR" ] && grep -q "option $opt" /tmp/mediahub.conf.apk-protect 2>/dev/null; then
             NEED_RESTORE=1

@@ -31,7 +31,8 @@ end
 
 -- 影视中心版本号（从 mediahub-cms.py 头部取，供页面徽章显示）
 local function mh_ver()
-    local v = sys_exec("head -3 /usr/bin/mediahub-cms.py 2>/dev/null | grep -oE 'v[0-9]+\\.[0-9]+' | head -1")
+    local v = sys_exec("grep -m1 CMS_VERSION /usr/bin/mediahub-cms.py 2>/dev/null | grep -oE '[0-9]+\\.[0-9]+(\\.[0-9]+)?'")
+    if v ~= "" then v = "v" .. v end
     if v == "" then v = "v2.6" end
     return v
 end
@@ -282,12 +283,23 @@ function save_cred_and_mount(uci_key, cred)
     if token ~= "" then
         if uci_key == "cookie_115" then
             local add = '{"cookie":"' .. json_esc(cred) .. '","qrcode_token":"","qrcode_source":"linux","page_size":1000,"limit_rate":2,"root_folder_id":"0"}'
-            ol_update_storage(token, "/115", "115 Cloud", add, false)
+            local open_rt = sys_exec("uci -q get mediahub.main.token_115_open 2>/dev/null")
+            if open_rt == "" then
+                ol_update_storage(token, "/115", "115 Cloud", add, false)
+            end
             ok = true
         elseif uci_key == "cookie_quark" then
             local add = '{"cookie":"' .. json_esc(cred) .. '","root_folder_id":"0","use_transcoding_address":false,"only_list_video_file":false}'
             ol_update_storage(token, "/quark", "Quark", add, true)
             ok = true
+        elseif uci_key == "token_115_open" or uci_key == "token_115_open_access" then
+            local rt = sys_exec("uci -q get mediahub.main.token_115_open 2>/dev/null")
+            local at = sys_exec("uci -q get mediahub.main.token_115_open_access 2>/dev/null")
+            if rt ~= "" then
+                local add = '{"refresh_token":"' .. json_esc(rt) .. '","access_token":"' .. json_esc(at) .. '","order_by":"file_name","order_direction":"asc","limit_rate":1,"root_folder_id":"0"}'
+                ol_update_storage(token, "/115", "115 Open", add, false)
+                ok = true
+            end
         else
             for _, d in ipairs(CLOUD_MOUNT_DEFS) do
                 if d.uci == uci_key then
@@ -309,7 +321,8 @@ function get_cookies()
     local http = require "luci.http"
     local sys = require "luci.sys"
     local KEYS = {"cookie_115", "cookie_quark", "cookie_uc", "token_ali", "token_189",
-                  "token_yidong", "token_123", "token_baidu", "thunder_auth", "pikpak_auth"}
+                  "token_yidong", "token_123", "token_baidu", "thunder_auth", "pikpak_auth",
+                  "token_115_open", "token_115_open_access"}
     local out = {}
     local function mask(s)
         s = s:gsub("^%s+", ""):gsub("%s+$", "")
@@ -335,6 +348,7 @@ function save_cookies()
         {k = "token_189",    n = "189"},     {k = "token_yidong", n = "yidong"},
         {k = "token_123",    n = "123"},     {k = "token_baidu",  n = "baidu"},
         {k = "thunder_auth", n = "thunder"}, {k = "pikpak_auth",  n = "pikpak"},
+        {k = "token_115_open", n = "115open"}, {k = "token_115_open_access", n = "115open_at"},
     }
     local results = {}
     local any = false
@@ -434,7 +448,10 @@ function qr_115_poll()
             local token = ol_token()
             if token ~= "" then
                 local add = '{"cookie":"' .. cookie:gsub('"', '\\"') .. '","qrcode_token":"","qrcode_source":"linux","page_size":1000,"limit_rate":2,"root_folder_id":"0"}'
-                ol_update_storage(token, "/115", "115 Cloud", add, false)
+                local open_rt = sys_exec("uci -q get mediahub.main.token_115_open 2>/dev/null")
+                if open_rt == "" then
+                    ol_update_storage(token, "/115", "115 Cloud", add, false)
+                end
             end
             http.prepare_content("application/json")
             http.write_json({code = 200, status = 2, message = "115登录成功", cookie = cookie})

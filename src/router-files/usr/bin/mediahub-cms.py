@@ -6,6 +6,7 @@ mediahub-cms.py v1.5 — 多网盘自动挂载 + 小雅 PG 完整订阅（融合
   用外网域名访问 → 返回外网地址。不再强制使用 ext_domain。
 - 播放走 8901 /play 反代：Range 先打 AList /p/，失败再跟 raw_url；APP 与订阅同端口
 - 8901 仅承载轻量 API：tvbox.json / cms.php 聚合搜索 / cloudcms.php 网盘适配 / cmproxy CMS 加速
+- 夸克走 /play → AList /p/；115 Open（token_115_open）走 302 直链，Cookie 盘仍走 /p/
 - 网盘文件列表缓存（30分钟TTL）：搜索秒回，避免频繁扫描网盘触发风控
 - m3u8 播放缓存带大小上限（UCI mediahub.main.cache_mb），超限逐出最旧，/cache/clear 一键清理
 - sign 内存缓存（1小时TTL）
@@ -21,7 +22,7 @@ from concurrent.futures import ThreadPoolExecutor, wait as _cf_wait
 import subprocess, re, base64, mimetypes
 
 # 部署版本（LuCI 状态页显示）
-CMS_VERSION = '1.5.6'
+CMS_VERSION = '1.5.13'
 
 # ============================================================
 # 配置
@@ -368,6 +369,7 @@ def crawl_loop(skip_if_disk=False):
 # ============================================================
 # 凭证配置（UCI mediahub.main.*，LuCI 网盘配置或命令行设置）：
 #   cookie_115     115 Cookie       cookie_quark   夸克 Cookie
+#   token_115_open 115 开放平台 refresh_token（有则 /115 改挂 115 Open，播放 302）
 #   cookie_uc      UC 网盘 Cookie   token_ali      阿里云盘 Open refresh_token
 #   token_189      天翼云盘 账号:密码  token_yidong   移动云盘 authorization
 #   token_123      123云盘 账号:密码  token_baidu    百度网盘 refresh_token
@@ -377,14 +379,22 @@ CLOUD_DRIVE_DEFS = [
     {'key': '115', 'mount': '/115', 'driver': '115 Cloud', 'cred': 'cookie_115', 'kind': 'cookie',
      'addition': lambda v: {'cookie': v, 'qrcode_token': '', 'qrcode_source': 'linux',
                             'page_size': 1000, 'limit_rate': 2, 'root_folder_id': '0'},
-     'web_proxy': True, 'webdav_policy': 'use_proxy_url'},
+     'web_proxy': False, 'webdav_policy': '302_redirect'},
+    {'key': '115open', 'mount': '/115', 'driver': '115 Open', 'cred': 'token_115_open', 'kind': 'token',
+     'addition': lambda v: {'refresh_token': v,
+                            'access_token': (uci_get('mediahub.main.token_115_open_access') or '').strip(),
+                            'order_by': 'file_name', 'order_direction': 'asc',
+                            'limit_rate': 1, 'root_folder_id': '0'},
+     'web_proxy': False, 'webdav_policy': '302_redirect'},
     {'key': 'quark', 'mount': '/quark', 'driver': 'Quark', 'cred': 'cookie_quark', 'kind': 'cookie',
      'addition': lambda v: {'cookie': v, 'root_folder_id': '0',
-                            'use_transcoding_address': False, 'only_list_video_file': False},
+                             'use_transcoding_address': False, 'only_list_video_file': False,
+                             'down_concurrency': 0, 'down_part_size': 10},
      'web_proxy': True, 'webdav_policy': 'use_proxy_url'},
     {'key': 'uc', 'mount': '/uc', 'driver': 'UC', 'cred': 'cookie_uc', 'kind': 'cookie',
      'addition': lambda v: {'cookie': v, 'root_folder_id': '0',
-                            'use_transcoding_address': False, 'only_list_video_file': False},
+                             'use_transcoding_address': False, 'only_list_video_file': False,
+                             'down_concurrency': 0, 'down_part_size': 10},
      'web_proxy': True, 'webdav_policy': 'use_proxy_url'},
     {'key': 'aliyun', 'mount': '/aliyun', 'driver': 'AliyundriveOpen', 'cred': 'token_ali', 'kind': 'token',
      'addition': lambda v: {'refresh_token': v, 'root_folder_id': 'root',
@@ -429,7 +439,8 @@ def _refresh_mount_meta(force=False):
                 if not mp or mp == '/' or s.get('disabled'):
                     continue
                 bases.append(mp)
-                routes[mp] = 'p'
+                drv = s.get('driver') or ''
+                routes[mp] = '302' if drv == '115 Open' else 'p'
         if not bases:
             # fallback：admin 接口不可用时按根目录一级子目录（未知驱动按名字特判 115）
             r2 = ol_api('/api/fs/list', {'path': '/', 'page': 1, 'per_page': 200})
@@ -454,7 +465,16 @@ def cloud_mount_bases():
     return m['bases'] or ['/115', '/quark']
 
 def _mount_route(path):
-    """播放路由：一律走 /p/ 中继，APP 不跟 302 CDN。"""
+    """115 Open 走 302 直链，其余走 /p/ 中继。"""
+    p = path or ''
+    routes = (_refresh_mount_meta() or {}).get('routes') or {}
+    best = ''
+    for mp in routes:
+        if p == mp or p.startswith(mp.rstrip('/') + '/'):
+            if len(mp) > len(best):
+                best = mp
+    if best:
+        return routes.get(best) or 'p'
     return 'p'
 
 def _update_cloud_stats(files):
@@ -493,8 +513,43 @@ def _host_only(host):
         return host.split(']', 1)[0][1:]
     return host.rsplit(':', 1)[0]
 
+def _is_115_path(path):
+    p = path or ''
+    return p == '/115' or p.startswith('/115/')
+
+def _cookie_core(c):
+    """Cookie 稳定段：忽略 AList 运行时刷新的 __puus/__pus，避免每次启动覆盖会话。"""
+    out = []
+    for part in (c or '').split(';'):
+        part = part.strip()
+        if not part or '=' not in part:
+            continue
+        k = part.split('=', 1)[0].strip().lower()
+        if k in ('__puus', '__pus'):
+            continue
+        out.append(part)
+    return ';'.join(out)
+
+def _join_fs(path, name):
+    if not path or path == '/':
+        return '/' + (name or '')
+    if path.endswith('/'):
+        return path + (name or '')
+    return path + '/' + (name or '')
+
+def _alist_client_play_url(req_host, fspath, raw_url=''):
+    """AList[jar] fs/get：115 Open 返回 CDN 直链，其余走 8901 /play。"""
+    p = fspath or ''
+    if p and not p.startswith('/'):
+        p = '/' + p
+    ru = raw_url or ''
+    if _mount_route(p) == '302' and ru.startswith('http') and '127.0.0.1' not in ru and '/play/' not in ru:
+        return ru
+    enc = urllib.parse.quote(p or '/', safe='/')
+    return 'http://%s/play%s' % (req_host, enc)
+
 def _cloud_play_url(host, path, sign=''):
-    """网盘播放地址：与订阅同主机同端口的 /play 反代。"""
+    """网盘播放地址：一律 8901 /play，由 CMS 带 Range 反代 AList /p/。"""
     encoded = urllib.parse.quote(path or '/', safe='/')
     url = f'http://{host}/play{encoded}'
     if sign:
@@ -756,7 +811,8 @@ def cms_detail(ids):
 # ============================================================
 # AList 网盘 → CMS 格式适配
 # ============================================================
-VID_EXTS = ('.mkv', '.mp4', '.ts', '.avi', '.iso', '.mov', '.flv', '.m4v', '.rmvb', '.wmv')
+VID_EXTS = ('.mkv', '.mp4', '.ts', '.avi', '.iso', '.mov', '.flv', '.m4v', '.rmvb', '.wmv',
+            '.webm', '.mpeg', '.mpg', '.m2ts', '.mts', '.vob', '.3gp', '.f4v', '.m3u8', '.rm')
 
 def ol_api(path, body=None, timeout=15):
     """调用 AList API（带 admin token，适配 meta 密码保护后的内部调用）"""
@@ -809,7 +865,7 @@ def _get_ol_admin_token():
         _log(f'alist login error: {e}')
         return ''
 
-def ol_list_videos(base_path, depth=6, max_count=8000):
+def ol_list_videos(base_path, depth=12, max_count=30000):
     """递归列出网盘视频文件（完整翻页 + 并发扫描子目录）
     v2.6: 旧版每目录只拉第一页 200 条，目录超过 200 个文件时被截断（丢失约500个）；
     现改为翻页拉全 + 层级并发扫描，加速全盘索引。
@@ -825,13 +881,24 @@ def ol_list_videos(base_path, depth=6, max_count=8000):
         while not stop.is_set():
             r = ol_api('/api/fs/list', {'path': path, 'page': page, 'per_page': 500})
             if not r or r.get('code') != 200:
+                _log('cloud scan list fail %s page=%s code=%s msg=%s' % (
+                    path, page, (r or {}).get('code'), (r or {}).get('message')))
                 break
             d = r.get('data') or {}
             content = d.get('content') or []
             if not content:
                 break
             items.extend(content)
-            if page * 500 >= (d.get('total') or 0):
+            try:
+                total = int(d.get('total') or 0)
+            except (TypeError, ValueError):
+                total = 0
+            if total and len(items) >= total:
+                break
+            if len(content) < 500:
+                break
+            if page >= 200:
+                _log(f'cloud scan list page cap {path}')
                 break
             page += 1
         return items
@@ -852,10 +919,10 @@ def ol_list_videos(base_path, depth=6, max_count=8000):
             name = item.get('name', '')
             if item.get('is_dir'):
                 if lvl < depth:
-                    subs.append((path + '/' + name, lvl + 1))
+                    subs.append((_join_fs(path, name), lvl + 1))
             elif name.lower().endswith(VID_EXTS):
                 # v2.8: fs/list 文件条目自带 sign，扫描时顺手携带（播放签名零远程获取）
-                vids.append({'path': path + '/' + name, 'name': name, 'size': item.get('size', 0),
+                vids.append({'path': _join_fs(path, name), 'name': name, 'size': item.get('size', 0),
                              'dir': path.rsplit('/', 1)[-1], 'sign': item.get('sign') or ''})
         return vids, subs
 
@@ -868,7 +935,8 @@ def ol_list_videos(base_path, depth=6, max_count=8000):
             for f in futs:
                 try:
                     vids, subs = f.result(timeout=180)
-                except Exception:
+                except Exception as e:
+                    _log(f'cloud scan dir error: {e}')
                     continue
                 with lock:
                     results.extend(vids)
@@ -929,7 +997,7 @@ def get_cloud_files(force=False):
         files = []
         for base in cloud_mount_bases():
             try:
-                files.extend(ol_list_videos(base, depth=5, max_count=5000))
+                files.extend(ol_list_videos(base, depth=12, max_count=30000))
             except Exception as e:
                 _log(f'cloud scan error {base}: {e}')
         with _cloud_files_lock:
@@ -1856,32 +1924,377 @@ def cloud_cms_response(params, method, host):
 # ============================================================
 # v1.5: 小雅 PG 完整订阅（jsm.json 动态改写 + tokenm.json 凭证注入）
 # ============================================================
-def _pg_rewrite_ext(ext, base, host):
-    """jsm.json 站点 ext 相对路径 → 绝对 URL；tokenm.json → 动态接口（注入 UCI 凭证）"""
+# 小雅在线接口（无本地 pg 包时拉取）；相对路径改写到上游或本机 /pg/
+_PG_UPSTREAMS = [
+    ('https://www.252035.xyz/p/jsm.json', 'https://www.252035.xyz/p/'),
+    ('https://cnb.cool/fish2018/pg/-/git/raw/master/jsm.json',
+     'https://cnb.cool/fish2018/pg/-/git/raw/master/'),
+]
+_PG_DRIVE_LABELS = {
+    '/115': '115网盘', '/quark': '夸克网盘', '/uc': 'UC网盘', '/aliyun': '阿里云盘',
+    '/189': '天翼云盘', '/yidong': '移动云盘', '/123': '123云盘', '/baidu': '百度网盘',
+    '/thunder': '迅雷云盘', '/pikpak': 'PikPak',
+}
+_ALIST_READ_APIS = {
+    '/api/public/settings', '/api/fs/list', '/api/fs/get', '/api/fs/search',
+    '/api/public/path', '/api/public/search', '/api/fs/dirs',
+}
+_PG_TOKEN_RELS = ('lib/tokenm.json', 'lib/tokentemplate.json')
+_PG_JSM_TTL = 3600
+_PG_JSM_CACHE = {'ts': 0, 'jsm': None, 'asset_base': '', 'src': '', 'refreshing': False}
+_PG_ASSET_MAX = 20 * 1024 * 1024
+_PG_JSM_LOCK = threading.Lock()
+
+def _strip_jsonc(text):
+    """去掉 // 与 /* */ 注释，字符串内的 // 保留"""
+    out = []
+    i = 0
+    n = len(text)
+    in_str = False
+    esc = False
+    while i < n:
+        c = text[i]
+        if in_str:
+            out.append(c)
+            if esc:
+                esc = False
+            elif c == '\\':
+                esc = True
+            elif c == '"':
+                in_str = False
+            i += 1
+            continue
+        if c == '"':
+            in_str = True
+            out.append(c)
+            i += 1
+            continue
+        if c == '/' and i + 1 < n and text[i + 1] == '/':
+            i += 2
+            while i < n and text[i] not in '\n\r':
+                i += 1
+            continue
+        if c == '/' and i + 1 < n and text[i + 1] == '*':
+            i += 2
+            while i + 1 < n and not (text[i] == '*' and text[i + 1] == '/'):
+                i += 1
+            i += 2 if i + 1 < n else 1
+            continue
+        out.append(c)
+        i += 1
+    return ''.join(out)
+
+def _pg_parse_jsm(text):
+    """解析 jsm.json（兼容 JSONC / 尾逗号）"""
+    for candidate in (text, _strip_jsonc(text)):
+        try:
+            obj = json.loads(candidate)
+            if isinstance(obj, dict):
+                return obj
+        except Exception:
+            pass
+    stripped = re.sub(r',\s*([}\]])', r'\1', _strip_jsonc(text))
+    obj = json.loads(stripped)
+    if not isinstance(obj, dict):
+        raise ValueError('jsm.json is not an object')
+    return obj
+
+def _pg_rewrite_str(s, asset_base, host):
     tok_url = f'http://{host}/pg/tokenm.json'
-    def _rw_str(s):
-        s = s.strip()
-        if not s.startswith('./'):
-            return s
-        rel = s[2:]
-        if rel in ('lib/tokenm.json', 'lib/tokentemplate.json'):
-            return tok_url
-        return base + rel
-    if isinstance(ext, str):
-        return '$$$'.join(_rw_str(p) for p in ext.split('$$$'))
-    if isinstance(ext, dict):
-        out = {}
-        for k, v in ext.items():
-            if isinstance(v, str) and v.startswith('./'):
-                rel = v[2:]
-                if rel in ('lib/tokenm.json', 'lib/tokentemplate.json'):
-                    out[k] = tok_url
-                else:
-                    out[k] = base + rel
+    parts = []
+    for p in s.split('$$$'):
+        t = p.strip()
+        if t.startswith('./'):
+            rel = t[2:]
+            if rel in _PG_TOKEN_RELS:
+                parts.append(tok_url)
             else:
-                out[k] = v
-        return out
-    return ext
+                parts.append(asset_base + rel)
+        else:
+            parts.append(p)
+    return '$$$'.join(parts)
+
+def _pg_rewrite_tree(obj, asset_base, host):
+    """spider / api / ext / lives 里的 ./ 相对路径改成绝对 URL"""
+    if isinstance(obj, str):
+        return _pg_rewrite_str(obj, asset_base, host) if './' in obj else obj
+    if isinstance(obj, list):
+        return [_pg_rewrite_tree(x, asset_base, host) for x in obj]
+    if isinstance(obj, dict):
+        return {k: _pg_rewrite_tree(v, asset_base, host) for k, v in obj.items()}
+    return obj
+
+def _pg_load_local_jsm():
+    jsm_path = os.path.join(_PG_DIR, 'jsm.json')
+    if not os.path.isfile(jsm_path):
+        return None
+    try:
+        with open(jsm_path, 'r', encoding='utf-8') as f:
+            return _pg_parse_jsm(f.read())
+    except Exception as e:
+        _log(f'sub_pg local jsm load error: {e}')
+        return None
+
+def _pg_cache_file():
+    return os.path.join(_PERSIST_DIR, 'pg_jsm_cache.json')
+
+def _pg_save_disk_cache(jsm, asset_base, src):
+    try:
+        os.makedirs(_PERSIST_DIR, exist_ok=True)
+        payload = {'asset_base': asset_base, 'src': src, 'ts': int(time.time()), 'jsm': jsm}
+        tmp = _pg_cache_file() + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            json.dump(payload, f, ensure_ascii=False)
+        os.replace(tmp, _pg_cache_file())
+    except Exception as e:
+        _log(f'sub_pg disk cache write error: {e}')
+
+def _pg_load_disk_cache():
+    fp = _pg_cache_file()
+    if not os.path.isfile(fp):
+        return None, ''
+    try:
+        with open(fp, 'r', encoding='utf-8') as f:
+            payload = json.load(f)
+        jsm = payload.get('jsm')
+        base = payload.get('asset_base') or ''
+        if isinstance(jsm, dict) and isinstance(jsm.get('sites'), list) and len(jsm['sites']) >= 5:
+            return jsm, base
+    except Exception as e:
+        _log(f'sub_pg disk cache read error: {e}')
+    return None, ''
+
+def _pg_refresh_online_sync():
+    """阻塞拉取上游 jsm.json 并写入缓存"""
+    last_err = None
+    now = time.time()
+    for url, base in _PG_UPSTREAMS:
+        try:
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 mediahub-cms'})
+            with urllib.request.urlopen(req, timeout=12) as r:
+                raw = r.read()
+            if len(raw) < 200:
+                continue
+            jsm = _pg_parse_jsm(raw.decode('utf-8', 'replace'))
+            sites = jsm.get('sites')
+            if not isinstance(sites, list) or len(sites) < 5:
+                continue
+            with _PG_JSM_LOCK:
+                _PG_JSM_CACHE.update({'ts': now, 'jsm': jsm, 'asset_base': base, 'src': url})
+            _pg_save_disk_cache(jsm, base, url)
+            _log(f'sub_pg online jsm ok: {url} sites={len(sites)}')
+            return jsm, base
+        except Exception as e:
+            last_err = e
+            _log(f'sub_pg online jsm fail {url}: {e}')
+    if last_err:
+        _log(f'sub_pg online jsm all failed: {last_err}')
+    with _PG_JSM_LOCK:
+        if _PG_JSM_CACHE['jsm']:
+            return _PG_JSM_CACHE['jsm'], _PG_JSM_CACHE['asset_base']
+    return None, ''
+
+def _pg_kick_refresh():
+    with _PG_JSM_LOCK:
+        if _PG_JSM_CACHE.get('refreshing'):
+            return
+        _PG_JSM_CACHE['refreshing'] = True
+    def _run():
+        try:
+            _pg_refresh_online_sync()
+        except Exception as e:
+            _log(f'sub_pg refresh error: {e}')
+        finally:
+            with _PG_JSM_LOCK:
+                _PG_JSM_CACHE['refreshing'] = False
+    threading.Thread(target=_run, daemon=True).start()
+
+def _pg_fetch_online_jsm():
+    """优先内存/磁盘缓存立即返回，过期在后台刷新；仅首次无缓存时阻塞拉上游"""
+    now = time.time()
+    with _PG_JSM_LOCK:
+        jsm = _PG_JSM_CACHE['jsm']
+        base = _PG_JSM_CACHE['asset_base']
+        ts = _PG_JSM_CACHE['ts']
+    if jsm:
+        if now - ts >= _PG_JSM_TTL:
+            _pg_kick_refresh()
+        return jsm, base
+    disk, dbase = _pg_load_disk_cache()
+    if disk:
+        with _PG_JSM_LOCK:
+            if not _PG_JSM_CACHE['jsm']:
+                _PG_JSM_CACHE.update({'ts': now, 'jsm': disk, 'asset_base': dbase, 'src': 'disk'})
+        _pg_kick_refresh()
+        return disk, dbase
+    return _pg_refresh_online_sync()
+
+def _pg_asset_bases():
+    bases = []
+    with _PG_JSM_LOCK:
+        b = (_PG_JSM_CACHE.get('asset_base') or '').strip()
+    if b:
+        bases.append(b)
+    for _, b in _PG_UPSTREAMS:
+        if b not in bases:
+            bases.append(b)
+    return bases
+
+def _pg_local_path(rel):
+    fp = os.path.normpath(os.path.join(_PG_DIR, rel))
+    root = os.path.normpath(_PG_DIR)
+    if fp != root and not fp.startswith(root + os.sep):
+        return None
+    return fp
+
+def _pg_bytes_is_junk(data, rel=''):
+    """拒绝把 HTML 错误页 / 停车页当成 pg.jar 或 json 落盘"""
+    if not data:
+        return True
+    head = data.lstrip()[:96].lower()
+    if head.startswith(b'<!doctype') or head.startswith(b'<html') or head.startswith(b'<head'):
+        return True
+    if b'cloudns' in head or b'just a moment' in head:
+        return True
+    if rel.endswith('.json'):
+        try:
+            obj = json.loads(data.decode('utf-8', 'replace'))
+        except Exception:
+            return True
+        if not isinstance(obj, (dict, list)):
+            return True
+    return False
+
+def _pg_file_is_junk(fp, rel=''):
+    try:
+        if not os.path.isfile(fp):
+            return True
+        sz = os.path.getsize(fp)
+        if sz <= 0:
+            return True
+        with open(fp, 'rb') as f:
+            data = f.read(min(sz, _PG_ASSET_MAX if rel.endswith('.json') else 512))
+        return _pg_bytes_is_junk(data, rel)
+    except Exception:
+        return True
+
+def _pg_build_alist_ext(host, jar=False):
+    """本机 AList 挂载列表，给 PG 网盘|Alist[js/jar] 当 ext。server 走 8901（已反代 5244）。"""
+    server = f'http://{host}'
+    drives = [{
+        'name': '本地网盘',
+        'server': server,
+        'startPage': '/',
+        'showAll': True,
+        'search': True,
+    }]
+    seen = {'/'}
+    try:
+        bases = cloud_mount_bases()
+    except Exception:
+        bases = []
+    for mp in bases:
+        if not mp or mp in seen:
+            continue
+        seen.add(mp)
+        drives.append({
+            'name': _PG_DRIVE_LABELS.get(mp) or mp.strip('/'),
+            'server': server,
+            'startPage': mp,
+            'showAll': True,
+            'search': False,
+        })
+    if jar:
+        return {'vodPic': '', 'drives': drives}
+    return drives
+
+def _pg_ensure_asset(rel, timeout=60):
+    """本地缺失或内容是 HTML 垃圾时从上游拉 pg.jar / lib 到数据盘"""
+    fp = _pg_local_path(rel)
+    if not fp:
+        return None
+    if os.path.isfile(fp) and os.path.getsize(fp) > 0 and not _pg_file_is_junk(fp, rel):
+        return fp
+    os.makedirs(os.path.dirname(fp) or _PG_DIR, exist_ok=True)
+    for base in _pg_asset_bases():
+        url = base + rel
+        try:
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 mediahub-cms'})
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                ctype = (r.headers.get('Content-Type') or '').lower()
+                cl = r.headers.get('Content-Length')
+                if cl and cl.isdigit() and int(cl) > _PG_ASSET_MAX:
+                    continue
+                data = r.read(_PG_ASSET_MAX + 1)
+            if not data or len(data) > _PG_ASSET_MAX:
+                continue
+            if 'text/html' in ctype or _pg_bytes_is_junk(data, rel):
+                _log(f'sub_pg asset skip junk {url} {len(data)}B')
+                continue
+            tmp = fp + '.tmp'
+            with open(tmp, 'wb') as f:
+                f.write(data)
+            os.replace(tmp, fp)
+            _log(f'sub_pg asset saved {rel} {len(data)}B')
+            return fp
+        except Exception as e:
+            _log(f'sub_pg asset fail {url}: {e}')
+    return None
+
+def _pg_prefetch():
+    try:
+        _pg_fetch_online_jsm()
+        _pg_ensure_asset('pg.jar', timeout=90)
+    except Exception as e:
+        _log(f'sub_pg prefetch error: {e}')
+
+def _pg_mediahub_sites(host):
+    return [
+        {'key': 'mediahub_cms', 'name': 'CMS聚合影院', 'type': 1,
+         'api': f'http://{host}/cms.php/provide/vod',
+         'searchable': 1, 'quickSearch': 1, 'filterable': 1, 'changeable': 1},
+        {'key': 'mediahub_cloud', 'name': '网盘影视', 'type': 1,
+         'api': f'http://{host}/cloudcms.php/provide/vod',
+         'searchable': 1, 'quickSearch': 1, 'filterable': 1, 'changeable': 1},
+        {'key': 'mediahub_search', 'name': '网盘资源搜索', 'type': 1,
+         'api': f'http://{host}/cloudsearch.php/provide/vod',
+         'searchable': 1, 'quickSearch': 1, 'filterable': 0, 'changeable': 1},
+    ]
+
+def _pg_is_alist_keep(s):
+    """PG 站点只留 网盘|Alist[js/jar]，去掉分享站和其他采集源。"""
+    if not isinstance(s, dict):
+        return False
+    key = s.get('key') or ''
+    name = s.get('name') or ''
+    blob = key + ' ' + name
+    if '分享' in blob or 'Share' in blob or 'share' in key:
+        return False
+    if key in ('AList', 'drpy_js_Alist'):
+        return True
+    return ('Alist' in name) or ('AList' in name) or ('Alist' in key) or ('AList' in key)
+
+def _pg_mediahub_lives(host):
+    return [
+        {'name': '国内直播(央视频道)', 'type': 0,
+         'url': f'http://{host}/live/ytv.m3u',
+         'epg': f'http://{host}/live/epg'},
+        {'name': '国内直播(卫视)', 'type': 0,
+         'url': f'http://{host}/live/ws.m3u',
+         'epg': f'http://{host}/live/epg'},
+    ]
+
+def _pg_public_lives(lives):
+    """丢掉依赖 PG 本地代理 127.0.0.1:10079/35456 的直播源"""
+    out = []
+    for lv in lives or []:
+        if not isinstance(lv, dict):
+            continue
+        url = str(lv.get('url') or '')
+        if not url or '127.0.0.1' in url or 'localhost' in url:
+            continue
+        out.append(lv)
+    return out
 
 def _build_tokenm():
     """动态 tokenm.json：模板 + UCI 多网盘凭证注入（PG 网盘站免手填 token）"""
@@ -2025,47 +2438,25 @@ class CMSHandler(BaseHTTPRequestHandler):
 
 
     def _build_sub_pg_full(self, host):
-        """v1.5: 小雅 PG 完整订阅（jsm.json 79 站点 + pg.jar spider）+ mediahub 自有源合并
-        需 <data_dir>/pg/ 部署小雅 PG 资源（jsm.json/pg.jar/lib/js）；未部署自动回退精简版"""
-        jsm_path = os.path.join(_PG_DIR, 'jsm.json')
-        if not os.path.isfile(jsm_path):
-            return self._build_sub_pg(host)
-        try:
-            with open(jsm_path, 'r', encoding='utf-8') as f:
-                jsm = json.load(f)
-        except Exception as e:
-            _log(f'sub_pg jsm load error: {e}')
-            return self._build_sub_pg(host)
-        base = f'http://{host}/pg/'
-        sp = jsm.get('spider')
-        if isinstance(sp, str) and sp.startswith('./'):
-            jsm['spider'] = base + sp[2:]
-        for site in jsm.get('sites', []):
-            if 'ext' in site:
-                try:
-                    site['ext'] = _pg_rewrite_ext(site['ext'], base, host)
-                except Exception:
-                    pass
-        # 追加 mediahub 自有源（CMS聚合/网盘影视/网盘搜索 + 直播）
-        jsm.setdefault('sites', []).extend([
-            {'key': 'mediahub_cms', 'name': 'CMS聚合影院', 'type': 1,
-             'api': f'http://{host}/cms.php/provide/vod',
-             'searchable': 1, 'quickSearch': 1, 'filterable': 1, 'changeable': 1},
-            {'key': 'mediahub_cloud', 'name': '网盘影视', 'type': 1,
-             'api': f'http://{host}/cloudcms.php/provide/vod',
-             'searchable': 1, 'quickSearch': 1, 'filterable': 1, 'changeable': 1},
-            {'key': 'mediahub_search', 'name': '网盘资源搜索', 'type': 1,
-             'api': f'http://{host}/cloudsearch.php/provide/vod',
-             'searchable': 1, 'quickSearch': 1, 'filterable': 0, 'changeable': 1},
-        ])
-        jsm.setdefault('lives', []).extend([
-            {'name': '国内直播(央视频道)', 'type': 0,
-             'url': f'http://{host}/live/ytv.m3u',
-             'epg': f'http://{host}/live/epg'},
-            {'name': '国内直播(卫视)', 'type': 0,
-             'url': f'http://{host}/live/ws.m3u',
-             'epg': f'http://{host}/live/epg'},
-        ])
+        """小雅 PG 完整订阅：本地 pg 包优先，否则拉在线 jsm.json，再合并 mediahub 自有源"""
+        local = _pg_load_local_jsm()
+        if local:
+            jsm = local
+        else:
+            online, _unused = _pg_fetch_online_jsm()
+            if not online:
+                return self._build_sub_pg(host)
+            jsm = json.loads(json.dumps(online))
+        asset_base = f'http://{host}/pg/'
+        jsm = _pg_rewrite_tree(jsm, asset_base, host)
+        own = _pg_mediahub_sites(host)
+        own_keys = {s['key'] for s in own}
+        pg_sites = [s for s in (jsm.get('sites') or [])
+                    if isinstance(s, dict) and s.get('key') not in own_keys and _pg_is_alist_keep(s)]
+        jsm['sites'] = own + pg_sites
+        jsm['lives'] = _pg_mediahub_lives(host)
+        jsm.pop('doh', None)
+        jsm['wallpaper'] = ''
         return jsm
 
     def _serve_pg_static(self, path, host):
@@ -2073,6 +2464,9 @@ class CMSHandler(BaseHTTPRequestHandler):
         rel = path[4:] if path.startswith('/pg/') else ''
         if not rel or rel in ('tokenm.json', 'tokentemplate.json'):
             self._send_json(_build_tokenm())
+            return True
+        if rel in ('js/alist.json', 'lib/alistjar.json'):
+            self._send_json(_pg_build_alist_ext(host, jar=rel.endswith('alistjar.json')), cache_sec=60)
             return True
         if '..' in rel.split('/'):
             self._send_json({'code': 403, 'message': 'forbidden'}, 403)
@@ -2082,18 +2476,23 @@ class CMSHandler(BaseHTTPRequestHandler):
         if fp != root and not fp.startswith(root + os.sep):
             self._send_json({'code': 403, 'message': 'forbidden'}, 403)
             return True
-        if not os.path.isfile(fp):
+        if not os.path.isfile(fp) or os.path.getsize(fp) <= 0 or _pg_file_is_junk(fp, rel):
+            fp = _pg_ensure_asset(rel)
+        if not fp or not os.path.isfile(fp):
             self._send_json({'code': 404, 'message': f'not found: {rel}'}, 404)
             return True
         try:
             with open(fp, 'rb') as f:
                 data = f.read()
-            ct = mimetypes.guess_type(fp)[0] or 'application/octet-stream'
+            if rel.endswith('.jar'):
+                ct = 'application/java-archive'
+            else:
+                ct = mimetypes.guess_type(fp)[0] or 'application/octet-stream'
             self.send_response(200)
             self.send_header('Content-Type', ct)
             self.send_header('Content-Length', str(len(data)))
             self.send_header('Access-Control-Allow-Origin', '*')
-            self.send_header('Cache-Control', 'public, max-age=3600')
+            self.send_header('Cache-Control', 'public, max-age=86400')
             self.end_headers()
             if self.command != 'HEAD':
                 self.wfile.write(data)
@@ -2225,6 +2624,13 @@ class CMSHandler(BaseHTTPRequestHandler):
             self._handle_play(method)
             return
 
+        # Alist[jar]/播放器常打 /p/ /d/；8901 原样转发会把 AList JSON 500 当片源
+        if path.startswith('/p/') or path.startswith('/d/'):
+            q = ('?' + parsed.query) if parsed.query else ''
+            self.path = '/play' + path[2:] + q
+            self._handle_play(method)
+            return
+
         # /tvbox.json
         if path == '/tvbox.json':
             self._send_tvbox_json()
@@ -2276,9 +2682,9 @@ class CMSHandler(BaseHTTPRequestHandler):
 
 
         # /sub/pg — v1.5 小雅完整订阅（PG spider jar + 79 站点 + mediahub 自有源）
-        #   需 <data_dir>/pg/ 部署小雅 PG 资源；未部署自动回退精简版
+        #   本地 <data_dir>/pg/ 优先；否则拉取小雅在线 jsm.json；都失败才回退精简版
         if path == '/sub/pg':
-            self._send_json(self._build_sub_pg_full(host), cache_sec=60)
+            self._send_json(self._build_sub_pg_full(host), cache_sec=300)
             return
 
         # /pg/* — v1.5 小雅 PG 静态资源（pg.jar/lib/js）+ tokenm.json 动态注入多网盘凭证
@@ -2687,7 +3093,7 @@ class CMSHandler(BaseHTTPRequestHandler):
             _log('115 qrcode API error: ' + str(e))
             self._send_json({'code': 500, 'message': '二维码接口错误: ' + str(e)})
 
-    def _stream_url(self, method, url, rng, timeout=8, ua=None, hops=0):
+    def _stream_url(self, method, url, rng, timeout=20, ua=None, hops=0):
         if hops > 4 or not (url or '').startswith('http'):
             return False
         try:
@@ -2717,6 +3123,14 @@ class CMSHandler(BaseHTTPRequestHandler):
             if resp.status >= 400:
                 conn.close()
                 return False
+            peek = b''
+            if method != 'HEAD':
+                peek = resp.read(8)
+                if peek.lstrip()[:1] == b'{':
+                    extra = resp.read(400)
+                    conn.close()
+                    _log('play upstream json %s %s' % (url[:90], (peek + extra)[:180]))
+                    return False
             if conn.sock:
                 conn.sock.settimeout(300)
             self.send_response(resp.status)
@@ -2733,6 +3147,8 @@ class CMSHandler(BaseHTTPRequestHandler):
             self.send_header('Cache-Control', 'no-store')
             self.end_headers()
             if method != 'HEAD':
+                if peek:
+                    self.wfile.write(peek)
                 while True:
                     chunk = resp.read(256 * 1024)
                     if not chunk:
@@ -2744,6 +3160,12 @@ class CMSHandler(BaseHTTPRequestHandler):
             _log(f'play stream error: {e}')
             return False
 
+    def _send_redirect(self, loc):
+        self.send_response(302)
+        self.send_header('Location', loc)
+        self.send_header('Cache-Control', 'no-store')
+        self.end_headers()
+
     def _handle_play(self, method):
         parsed = urllib.parse.urlparse(self.path)
         fs_path = urllib.parse.unquote(parsed.path[5:] or '/')
@@ -2752,12 +3174,34 @@ class CMSHandler(BaseHTTPRequestHandler):
         qs = urllib.parse.parse_qs(parsed.query)
         sign = (qs.get('sign', [''])[0] or '').strip()
         rng = self.headers.get('Range') or ''
+        if _mount_route(fs_path) == '302':
+            ru = ''
+            try:
+                token = _get_ol_admin_token()
+                if token:
+                    req = urllib.request.Request(
+                        'http://127.0.0.1:%d/api/fs/get' % CFG['ol_port'],
+                        data=json.dumps({'path': fs_path}).encode(),
+                        headers={'Content-Type': 'application/json', 'Authorization': token},
+                        method='POST')
+                    with urllib.request.urlopen(req, timeout=12) as resp:
+                        d = json.loads(resp.read().decode('utf-8', errors='replace'))
+                    ru = (d.get('data') or {}).get('raw_url') or ''
+            except Exception as e:
+                _log(f'play 302 fs/get error: {e}')
+            if ru.startswith('http') and '127.0.0.1' not in ru and '/play/' not in ru:
+                _log('play 302 %s -> %s' % (fs_path[:60], urllib.parse.urlparse(ru).netloc))
+                self._send_redirect(ru)
+                return
         alist_p = '/p' + urllib.parse.quote(fs_path, safe='/')
         if sign:
             alist_p += '?sign=' + urllib.parse.quote(sign)
         local = 'http://127.0.0.1:%d%s' % (CFG['ol_port'], alist_p)
-        if self._stream_url(method, local, rng, timeout=8, ua=_GRAB_UA):
-            return
+        for _try in range(3):
+            if self._stream_url(method, local, rng, timeout=60, ua=_GRAB_UA):
+                return
+            if _try < 2:
+                time.sleep(0.5)
         ru = ''
         try:
             token = _get_ol_admin_token()
@@ -2775,12 +3219,12 @@ class CMSHandler(BaseHTTPRequestHandler):
                     sign = info.get('sign') or ''
         except Exception as e:
             _log(f'play fs/get error: {e}')
-        if ru.startswith('http') and self._stream_url(method, ru, rng, timeout=8, ua=_GRAB_UA):
+        if ru.startswith('http') and '/play/' not in ru and '127.0.0.1' not in ru and self._stream_url(method, ru, rng, timeout=60, ua=_GRAB_UA):
             return
         if sign:
             alist_p = '/p' + urllib.parse.quote(fs_path, safe='/') + '?sign=' + urllib.parse.quote(sign)
             local = 'http://127.0.0.1:%d%s' % (CFG['ol_port'], alist_p)
-            if self._stream_url(method, local, rng, timeout=8, ua=_GRAB_UA):
+            if self._stream_url(method, local, rng, timeout=60, ua=_GRAB_UA):
                 return
         self._send_json({'error': 'play upstream failed'}, 502)
 
@@ -2910,26 +3354,70 @@ class CMSHandler(BaseHTTPRequestHandler):
             val = self.headers.get(key)
             if val:
                 fwd_headers[key] = val
+        path_only = urllib.parse.urlparse(self.path).path.rstrip('/') or '/'
+        media_path = urllib.parse.urlparse(self.path).path or '/'
+        if media_path.startswith('/p/') or media_path.startswith('/d/'):
+            fwd_headers.pop('If-None-Match', None)
+            fwd_headers.pop('If-Modified-Since', None)
+        if path_only in _ALIST_READ_APIS and not fwd_headers.get('Authorization'):
+            tok = _get_ol_admin_token()
+            if tok:
+                fwd_headers['Authorization'] = tok
         fwd_headers['Host'] = f'127.0.0.1:{CFG["ol_port"]}'
         try:
             conn = http.client.HTTPConnection('127.0.0.1', CFG['ol_port'], timeout=120)
             conn.request(method, self.path, body=body, headers=fwd_headers)
             resp = conn.getresponse()
+            req_host = self.headers.get('Host', '')
+            local_mark = f'127.0.0.1:{CFG["ol_port"]}'
+            buf = None
+            if path_only in _ALIST_READ_APIS and method != 'HEAD':
+                buf = resp.read(4 * 1024 * 1024)
+                if req_host and local_mark.encode() in buf:
+                    buf = buf.replace(local_mark.encode(), req_host.encode())
+                if path_only == '/api/fs/get' and buf and req_host:
+                    try:
+                        obj = json.loads(buf.decode('utf-8', errors='replace'))
+                        data = obj.get('data')
+                        if isinstance(data, dict):
+                            req_path = ''
+                            if body:
+                                try:
+                                    reqj = json.loads(body.decode('utf-8', errors='replace'))
+                                    if isinstance(reqj, dict):
+                                        req_path = reqj.get('path') or ''
+                                except Exception:
+                                    req_path = ''
+                            fspath = data.get('path') or data.get('virtual_path') or req_path
+                            ru = data.get('raw_url') or ''
+                            new = _alist_client_play_url(req_host, fspath, ru)
+                            if new and new != ru:
+                                data['raw_url'] = new
+                                buf = json.dumps(obj, ensure_ascii=False).encode('utf-8')
+                    except Exception as e:
+                        _log(f'fs/get rewrite error: {e}')
             self.send_response(resp.status)
             for key, val in resp.getheaders():
                 low = key.lower()
                 if low in ('transfer-encoding', 'connection', 'host'):
                     continue
+                if buf is not None and low == 'content-length':
+                    continue
                 if low == 'location':
-                    val = val.replace(f'127.0.0.1:{CFG["ol_port"]}', self.headers.get('Host', ''))
+                    val = val.replace(local_mark, req_host)
                 self.send_header(key, val)
+            if buf is not None:
+                self.send_header('Content-Length', str(len(buf)))
             self.end_headers()
             if method != 'HEAD':
-                while True:
-                    chunk = resp.read(256 * 1024)
-                    if not chunk:
-                        break
-                    self.wfile.write(chunk)
+                if buf is not None:
+                    self.wfile.write(buf)
+                else:
+                    while True:
+                        chunk = resp.read(256 * 1024)
+                        if not chunk:
+                            break
+                        self.wfile.write(chunk)
             conn.close()
         except Exception as e:
             _log(f'proxy error: {e}')
@@ -2954,11 +3442,15 @@ def sync_uci_mounts():
             except Exception:
                 add = {}
             mounts[s.get('mount_path')] = {'id': s.get('id'), 'driver': s.get('driver'),
-                                           'cookie': add.get('cookie', ''), 'addition': add}
+                                           'cookie': add.get('cookie', ''), 'addition': add,
+                                           'web_proxy': bool(s.get('web_proxy')),
+                                           'webdav_policy': s.get('webdav_policy') or ''}
         changed = 0
         for d in CLOUD_DRIVE_DEFS:
             cred = (uci_get('mediahub.main.' + d['cred']) or '').strip()
             if not cred:
+                continue
+            if d['key'] == '115' and (uci_get('mediahub.main.token_115_open') or '').strip():
                 continue
             m = mounts.get(d['mount'])
             need = False
@@ -2966,9 +3458,17 @@ def sync_uci_mounts():
                 need = True
             elif (m.get('driver') or '') != d['driver']:
                 need = True
-            elif d['kind'] == 'cookie' and m.get('cookie') != cred:
+            elif d['kind'] == 'cookie' and _cookie_core(m.get('cookie')) != _cookie_core(cred):
                 need = True
             elif d['kind'] == 'userpass' and (m.get('addition') or {}).get('username') != cred.split(':', 1)[0]:
+                need = True
+            elif d['kind'] == 'token' and ((m.get('addition') or {}).get('refresh_token') or (m.get('addition') or {}).get('authorization') or '') != cred:
+                need = True
+            elif bool(m.get('web_proxy')) != bool(d['web_proxy']):
+                need = True
+            elif (m.get('webdav_policy') or '') != d['webdav_policy']:
+                need = True
+            elif d['key'] in ('quark', 'uc') and int((m.get('addition') or {}).get('down_concurrency') or 0) != 0:
                 need = True
             if not need:
                 continue
@@ -2980,9 +3480,17 @@ def sync_uci_mounts():
                 add = d['addition'](parts[0], parts[1])
             else:
                 add = d['addition'](cred)
+                if m and d['kind'] == 'cookie':
+                    old_ck = m.get('cookie') or ''
+                    if old_ck and _cookie_core(old_ck) == _cookie_core(cred):
+                        add['cookie'] = old_ck
             body = {'mount_path': d['mount'], 'driver': d['driver'],
                     'addition': json.dumps(add), 'web_proxy': d['web_proxy'],
                     'webdav_policy': d['webdav_policy'], 'cache_expiration': 30}
+            if m and m.get('id') and (m.get('driver') or '') != d['driver']:
+                ol_api('/api/admin/storage/delete', {'id': m['id']})
+                _log(f'mount sync: {d["mount"]} dropped {m.get("driver")} for {d["driver"]}')
+                m = None
             if m and m.get('id'):
                 body['id'] = m['id']
                 rr = ol_api('/api/admin/storage/update', body)
@@ -3362,6 +3870,9 @@ def main():
 
     # 启动海报补全线程（先回收已有 thumbs，再刮削/截帧补缺封面）
     threading.Thread(target=_poster_fill_worker, daemon=True).start()
+
+    # 后台预热小雅 PG：jsm 缓存 + pg.jar，避免 APP 拉取配置时当场下 4MB jar
+    threading.Thread(target=_pg_prefetch, daemon=True).start()
 
     # SIGTERM 优雅退出：procd stop/restart 发 SIGTERM，默认直接杀进程会丢
     # 内存中未到保存点的刮削结果；注册 handler 先保存 poster_extra 再退出

@@ -11,101 +11,150 @@ end
 -%>
 <%+header%>
 <style>
+:root{
+  --nq-primary:#4a90d9;--nq-primary-dark:#357abd;--nq-primary-bg:#e3f2fd;
+  --nq-success:#2e7d32;--nq-success-bg:#e8f5e9;--nq-success-border:#c8e6c9;
+  --nq-error:#c62828;--nq-error-bg:#ffebee;--nq-error-border:#ffcdd2;
+  --nq-card:#fff;--nq-border:#e2e8f0;--nq-text:#334155;--nq-muted:#64748b;
+  --nq-label-bg:#f8fafc;--nq-terminal-bg:#1a1a2e;--nq-terminal-border:#2d2d44;
+}
 .nq-wrap,.nq-wrap *{box-sizing:border-box}
-.nq-wrap{max-width:1080px;width:100%;margin:0 auto 28px;padding:0 2px;font-family:ui-sans-serif,system-ui,sans-serif;color:#1b2420;overflow-x:hidden}
-.nq-hero{background:linear-gradient(135deg,#16332a 0%,#1b2420 58%,#24362f 100%);color:#e8f0ea;padding:24px 26px;border-radius:14px;margin-bottom:14px;position:relative;overflow:hidden}
-.nq-hero:after{content:"";position:absolute;right:-40px;top:-30px;width:160px;height:160px;border-radius:50%;background:rgba(88,160,122,.18)}
-.nq-hero h2{margin:0 0 6px;font-size:22px;font-weight:650;letter-spacing:.03em}
-.nq-hero p{margin:0;color:#b7c7bb;font-size:13px;line-height:1.6;max-width:640px}
-.nq-hero p{max-width:100%}
-.nq-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(140px,100%),1fr));gap:10px;margin:14px 0}
-.nq-card{background:#fff;border:1px solid #d7ddd8;border-radius:12px;padding:12px 14px}
-.nq-card b{display:block;font-size:11px;color:#6b776f;letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px}
-.nq-card span{font-size:15px;color:#1b2420;word-break:break-all}
-.nq-box{background:#fff;border:1px solid #d7ddd8;border-radius:12px;padding:6px 18px 14px;margin-bottom:12px}
-.nq-box h3{margin:12px 0 4px;font-size:15px;font-weight:650}
-.nq-lead{margin:0 0 8px;font-size:12px;color:#5c675f;line-height:1.5}
-.nq-item{display:flex;gap:14px;align-items:flex-start;justify-content:space-between;padding:12px 0;border-top:1px solid #eef2ef}
+.nq-wrap{max-width:1080px;width:100%;margin:0 auto 28px;padding:0 2px;color:var(--nq-text);overflow-x:hidden}
+.nq-page-header{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+.nq-page-header h2{margin:0;font-size:20px;color:#1e293b}
+.nq-ver-badge{display:inline-block;background:linear-gradient(135deg,var(--nq-primary),var(--nq-primary-dark));color:#fff;font-size:12px;font-weight:600;padding:3px 12px;border-radius:12px;box-shadow:0 2px 6px rgba(74,144,217,.25);line-height:1.6}
+.nq-hero{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--nq-border);border:1px solid var(--nq-border);border-radius:12px;overflow:hidden;margin-bottom:12px}
+.nq-hero-cell{background:var(--nq-card);padding:14px 18px;display:flex;flex-direction:column;justify-content:center;gap:8px;min-height:64px}
+.nq-hero-label{font-size:12px;color:var(--nq-muted);letter-spacing:.3px}
+.nq-hero-value{display:flex;align-items:center;gap:8px;min-height:26px;font-size:15px;font-weight:600;color:var(--nq-text);word-break:break-all}
+.nq-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:8px}
+.nq-metric{background:var(--nq-card);border:1px solid var(--nq-border);border-radius:12px;padding:14px 18px;text-align:center;transition:box-shadow .2s,border-color .2s}
+.nq-metric:hover{box-shadow:0 2px 12px rgba(0,0,0,.06);border-color:#cbd5e1}
+.nq-metric-num{font-size:22px;font-weight:700;color:var(--nq-primary);line-height:1.3;word-break:break-all}
+.nq-metric-label{font-size:12px;color:var(--nq-muted);margin-top:4px;letter-spacing:.3px}
+.nq-badge{display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:20px;font-size:13px;font-weight:600;border:1px solid #e0e0e0;background:#f5f5f5;color:#888}
+.nq-badge::before{content:'';display:inline-block;width:7px;height:7px;border-radius:50%;flex-shrink:0;background:#bbb}
+.nq-badge-ok{background:var(--nq-success-bg);color:var(--nq-success);border-color:var(--nq-success-border)}
+.nq-badge-ok::before{background:#4caf50}
+.nq-badge-err{background:var(--nq-error-bg);color:var(--nq-error);border-color:var(--nq-error-border)}
+.nq-badge-err::before{background:#f44336}
+.nq-section{background:var(--nq-card);border:1px solid var(--nq-border);border-radius:10px;margin-bottom:16px;overflow:hidden}
+.nq-section-title-bar{font-size:14px;font-weight:600;color:#475569;padding:12px 18px;border-bottom:1px solid var(--nq-border);background:var(--nq-label-bg);display:flex;align-items:center;gap:8px}
+.nq-section-title-bar::before{content:'';display:inline-block;width:4px;height:14px;background:var(--nq-primary);border-radius:2px}
+.nq-section-body{padding:6px 18px 14px}
+.nq-lead{margin:8px 0;font-size:12px;color:#94a3b8;line-height:1.5}
+.nq-item{display:flex;gap:14px;align-items:flex-start;justify-content:space-between;padding:12px 0;border-top:1px solid var(--nq-border)}
 .nq-item > div{min-width:0;flex:1}
-.nq-item b{display:block;font-size:14px;font-weight:600;margin-bottom:3px}
-.nq-item p{margin:0;font-size:12px;color:#5c675f;line-height:1.45;overflow-wrap:anywhere}
+.nq-item b{display:block;font-size:14px;font-weight:600;margin-bottom:3px;color:var(--nq-text)}
+.nq-item p{margin:0;font-size:12px;color:var(--nq-muted);line-height:1.45;overflow-wrap:anywhere}
 .nq-wrap button.nq-sw{
   appearance:none;-webkit-appearance:none;position:relative;
-  width:44px!important;height:26px!important;min-width:44px!important;flex:0 0 44px;
-  margin:1px 0 0!important;padding:0!important;border:0!important;border-radius:13px!important;
-  background:#c5cdc8!important;box-shadow:none!important;line-height:0!important;cursor:pointer;
+  width:42px!important;height:22px!important;min-width:42px!important;flex:0 0 42px;
+  margin:1px 0 0!important;padding:0!important;border:0!important;border-radius:22px!important;
+  background:#cbd5e1!important;box-shadow:none!important;line-height:0!important;cursor:pointer;
 }
 .nq-wrap button.nq-sw:after{
-  content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;
-  background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.16);transition:left .15s;
+  content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;
+  background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2);transition:transform .2s;
 }
-.nq-wrap button.nq-sw.on{background:#2f6f4e!important}
-.nq-wrap button.nq-sw.on:after{left:21px}
+.nq-wrap button.nq-sw.on{background:var(--nq-primary)!important}
+.nq-wrap button.nq-sw.on:after{transform:translateX(20px);left:3px}
 .nq-sub.is-off{opacity:.42;pointer-events:none}
 .nq-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(160px,100%),1fr));gap:10px;padding:8px 0 4px}
-.nq-fields label,.nq-field{display:flex;flex-direction:column;gap:5px;font-size:12px;color:#6b776f}
+.nq-fields label,.nq-field{display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--nq-muted)}
 .nq-wrap .nq-fields input,.nq-wrap .nq-fields select,.nq-wrap .nq-field input,.nq-wrap .nq-field select,.nq-wrap .nq-field textarea{
   width:100%!important;max-width:none!important;height:auto!important;min-height:34px;
-  border:1px solid #c5cdc8!important;border-radius:8px!important;padding:8px 10px!important;
-  font-size:13px!important;color:#1b2420;background:#fff!important;line-height:1.4!important;
+  border:1px solid var(--nq-border)!important;border-radius:6px!important;padding:7px 10px!important;
+  font-size:13px!important;color:var(--nq-text);background:#fff!important;line-height:1.4!important;
 }
-.nq-field textarea{min-height:72px!important;resize:vertical;font-family:ui-monospace,monospace}
+.nq-wrap .nq-fields input:focus,.nq-wrap .nq-fields select:focus,.nq-wrap .nq-field textarea:focus{
+  border-color:var(--nq-primary)!important;box-shadow:0 0 0 3px rgba(74,144,217,.1);outline:none;
+}
+.nq-field textarea{min-height:72px!important;resize:vertical;font-family:Consolas,Monaco,monospace}
 .nq-hide{display:none}
-.nq-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:4px 0 12px}
-.nq-wrap .nq-btn{border:0;border-radius:8px;padding:9px 16px;cursor:pointer;font-size:13px;line-height:1.2}
-.nq-wrap .nq-btn-pri{background:#2f6f4e!important;color:#fff!important;border:0!important}
-.nq-wrap .nq-btn-pri:disabled{opacity:.6;cursor:default}
-.nq-msg{font-size:12px;color:#2f6f4e}
-.nq-msg.bad{color:#8a3b16}
-.nq-log{height:220px;overflow:auto;background:#121816;color:#c8d6cc;padding:10px 12px;border-radius:8px;font:12px/1.45 ui-monospace,monospace;white-space:pre-wrap;margin:8px 0 12px}
-.nq-ok{color:#2f6f4e} .nq-bad{color:#8a3b16}
+.nq-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0 4px}
+.nq-wrap .nq-btn{border:1px solid var(--nq-border);border-radius:6px;padding:7px 16px;cursor:pointer;font-size:13px;line-height:1.2;background:#fff;color:var(--nq-text);transition:all .2s}
+.nq-wrap .nq-btn-pri{background:var(--nq-primary)!important;color:#fff!important;border-color:var(--nq-primary)!important}
+.nq-wrap .nq-btn-pri:hover{background:var(--nq-primary-dark)!important}
+.nq-wrap .nq-btn-pri:disabled{opacity:.5;cursor:default}
+.nq-msg{font-size:12px;color:var(--nq-success)}
+.nq-msg.bad{color:var(--nq-error)}
+.nq-log{height:220px;overflow:auto;background:var(--nq-terminal-bg);color:#a5f3fc;padding:14px;border-radius:10px;font:13px/1.6 Consolas,Monaco,monospace;white-space:pre-wrap;margin:8px 0 4px;border:1px solid var(--nq-terminal-border)}
+.nq-ok{color:var(--nq-success)} .nq-bad{color:var(--nq-error)}
 .nq-table-wrap{overflow-x:auto;margin:8px 0 4px}
-.nq-mono{font-family:ui-monospace,monospace;font-size:12px}
-.nq-wrap .nq-btn-sm{padding:6px 10px;font-size:12px;border-radius:6px;margin:0 4px 0 0}
-.nq-wrap .nq-btn-ghost{background:#eef2ef!important;color:#1b2420!important;border:0!important}
+.nq-mono{font-family:Consolas,Monaco,monospace;font-size:12px;color:var(--nq-muted)}
+.nq-wrap .nq-btn-sm{padding:6px 12px;font-size:12px;border-radius:6px;margin:0}
+.nq-wrap .nq-btn-ghost{background:#fff!important;color:var(--nq-text)!important;border:1px solid var(--nq-border)!important}
+.nq-wrap .nq-btn-ghost:hover{background:#f0f7ff!important;border-color:var(--nq-primary)!important}
 .nq-add{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(140px,100%),1fr));gap:8px;align-items:end;margin-top:8px}
-.nq-add label{display:flex;flex-direction:column;gap:5px;font-size:12px;color:#6b776f}
-.nq-wrap .nq-add input{width:100%!important;min-height:34px;border:1px solid #c5cdc8!important;border-radius:8px!important;padding:8px 10px!important;font-size:13px!important}
-.nq-devs{display:flex;flex-direction:column;gap:8px;margin:8px 0 4px}
-.nq-dev{border:1px solid #eef2ef;border-radius:10px;padding:10px 12px}
-.nq-dev-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
-.nq-dev-top b{display:block;font-size:13px}
-.nq-dev-meta{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:#5c675f;margin:6px 0}
-.nq-dev-act{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-.nq-wrap .nq-dev input.nq-ip{flex:1 1 120px;min-width:0!important;width:auto!important;max-width:100%!important;min-height:30px!important;padding:5px 8px!important;font-size:12px!important;border:1px solid #c5cdc8!important;border-radius:8px!important}
-.nq-pill{font-size:11px;color:#2f6f4e;background:#eef2ef;border-radius:999px;padding:2px 8px;white-space:nowrap;flex:0 0 auto}
+.nq-add label{display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--nq-muted)}
+.nq-wrap .nq-add input{width:100%!important;min-height:34px;border:1px solid var(--nq-border)!important;border-radius:6px!important;padding:7px 10px!important;font-size:13px!important}
+.nq-devs{display:flex;flex-direction:column;gap:8px;margin:8px 0 4px;overflow-x:auto}
+.nq-dev{display:grid;grid-template-columns:minmax(140px,1.6fr) 170px 128px 148px max-content max-content max-content max-content;align-items:center;column-gap:16px;width:100%;border:1px solid var(--nq-border);border-radius:10px;padding:10px 16px;background:var(--nq-card);box-sizing:border-box;min-width:860px}
+.nq-dev-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:600;color:var(--nq-text)}
+.nq-dev-mac,.nq-dev-ip,.nq-remain{white-space:nowrap;font-size:12px;color:var(--nq-muted)}
+.nq-dev-ip{color:var(--nq-text);font-size:13px}
+.nq-wrap .nq-dev input.nq-ip{width:100%!important;min-width:0!important;max-width:none!important;min-height:32px!important;padding:5px 8px!important;font-size:12px!important;border:1px solid var(--nq-border)!important;border-radius:6px!important}
+.nq-dev .nq-btn{white-space:nowrap}
+.nq-dev .nq-btn:disabled{opacity:.35;cursor:default}
+.nq-remain{color:var(--nq-muted);text-align:right}
+.nq-pill{font-size:11px;color:var(--nq-primary);background:var(--nq-primary-bg);border-radius:999px;padding:2px 8px;white-space:nowrap;flex:0 0 auto}
+.nq-cpage{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:8px 0 4px;font-size:12px;color:var(--nq-muted)}
+.nq-cpage .nq-pbtns{display:flex;gap:4px;flex-wrap:wrap}
+.nq-wrap .nq-cpage button{border:1px solid var(--nq-border);background:#fff;border-radius:6px;min-width:32px;height:30px;padding:0 8px;cursor:pointer;font-size:12px;color:var(--nq-text)}
+.nq-wrap .nq-cpage button.on{border-color:var(--nq-primary);background:var(--nq-primary-bg);color:var(--nq-primary);font-weight:600}
+.nq-wrap .nq-cpage button:disabled{opacity:.4;cursor:default}
+@media (max-width:720px){
+  .nq-hero{grid-template-columns:repeat(2,1fr)}
+}
 @media (max-width:640px){
   .nq-wrap{padding:0 4px;margin-bottom:16px}
-  .nq-hero{padding:16px 14px;border-radius:12px}
-  .nq-hero h2{font-size:18px}
-  .nq-hero p{font-size:12px}
-  .nq-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
-  .nq-card{padding:10px 12px}
-  .nq-box{padding:4px 12px 12px;overflow:hidden}
+  .nq-section-body{padding:4px 12px 12px}
   .nq-item{gap:10px}
   .nq-fields,.nq-add{grid-template-columns:1fr}
   .nq-bar .nq-btn-pri{width:100%}
   .nq-add .nq-btn{width:100%}
-  .nq-log{height:180px;font-size:11px}
+  .nq-log{height:180px;font-size:12px}
 }
 </style>
 <div class="nq-wrap">
-  <div class="nq-hero">
-    <h2>系统优化</h2>
-    <p>转发、DHCP、DNS 放在一页。保存后立即生效，不断 PPPoE，不改 wan2 / IPTV。DNS 默认跟随运营商。</p>
+  <div class="nq-page-header">
+    <h2>网络优化</h2>
+    <span class="nq-ver-badge">v1.0.16</span>
   </div>
-  <div class="nq-grid">
-    <div class="nq-card"><b>LAN</b><span id="nq-lan">-</span></div>
-    <div class="nq-card"><b>DHCP</b><span id="nq-dhcpst">-</span></div>
-    <div class="nq-card"><b>租约</b><span id="nq-leases">-</span></div>
-    <div class="nq-card"><b>DNS</b><span id="nq-dnsst">-</span></div>
-    <div class="nq-card"><b>转发</b><span id="nq-fwdst">-</span></div>
-    <div class="nq-card"><b>软件分载</b><span id="nq-flowst">-</span></div>
+  <div class="nq-hero">
+    <div class="nq-hero-cell">
+      <div class="nq-hero-label">转发</div>
+      <div class="nq-hero-value"><span class="nq-badge"><span id="nq-fwdst">-</span></span></div>
+    </div>
+    <div class="nq-hero-cell">
+      <div class="nq-hero-label">DHCP</div>
+      <div class="nq-hero-value"><span class="nq-badge"><span id="nq-dhcpst">-</span></span></div>
+    </div>
+    <div class="nq-hero-cell">
+      <div class="nq-hero-label">DNS</div>
+      <div class="nq-hero-value"><span class="nq-badge"><span id="nq-dnsst">-</span></span></div>
+    </div>
+    <div class="nq-hero-cell">
+      <div class="nq-hero-label">软件分载</div>
+      <div class="nq-hero-value"><span class="nq-badge"><span id="nq-flowst">-</span></span></div>
+    </div>
+  </div>
+  <div class="nq-metrics">
+    <div class="nq-metric">
+      <div class="nq-metric-num" id="nq-lan">-</div>
+      <div class="nq-metric-label">LAN</div>
+    </div>
+    <div class="nq-metric">
+      <div class="nq-metric-num" id="nq-leases">-</div>
+      <div class="nq-metric-label">当前租约</div>
+    </div>
   </div>
 
-  <div class="nq-box">
-    <h3>转发</h3>
-    <p class="nq-lead">关总开关会把网卡队列、CPU、PPPoE 队列、GRO、积压和分载恢复默认。</p>
+  <div class="nq-section">
+    <div class="nq-section-title-bar">转发</div>
+    <div class="nq-section-body">
+    <p class="nq-lead">关总开关会把网卡队列、CPU、PPPoE 队列、GRO、积压和分载恢复默认。保存后立即生效，不断 PPPoE，不改 wan2 / IPTV。</p>
     <div class="nq-item">
       <div><b>启用转发优化</b><p>总开关。关掉后下面几项不再套用。</p></div>
       <button type="button" class="nq-sw" data-k="enabled" aria-pressed="false"></button>
@@ -118,11 +167,17 @@ end
       <div class="nq-item"><div><b>UDP GRO 转发</b><p>打开 rx-udp-gro-forwarding，降低 QUIC / IPTV UDP 转发 CPU。</p></div><button type="button" class="nq-sw" data-k="udp_gro"></button></div>
       <div class="nq-item"><div><b>加大接收积压</b><p>netdev_max_backlog 从 1000 提到 4096，小包突发少丢。</p></div><button type="button" class="nq-sw" data-k="rx_backlog"></button></div>
     </div>
+    <div class="nq-bar">
+      <button type="button" class="nq-btn nq-btn-pri" id="nq-save-fwd">保存并应用</button>
+      <span class="nq-msg" id="nq-fwd-msg"></span>
+    </div>
+    </div>
   </div>
 
-  <div class="nq-box">
-    <h3>DHCP</h3>
-    <p class="nq-lead">地址池、租期和邻居清理。静态 IP 单独绑定，马上清旧租约并重载 dnsmasq，不断 PPPoE。</p>
+  <div class="nq-section">
+    <div class="nq-section-title-bar">DHCP</div>
+    <div class="nq-section-body">
+    <p class="nq-lead">地址池、租期和终端 DNS。保存后重载 dnsmasq，不断 PPPoE。</p>
     <div class="nq-item">
       <div><b>启用 DHCP</b><p>给 LAN 终端发地址。关掉后终端要自己设 IP。</p></div>
       <button type="button" class="nq-sw" data-k="dhcp_enable"></button>
@@ -134,12 +189,7 @@ end
     <div class="nq-fields">
       <label>起始地址 <input id="start" type="number" min="1" max="254" placeholder="100"></label>
       <label>地址数量 <input id="limit" type="number" min="1" max="253" placeholder="150"></label>
-      <label>租期 / 清理时间 <input id="leasetime" type="text" placeholder="12h"></label>
-      <label>邻居清理（秒） <input id="neigh_gc" type="number" min="5" max="86400" placeholder="60"></label>
-    </div>
-    <div class="nq-item">
-      <div><b>自动清理过期邻居</b><p>按上面的秒数定时执行。只删 FAILED 和已不在租约/静态绑定里的残留 ARP（例如换过地址后留下的旧 IP）。REACHABLE 和当前仍在用的租约/静态 IP 保留。</p></div>
-      <button type="button" class="nq-sw" data-k="neigh_auto"></button>
+      <label>租期 <input id="leasetime" type="text" placeholder="12h"></label>
     </div>
     <div class="nq-fields">
       <label>终端 DNS
@@ -150,21 +200,46 @@ end
       </label>
       <label id="client_dns_wrap">终端 DNS 地址 <input id="client_dns_addr" type="text" placeholder="192.168.10.1"></label>
     </div>
-    <div class="nq-item" style="border-top:0;padding-top:4px">
-      <div><b>DHCP 邻居</b><p>过期租约会从列表拿掉。绑定静态 IP 后立刻重分配；终端若仍握着旧地址，续租或重连即可拿到新 IP。</p></div>
+    <div class="nq-bar">
+      <button type="button" class="nq-btn nq-btn-pri" id="nq-save-dhcp">保存并应用</button>
+      <span class="nq-msg" id="nq-dhcp-msg"></span>
+    </div>
+    </div>
+  </div>
+
+  <div class="nq-section">
+    <div class="nq-section-title-bar">DHCP 邻居</div>
+    <div class="nq-section-body">
+    <p class="nq-lead">过期租约会从列表拿掉。绑定静态 IP 立刻重分配；终端若仍握着旧地址，续租或重连即可拿到新 IP。</p>
+    <div class="nq-fields">
+      <label>邻居清理（秒） <input id="neigh_gc" type="number" min="5" max="86400" placeholder="60"></label>
+    </div>
+    <div class="nq-item">
+      <div><b>自动清理过期邻居</b><p>按上面的秒数定时执行。只删 FAILED 和已不在租约/静态绑定里的残留 ARP。REACHABLE 和当前仍在用的租约/静态 IP 保留。</p></div>
+      <button type="button" class="nq-sw" data-k="neigh_auto"></button>
+    </div>
+    <div class="nq-bar">
+      <button type="button" class="nq-btn nq-btn-pri" id="nq-save-neigh">保存并应用</button>
+      <span class="nq-msg" id="nq-neigh-msg"></span>
+    </div>
+    <div class="nq-item">
+      <div><b>在线设备</b><p>绑定、取消、添加静态马上生效，不用再点保存。</p></div>
       <button type="button" class="nq-btn nq-btn-ghost nq-btn-sm" id="nq-refresh">刷新</button>
     </div>
     <div id="nq-clients" class="nq-table-wrap"></div>
+    <div class="nq-cpage" id="nq-cpage"></div>
     <div class="nq-add">
       <label>MAC <input id="add_mac" type="text" placeholder="aa:bb:cc:dd:ee:ff"></label>
       <label>静态 IP <input id="add_ip" type="text" placeholder="192.168.10.20"></label>
       <label>名称 <input id="add_name" type="text" placeholder="可选"></label>
       <button type="button" class="nq-btn nq-btn-pri nq-btn-sm" id="nq-add-static">添加静态</button>
     </div>
+    </div>
   </div>
 
-  <div class="nq-box">
-    <h3>DNS</h3>
+  <div class="nq-section">
+    <div class="nq-section-title-bar">DNS</div>
+    <div class="nq-section-body">
     <p class="nq-lead">跟随运营商时用 WAN 拨号拿到的 DNS，不写 223 / 114。</p>
     <div class="nq-fields">
       <label>当前运营商 DNS <input id="wan_dns" type="text" readonly></label>
@@ -180,16 +255,18 @@ end
       <span>自定义上游（每行一个）</span>
       <textarea id="servers" placeholder="1.1.1.1"></textarea>
     </div>
+    <div class="nq-bar">
+      <button type="button" class="nq-btn nq-btn-pri" id="nq-save-dns">保存并应用</button>
+      <span class="nq-msg" id="nq-dns-msg"></span>
+    </div>
+    </div>
   </div>
 
-  <div class="nq-bar">
-    <button type="button" class="nq-btn nq-btn-pri" id="nq-save">保存并应用</button>
-    <span class="nq-msg" id="nq-msg"></span>
-  </div>
-
-  <div class="nq-box">
-    <h3>当前生效</h3>
+  <div class="nq-section">
+    <div class="nq-section-title-bar">当前生效</div>
+    <div class="nq-section-body">
     <div id="nq-log" class="nq-log">加载中…</div>
+    </div>
   </div>
 </div>
 <script>
@@ -206,6 +283,15 @@ function nqSet(k, on){
 function nqVal(id){ var el = document.getElementById(id); return el ? String(el.value || '') : ''; }
 function nqPut(id, v){ var el = document.getElementById(id); if (el) el.value = (v == null ? '' : v); }
 function nqFlag(v){ return v === true || v === 1 || v === '1'; }
+function nqBadge(id, text, ok){
+  var el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = text;
+  var badge = el.parentElement;
+  if (badge && badge.classList.contains('nq-badge')) {
+    badge.className = 'nq-badge ' + (ok ? 'nq-badge-ok' : 'nq-badge-err');
+  }
+}
 function nqFwd(){
   var sub = document.getElementById('nq-fwd-sub');
   if (sub) sub.className = nqOn('enabled') ? 'nq-sub' : 'nq-sub is-off';
@@ -228,43 +314,63 @@ function nqRemain(s){
   if (s < 3600) return Math.floor(s / 60) + '分';
   return Math.floor(s / 3600) + '时' + Math.floor((s % 3600) / 60) + '分';
 }
+var nq_cpage=1,nq_cpsize=10,nq_clist=[];
+function nqPager(n,pages){
+  var el=document.getElementById('nq-cpage');
+  if(!el)return;
+  if(!n){el.innerHTML='';return}
+  if(pages<=1){el.innerHTML='共 '+n+' 台';return}
+  var from=Math.max(1,nq_cpage-2),to=Math.min(pages,from+4);from=Math.max(1,to-4);
+  var h='<span>第 '+nq_cpage+' / '+pages+' 页 · '+n+' 台</span><div class="nq-pbtns">';
+  h+='<button type="button" data-p="'+(nq_cpage-1)+'"'+(nq_cpage<=1?' disabled':'')+'>上一页</button>';
+  for(var i=from;i<=to;i++)h+='<button type="button" data-p="'+i+'" class="'+(i===nq_cpage?'on':'')+'">'+i+'</button>';
+  h+='<button type="button" data-p="'+(nq_cpage+1)+'"'+(nq_cpage>=pages?' disabled':'')+'>下一页</button></div>';
+  el.innerHTML=h;
+}
 function nqClients(list){
   var tb = document.getElementById('nq-clients');
   if (!tb) return;
-  list = list || [];
+  if (list) nq_clist = list;
+  list = nq_clist || [];
   if (!list.length){
     tb.innerHTML = '<p class="nq-lead">暂无在线租约或静态绑定</p>';
+    nqPager(0,1);
     return;
   }
+  var pages=Math.max(1,Math.ceil(list.length/nq_cpsize));
+  if(nq_cpage>pages)nq_cpage=pages;if(nq_cpage<1)nq_cpage=1;
   var h = '<div class="nq-devs">';
-  list.forEach(function(c){
+  list.slice((nq_cpage-1)*nq_cpsize,nq_cpage*nq_cpsize).forEach(function(c){
     var sip = c.sip || c.ip || '';
     var st = (c.static ? '静态' : '动态') + (c.neigh ? ' / ' + c.neigh : '');
     h += '<div class="nq-dev" data-mac="'+nqEsc(c.mac)+'" data-name="'+nqEsc(c.name||'')+'">'
-      +'<div class="nq-dev-top"><div><b>'+nqEsc(c.name||'-')+'</b><span class="nq-mono">'+nqEsc(c.mac)+'</span></div>'
-      +'<span class="nq-pill">'+nqEsc(st)+'</span></div>'
-      +'<div class="nq-dev-meta"><span class="nq-mono">'+nqEsc(c.ip||'-')+'</span><span>'+nqRemain(c.remain)+'</span></div>'
-      +'<div class="nq-dev-act"><input class="nq-ip" value="'+nqEsc(sip)+'">'
+      +'<b class="nq-dev-name">'+nqEsc(c.name||'-')+'</b>'
+      +'<span class="nq-mono nq-dev-mac">'+nqEsc(c.mac)+'</span>'
+      +'<span class="nq-mono nq-dev-ip">'+nqEsc(c.ip||'-')+'</span>'
+      +'<input class="nq-ip" value="'+nqEsc(sip)+'">'
       +'<button type="button" class="nq-btn nq-btn-sm nq-btn-pri" data-act="static">绑定</button>'
-      +(c.static ? '<button type="button" class="nq-btn nq-btn-sm nq-btn-ghost" data-act="dynamic">取消</button>' : '')
-      +'</div></div>';
+      +'<button type="button" class="nq-btn nq-btn-sm nq-btn-ghost" data-act="dynamic"'+(c.static?'':' disabled')+'>取消</button>'
+      +'<span class="nq-pill">'+nqEsc(st)+'</span>'
+      +'<span class="nq-remain">'+nqRemain(c.remain)+'</span>'
+      +'</div>';
   });
   h += '</div>';
   tb.innerHTML = h;
+  nqPager(list.length,pages);
 }
 function nqPost(act, body){
-  var msg = document.getElementById('nq-msg');
-  msg.className = 'nq-msg'; msg.textContent = '正在应用…';
+  var msg = document.getElementById('nq-neigh-msg');
+  if (msg) { msg.className = 'nq-msg'; msg.textContent = '正在应用…'; }
   return fetch(nqApi(act), {
     method:'POST', credentials:'same-origin',
     headers:{'Content-Type':'application/json'},
     body: JSON.stringify(body || {})
   }).then(function(r){ return r.json(); }).then(function(d){
-    if (d && d.ok) { msg.textContent = '已应用'; if (d.info) nqFill(d.info); else nqLoad(); }
-    else { msg.className = 'nq-msg bad'; msg.textContent = (d && d.error) ? d.error : '失败'; }
+    if (d && d.ok) { if (msg) msg.textContent = '已应用'; if (d.info) nqFill(d.info); else nqLoad(); }
+    else if (msg) { msg.className = 'nq-msg bad'; msg.textContent = (d && d.error) ? d.error : '失败'; }
     return d;
   }).catch(function(){
-    msg.className = 'nq-msg bad'; msg.textContent = '失败';
+    if (msg) { msg.className = 'nq-msg bad'; msg.textContent = '失败'; }
   });
 }
 function nqFill(d){
@@ -287,13 +393,12 @@ function nqFill(d){
   nqPut('cachesize', n.cachesize);
   nqPut('servers', (n.servers && n.servers.join) ? n.servers.join('\n') : '');
   document.getElementById('nq-lan').textContent = h.lan || '-';
-  document.getElementById('nq-dhcpst').textContent = nqFlag(h.enable) ? '开启' : '关闭';
-  document.getElementById('nq-dhcpst').className = nqFlag(h.enable) ? 'nq-ok' : 'nq-bad';
+  nqBadge('nq-dhcpst', nqFlag(h.enable) ? '开启' : '关闭', nqFlag(h.enable));
   document.getElementById('nq-leases').textContent = d.leases || 0;
   nqClients(d.clients);
-  document.getElementById('nq-dnsst').textContent = (n.mode === 'custom') ? '自定义' : '运营商';
-  document.getElementById('nq-fwdst').textContent = nqFlag(f.enabled) ? '开启' : '关闭';
-  document.getElementById('nq-flowst').textContent = nqFlag(f.flow_offload) ? '开启' : '关闭';
+  nqBadge('nq-dnsst', (n.mode === 'custom') ? '自定义' : '运营商', true);
+  nqBadge('nq-fwdst', nqFlag(f.enabled) ? '开启' : '关闭', nqFlag(f.enabled));
+  nqBadge('nq-flowst', nqFlag(f.flow_offload) ? '开启' : '关闭', nqFlag(f.flow_offload));
   document.getElementById('nq-log').textContent = d.status || '暂无';
   nqFwd(); nqDnsUi();
   } catch (e) {
@@ -308,33 +413,41 @@ function nqLoad(){
     document.getElementById('nq-log').textContent = '读取失败 ' + (e && e.message ? e.message : '');
   });
 }
-function nqSave(){
-  var btn = document.getElementById('nq-save'), msg = document.getElementById('nq-msg');
-  btn.disabled = true; msg.className = 'nq-msg'; msg.textContent = '正在保存…';
-  var servers = nqVal('servers').split(/\n+/).map(function(s){ return s.trim(); }).filter(Boolean);
-  var body = {
-    fwd: {
-      enabled: nqOn('enabled'), nic_queues: nqOn('nic_queues'), cpu_performance: nqOn('cpu_performance'),
-      flow_offload: nqOn('flow_offload'), pppoe_qlen: nqOn('pppoe_qlen'), udp_gro: nqOn('udp_gro'), rx_backlog: nqOn('rx_backlog')
-    },
-    dhcp: {
-      enable: nqOn('dhcp_enable'), sequential: nqOn('sequential'),
-      start: nqVal('start'), limit: nqVal('limit'), leasetime: nqVal('leasetime'), neigh_gc: nqVal('neigh_gc'),
-      neigh_auto: nqOn('neigh_auto'),
-      client_dns: nqVal('client_dns'), client_dns_addr: nqVal('client_dns_addr')
-    },
-    dns: { mode: nqVal('dns_mode'), servers: servers, cachesize: nqVal('cachesize') }
+function nqFwdBody(){
+  return {
+    enabled: nqOn('enabled'), nic_queues: nqOn('nic_queues'), cpu_performance: nqOn('cpu_performance'),
+    flow_offload: nqOn('flow_offload'), pppoe_qlen: nqOn('pppoe_qlen'), udp_gro: nqOn('udp_gro'), rx_backlog: nqOn('rx_backlog')
   };
+}
+function nqDhcpBody(){
+  return {
+    enable: nqOn('dhcp_enable'), sequential: nqOn('sequential'),
+    start: nqVal('start'), limit: nqVal('limit'), leasetime: nqVal('leasetime'),
+    client_dns: nqVal('client_dns'), client_dns_addr: nqVal('client_dns_addr')
+  };
+}
+function nqNeighBody(){
+  return { neigh_gc: nqVal('neigh_gc'), neigh_auto: nqOn('neigh_auto') };
+}
+function nqDnsBody(){
+  var servers = nqVal('servers').split(/\n+/).map(function(s){ return s.trim(); }).filter(Boolean);
+  return { mode: nqVal('dns_mode'), servers: servers, cachesize: nqVal('cachesize') };
+}
+function nqSaveBody(btnId, msgId, body){
+  var btn = document.getElementById(btnId), msg = document.getElementById(msgId);
+  if (btn) btn.disabled = true;
+  if (msg) { msg.className = 'nq-msg'; msg.textContent = '正在保存…'; }
   fetch(nqApi('save'), {
     method:'POST', credentials:'same-origin',
     headers:{'Content-Type':'application/json'},
     body: JSON.stringify(body)
   }).then(function(r){ return r.json(); }).then(function(d){
-    btn.disabled = false;
-    if (d && d.ok) { msg.textContent = '已应用'; if (d.info) nqFill(d.info); else nqLoad(); }
-    else { msg.className = 'nq-msg bad'; msg.textContent = '保存失败'; }
+    if (btn) btn.disabled = false;
+    if (d && d.ok) { if (msg) msg.textContent = '已应用'; if (d.info) nqFill(d.info); else nqLoad(); }
+    else if (msg) { msg.className = 'nq-msg bad'; msg.textContent = (d && d.error) ? d.error : '保存失败'; }
   }).catch(function(){
-    btn.disabled = false; msg.className = 'nq-msg bad'; msg.textContent = '保存失败';
+    if (btn) btn.disabled = false;
+    if (msg) { msg.className = 'nq-msg bad'; msg.textContent = '保存失败'; }
   });
 }
 document.querySelectorAll('.nq-wrap button.nq-sw[data-k]').forEach(function(el){
@@ -346,7 +459,18 @@ document.querySelectorAll('.nq-wrap button.nq-sw[data-k]').forEach(function(el){
 });
 document.getElementById('client_dns').addEventListener('change', nqDnsUi);
 document.getElementById('dns_mode').addEventListener('change', nqDnsUi);
-document.getElementById('nq-save').addEventListener('click', nqSave);
+document.getElementById('nq-save-fwd').addEventListener('click', function(){
+  nqSaveBody('nq-save-fwd', 'nq-fwd-msg', {fwd: nqFwdBody()});
+});
+document.getElementById('nq-save-dhcp').addEventListener('click', function(){
+  nqSaveBody('nq-save-dhcp', 'nq-dhcp-msg', {dhcp: nqDhcpBody()});
+});
+document.getElementById('nq-save-neigh').addEventListener('click', function(){
+  nqSaveBody('nq-save-neigh', 'nq-neigh-msg', {neigh: nqNeighBody()});
+});
+document.getElementById('nq-save-dns').addEventListener('click', function(){
+  nqSaveBody('nq-save-dns', 'nq-dns-msg', {dns: nqDnsBody()});
+});
 document.getElementById('nq-refresh').addEventListener('click', nqLoad);
 document.getElementById('nq-add-static').addEventListener('click', function(){
   nqPost('static', {mac: nqVal('add_mac'), ip: nqVal('add_ip'), name: nqVal('add_name')});
@@ -362,6 +486,14 @@ document.getElementById('nq-clients').addEventListener('click', function(ev){
   var ip = ipEl ? ipEl.value : '';
   if (btn.getAttribute('data-act') === 'static') nqPost('static', {mac: mac, ip: ip, name: name});
   else nqPost('dynamic', {mac: mac});
+});
+document.getElementById('nq-cpage').addEventListener('click', function(ev){
+  var btn = ev.target.closest ? ev.target.closest('button[data-p]') : null;
+  if (!btn || btn.disabled) return;
+  var p = parseInt(btn.getAttribute('data-p'), 10);
+  if (!p || p === nq_cpage) return;
+  nq_cpage = p;
+  nqClients();
 });
 if (window.nqInit && window.nqInit.fwd) nqFill(window.nqInit);
 else nqLoad();

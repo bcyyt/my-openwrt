@@ -39,12 +39,14 @@ function loadCookies() {
         if (!d) return;
         var badges = [['b-115','cookie_115_len'],['b-quark','cookie_quark_len'],['b-uc','cookie_uc_len'],
             ['b-aliyun','token_ali_len'],['b-189','token_189_len'],['b-yidong','token_yidong_len'],
-            ['b-123','token_123_len'],['b-baidu','token_baidu_len'],['b-thunder','thunder_auth_len'],['b-pikpak','pikpak_auth_len']];
+            ['b-123','token_123_len'],['b-baidu','token_baidu_len'],['b-thunder','thunder_auth_len'],['b-pikpak','pikpak_auth_len'],
+            ['b-115open','token_115_open_len']];
         for (var i = 0; i < badges.length; i++) {
             var len = d[badges[i][1]] || 0;
             setBadge(badges[i][0], len > 0 ? '已配置 ' + len + ' 字' : '未配置', len > 0 ? 'ok' : 'err');
         }
         byId('c115-mask').textContent = d.cookie_115 || '(空)';
+        if (byId('c115open-mask')) byId('c115open-mask').textContent = d.token_115_open || '(空)';
         byId('cq-mask').textContent = d.cookie_quark || '(空)';
         byId('uc-mask').textContent = d.cookie_uc || '(空)';
         byId('aliyun-mask').textContent = d.token_ali || '(空)';
@@ -65,7 +67,9 @@ function saveCookies() {
         cookie_uc: byId('uc-input').value, token_ali: byId('aliyun-input').value,
         token_189: byId('in-189').value, token_yidong: byId('yidong-input').value,
         token_123: byId('in-123').value, token_baidu: byId('baidu-input').value,
-        thunder_auth: byId('in-thunder').value, pikpak_auth: byId('in-pikpak').value
+        thunder_auth: byId('in-thunder').value, pikpak_auth: byId('in-pikpak').value,
+        token_115_open: (byId('c115open-input') || {}).value || '',
+        token_115_open_access: (byId('c115open-at') || {}).value || ''
     };
     mhAPI('save_cookies', fields, function(d) {
         if (d.code === 200) {
@@ -351,6 +355,12 @@ if (document.readyState === 'loading') {
         <hr class="mh-divider">
         <div class="mh-sub-title">手动填入 Cookie（扫码失败时使用）</div>
         <textarea id="c115-input" class="mh-textarea" rows="3" placeholder="UID=...; CID=...; SEID=...; KID=..."></textarea>
+        <hr class="mh-divider">
+        <div class="mh-sub-title">开放平台令牌（优先，播放 302 直链） <span class="mh-badge"><span id="b-115open">读取中...</span></span></div>
+        <div class="mh-sec-note" style="margin-bottom:8px">到 <a href="https://api.oplist.org" target="_blank" rel="noopener">api.oplist.org</a> 选 115，勾选 OpenList 参数，登录后复制 Refresh Token。填了此项后 /115 改挂 115 Open，Cookie 仅作备用。</div>
+        <div class="mh-cookie-mask" id="c115open-mask">(读取中)</div>
+        <textarea id="c115open-at" class="mh-textarea" rows="2" placeholder="Access Token（可选）" style="margin-top:8px"></textarea>
+        <textarea id="c115open-input" class="mh-textarea" rows="2" placeholder="Refresh Token（必填）" style="margin-top:8px"></textarea>
     </div>
 
     <div class="mh-card">

@@ -1,54 +1,100 @@
 <%+header%>
 <style>
+:root{
+  --sk-primary:#4a90d9;--sk-primary-dark:#357abd;--sk-primary-bg:#e3f2fd;
+  --sk-success:#2e7d32;--sk-success-bg:#e8f5e9;--sk-success-border:#c8e6c9;
+  --sk-error:#c62828;--sk-error-bg:#ffebee;--sk-error-border:#ffcdd2;
+  --sk-card:#fff;--sk-border:#e2e8f0;--sk-text:#334155;--sk-muted:#64748b;
+  --sk-label-bg:#f8fafc;--sk-terminal-bg:#1a1a2e;--sk-terminal-border:#2d2d44;
+}
 .sk-wrap,.sk-wrap *{box-sizing:border-box}
-.sk-wrap{max-width:920px;width:100%;margin:0 auto 24px;padding:0 2px;font-family:ui-sans-serif,system-ui,sans-serif;overflow-x:hidden}
-.sk-hero{background:#1b2420;color:#e8f0ea;padding:22px 24px;border-radius:12px;margin-bottom:16px}
-.sk-hero h2{margin:0 0 6px;font-size:20px;font-weight:650;letter-spacing:.02em}
-.sk-hero p{margin:0;color:#b7c7bb;font-size:13px;line-height:1.55}
-.sk-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(160px,100%),1fr));gap:10px;margin:16px 0}
-.sk-card{background:#fff;border:1px solid #d7ddd8;border-radius:10px;padding:12px 14px}
-.sk-card b{display:block;font-size:11px;color:#6b776f;letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px}
-.sk-card span{font-size:15px;color:#1b2420;word-break:break-all}
-.sk-box{background:#fff;border:1px solid #d7ddd8;border-radius:10px;padding:16px 18px;margin-bottom:12px}
-.sk-box h3{margin:0 0 10px;font-size:15px}
+.sk-wrap{max-width:1080px;width:100%;margin:0 auto 24px;padding:0 2px;color:var(--sk-text);overflow-x:hidden}
+.sk-page-header{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+.sk-page-header h2{margin:0;font-size:20px;color:#1e293b}
+.sk-ver-badge{display:inline-block;background:linear-gradient(135deg,var(--sk-primary),var(--sk-primary-dark));color:#fff;font-size:12px;font-weight:600;padding:3px 12px;border-radius:12px;box-shadow:0 2px 6px rgba(74,144,217,.25);line-height:1.6}
+.sk-hero{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--sk-border);border:1px solid var(--sk-border);border-radius:12px;overflow:hidden;margin-bottom:12px}
+.sk-hero-cell{background:var(--sk-card);padding:14px 18px;display:flex;flex-direction:column;justify-content:center;gap:8px;min-height:64px}
+.sk-hero-label{font-size:12px;color:var(--sk-muted);letter-spacing:.3px}
+.sk-hero-value{display:flex;align-items:center;gap:8px;min-height:26px;font-size:15px;font-weight:600;color:var(--sk-text);word-break:break-all}
+.sk-badge{display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:20px;font-size:13px;font-weight:600;border:1px solid #e0e0e0;background:#f5f5f5;color:#888}
+.sk-badge::before{content:'';display:inline-block;width:7px;height:7px;border-radius:50%;flex-shrink:0;background:#bbb}
+.sk-badge-ok{background:var(--sk-success-bg);color:var(--sk-success);border-color:var(--sk-success-border)}
+.sk-badge-ok::before{background:#4caf50}
+.sk-badge-err{background:var(--sk-error-bg);color:var(--sk-error);border-color:var(--sk-error-border)}
+.sk-badge-err::before{background:#f44336}
+.sk-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:8px}
+.sk-metric{background:var(--sk-card);border:1px solid var(--sk-border);border-radius:12px;padding:14px 18px;text-align:center;transition:box-shadow .2s,border-color .2s}
+.sk-metric:hover{box-shadow:0 2px 12px rgba(0,0,0,.06);border-color:#cbd5e1}
+.sk-metric-num{font-size:22px;font-weight:700;color:var(--sk-primary);line-height:1.3;word-break:break-all}
+.sk-metric-label{font-size:12px;color:var(--sk-muted);margin-top:4px;letter-spacing:.3px}
+.sk-section{background:var(--sk-card);border:1px solid var(--sk-border);border-radius:10px;margin-bottom:16px;overflow:hidden}
+.sk-section-title-bar{font-size:14px;font-weight:600;color:#475569;padding:12px 18px;border-bottom:1px solid var(--sk-border);background:var(--sk-label-bg);display:flex;align-items:center;gap:8px}
+.sk-section-title-bar::before{content:'';display:inline-block;width:4px;height:14px;background:var(--sk-primary);border-radius:2px}
+.sk-section-body{padding:12px 18px 16px}
 .sk-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0}
-.sk-row input[type=text]{flex:1 1 160px;min-width:0;width:100%;padding:8px 10px;border:1px solid #c5cdc8;border-radius:8px}
+.sk-row input[type=text]{flex:1 1 160px;min-width:0;width:100%;padding:7px 10px;border:1px solid var(--sk-border);border-radius:6px;font-size:13px;color:var(--sk-text)}
+.sk-row input[type=text]:focus{border-color:var(--sk-primary);box-shadow:0 0 0 3px rgba(74,144,217,.1);outline:none}
 .sk-row input[type=file]{flex:1 1 160px;min-width:0;max-width:100%}
-.sk-btn{border:0;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px}
-.sk-btn-pri{background:#2f6f4e;color:#fff}
-.sk-btn-warn{background:#8a3b16;color:#fff}
-.sk-btn-dim{background:#eef2ef;color:#1b2420}
-.sk-note{font-size:12px;color:#5c675f;line-height:1.5}
-.sk-log{height:220px;overflow:auto;background:#121816;color:#c8d6cc;padding:10px;border-radius:8px;font:12px/1.45 ui-monospace,monospace;white-space:pre-wrap}
-.sk-ok{color:#2f6f4e} .sk-bad{color:#8a3b16}
+.sk-btn{border:1px solid var(--sk-border);border-radius:6px;padding:7px 16px;cursor:pointer;font-size:13px;background:#fff;color:var(--sk-text);transition:all .2s}
+.sk-btn-pri{background:var(--sk-primary);color:#fff;border-color:var(--sk-primary)}
+.sk-btn-pri:hover{background:var(--sk-primary-dark)}
+.sk-btn-warn{background:var(--sk-error);color:#fff;border-color:var(--sk-error)}
+.sk-btn-ghost{background:#fff;color:var(--sk-text)}
+.sk-btn-ghost:hover{background:#f0f7ff;border-color:var(--sk-primary)}
+.sk-note{font-size:12px;color:#94a3b8;line-height:1.5;margin:0 0 8px}
+.sk-log{height:220px;overflow:auto;background:var(--sk-terminal-bg);color:#a5f3fc;padding:14px;border-radius:10px;font:13px/1.6 Consolas,Monaco,monospace;white-space:pre-wrap;border:1px solid var(--sk-terminal-border)}
+.sk-ok{color:var(--sk-success)} .sk-bad{color:var(--sk-error)}
+@media (max-width:720px){
+  .sk-hero{grid-template-columns:repeat(2,1fr)}
+}
 @media (max-width:640px){
   .sk-wrap{padding:0 4px}
-  .sk-hero{padding:16px 14px}
-  .sk-hero h2{font-size:18px}
-  .sk-hero p{font-size:12px}
-  .sk-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
-  .sk-box{padding:14px 12px}
+  .sk-section-body{padding:12px}
   .sk-row{flex-direction:column;align-items:stretch}
   .sk-row input[type=text],.sk-row input[type=file],.sk-row .sk-btn{width:100%}
-  .sk-log{height:180px;font-size:11px}
+  .sk-log{height:180px;font-size:12px}
 }
 </style>
 <div class="sk-wrap">
-  <div class="sk-hero">
+  <div class="sk-page-header">
     <h2>保留升级</h2>
-    <p>只刷 boot 和 rootfs，GPT 和数据盘不动。点备份或升级时自动找出后来装的插件，能拉 APK 就拉，源里没有的打文件包，不用手工拷到数据盘。</p>
+    <span class="sk-ver-badge">v1.0.6</span>
   </div>
-  <div class="sk-grid">
-    <div class="sk-card"><b>当前系统</b><span id="sk-rel">-</span></div>
-    <div class="sk-card"><b>数据盘</b><span id="sk-data">-</span></div>
-    <div class="sk-card"><b>已装包</b><span id="sk-world">-</span></div>
-    <div class="sk-card"><b>自装插件</b><span id="sk-overlay">-</span></div>
-    <div class="sk-card"><b>已备份 APK</b><span id="sk-apks">-</span></div>
-    <div class="sk-card"><b>固件文件</b><span id="sk-fw">-</span></div>
-    <div class="sk-card"><b>步骤</b><span id="sk-phase">-</span></div>
+  <div class="sk-hero">
+    <div class="sk-hero-cell">
+      <div class="sk-hero-label">数据盘</div>
+      <div class="sk-hero-value"><span class="sk-badge"><span id="sk-data">-</span></span></div>
+    </div>
+    <div class="sk-hero-cell">
+      <div class="sk-hero-label">步骤</div>
+      <div class="sk-hero-value" id="sk-phase">-</div>
+    </div>
+    <div class="sk-hero-cell">
+      <div class="sk-hero-label">已装包</div>
+      <div class="sk-hero-value" id="sk-world">-</div>
+    </div>
+    <div class="sk-hero-cell">
+      <div class="sk-hero-label">自装插件</div>
+      <div class="sk-hero-value" id="sk-overlay">-</div>
+    </div>
   </div>
-  <div class="sk-box">
-    <h3>1. 准备固件</h3>
+  <div class="sk-metrics">
+    <div class="sk-metric">
+      <div class="sk-metric-num" id="sk-rel">-</div>
+      <div class="sk-metric-label">当前系统</div>
+    </div>
+    <div class="sk-metric">
+      <div class="sk-metric-num" id="sk-apks">-</div>
+      <div class="sk-metric-label">已备份 APK</div>
+    </div>
+    <div class="sk-metric">
+      <div class="sk-metric-num" id="sk-fw">-</div>
+      <div class="sk-metric-label">固件文件</div>
+    </div>
+  </div>
+  <div class="sk-section">
+    <div class="sk-section-title-bar">准备固件</div>
+    <div class="sk-section-body">
     <p class="sk-note">用 ImmortalWrt x86_64 <code>squashfs-combined-efi.img.gz</code>。不要用完整磁盘安装器。</p>
     <div class="sk-row">
       <input id="sk-url" type="text" placeholder="https://downloads.immortalwrt.org/snapshots/targets/x86/64/immortalwrt-x86-64-generic-squashfs-combined-efi.img.gz">
@@ -56,22 +102,27 @@
     </div>
     <div class="sk-row">
       <input id="sk-file" type="file" accept=".gz,.img">
-      <button class="sk-btn sk-btn-dim" onclick="skUpload()">上传到数据盘</button>
+      <button class="sk-btn sk-btn-ghost" onclick="skUpload()">上传到数据盘</button>
+    </div>
     </div>
   </div>
-  <div class="sk-box">
-    <h3>2. 校验并刷写</h3>
+  <div class="sk-section">
+    <div class="sk-section-title-bar">校验并刷写</div>
+    <div class="sk-section-body">
     <p class="sk-note">「只备份」会把自装插件存到数据盘的 syskeep 目录。刷写开始后页面会断开，等 2-3 分钟再打开。若插件没齐，点「重新恢复」。</p>
     <div class="sk-row">
-      <button class="sk-btn sk-btn-dim" onclick="skPost('backup')">只备份</button>
-      <button class="sk-btn sk-btn-dim" onclick="skPost('test')">仅校验</button>
+      <button class="sk-btn sk-btn-ghost" onclick="skPost('backup')">只备份</button>
+      <button class="sk-btn sk-btn-ghost" onclick="skPost('test')">仅校验</button>
       <button class="sk-btn sk-btn-warn" onclick="skFlash()">开始升级</button>
-      <button class="sk-btn sk-btn-dim" onclick="skPost('restore')">重新恢复插件</button>
+      <button class="sk-btn sk-btn-ghost" onclick="skPost('restore')">重新恢复插件</button>
+    </div>
     </div>
   </div>
-  <div class="sk-box">
-    <h3>日志</h3>
+  <div class="sk-section">
+    <div class="sk-section-title-bar">日志</div>
+    <div class="sk-section-body">
     <div id="sk-log" class="sk-log">加载中…</div>
+    </div>
   </div>
 </div>
 <script>
@@ -87,7 +138,10 @@ function skRefresh(){
     document.getElementById('sk-rel').textContent = d.release || '-';
     var dm = document.getElementById('sk-data');
     dm.textContent = d.data_mounted ? ((d.data_path || '') + ' 已挂载') : '未检测到';
-    dm.className = d.data_mounted ? 'sk-ok' : 'sk-bad';
+    var badge = dm.parentElement;
+    if (badge && badge.classList.contains('sk-badge')) {
+      badge.className = 'sk-badge ' + (d.data_mounted ? 'sk-badge-ok' : 'sk-badge-err');
+    }
     document.getElementById('sk-world').textContent = d.world || 0;
     document.getElementById('sk-overlay').textContent = d.overlay || 0;
     document.getElementById('sk-apks').textContent = (d.apks || 0) + ' apk / ' + (d.filepacks || 0) + ' 文件包';
