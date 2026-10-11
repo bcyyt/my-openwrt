@@ -1,2 +1,8 @@
 /etc/syskeep/
 /etc/init.d/syskeep
+/etc/config/network
+/etc/config/wireless
+/etc/config/dhcp
+/etc/config/firewall
+/etc/firewall.user
+/etc/nftables.d/

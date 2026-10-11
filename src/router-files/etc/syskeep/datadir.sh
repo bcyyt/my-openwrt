@@ -12,6 +12,40 @@ syskeep_fstype_ok() {
 	return 1
 }
 
+syskeep_backup_uci() {
+	local dest="$1" f
+	mkdir -p "$dest/nftables.d"
+	for f in network wireless dhcp firewall; do
+		[ -f "/etc/config/$f" ] && cp -a "/etc/config/$f" "$dest/$f"
+	done
+	[ -f /etc/firewall.user ] && cp -a /etc/firewall.user "$dest/firewall.user"
+	if [ -d /etc/nftables.d ]; then
+		cp -a /etc/nftables.d/. "$dest/nftables.d/" 2>/dev/null || true
+	fi
+}
+
+syskeep_restore_uci() {
+	local src="$1" f
+	[ -d "$src" ] || return 0
+	mkdir -p /etc/config
+	for f in network wireless dhcp firewall; do
+		[ -f "$src/$f" ] && cp -a "$src/$f" "/etc/config/$f"
+	done
+	[ -f "$src/firewall.user" ] && cp -a "$src/firewall.user" /etc/firewall.user
+	if [ -d "$src/nftables.d" ]; then
+		mkdir -p /etc/nftables.d
+		cp -a "$src/nftables.d/." /etc/nftables.d/ 2>/dev/null || true
+	fi
+	return 0
+}
+
+syskeep_pkg_name() {
+	local pkg="$1"
+	pkg=${pkg%%=*}
+	pkg=${pkg%%[<>]*}
+	echo "$pkg"
+}
+
 syskeep_mp_skip() {
 	case "$1" in
 		/|/overlay|/rom|/boot|/tmp|/dev|/proc|/sys|/run|/var/run)

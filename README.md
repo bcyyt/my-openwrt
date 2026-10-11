@@ -10,7 +10,7 @@ ImmortalWrt / OpenWrt APK 插件：IPTV 代理、影视中心、状态监控、�
 | `luci-app-mediahub` | 1.5.7-r0 | x86_64 | 影视中心（CMS + AList + ffmpeg） |
 | `luci-app-statusmon` | 4.26 | noarch | 状态监控；客户端分页；PPPoE 流量跨重拨累计 |
 | `luci-app-netqueue` | 1.0.16-r0 | noarch | 网络优化：转发、DHCP、DNS、静态 IP、过期 ARP 清理 |
-| `luci-app-syskeep` | 1.0.8-r0 | noarch | 保留升级：刷机保留配置与数据盘；备份当前已装版本 |
+| `luci-app-syskeep` | 1.0.9-r0 | noarch | 保留升级：刷机还原网络/接口/防火墙；已卸载插件不再装回 |
 
 APK 在 `packages/`，用 `keys/my-openwrt.rsa` 签名。
 
@@ -34,7 +34,7 @@ apk add luci-app-statusmon-4.26.apk
 apk add luci-app-netqueue-1.0.16-r0.apk
 
 # 保留升级
-apk add luci-app-syskeep-1.0.8-r0.apk
+apk add luci-app-syskeep-1.0.9-r0.apk
 ```
 
 签名未信任时：
@@ -78,7 +78,7 @@ DNS 默认跟随运营商拨号结果。
 
 ## 保留升级
 
-LuCI 菜单：**系统 → 保留升级**。只写 boot/rootfs，GPT 和数据盘不动。备份的是路由上当前已装的自装插件版本。
+LuCI 菜单：**系统 → 保留升级**。只写 boot/rootfs，GPT 和数据盘不动。刷机后还原网络、接口、防火墙，并按刷机前已装清单恢复插件。
 
 ```bash
 # 查看数据盘、插件备份和固件准备情况

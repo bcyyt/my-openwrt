@@ -150,6 +150,34 @@ if [ -f "$WORLD" ]; then
 	done < "$WORLD"
 fi
 
+write_status restore "还原网络、接口和防火墙"
+if [ -d "$DATA/uci" ]; then
+	syskeep_restore_uci "$DATA/uci"
+elif [ -d "$ETC/uci" ]; then
+	syskeep_restore_uci "$ETC/uci"
+fi
+/etc/init.d/network reload >/dev/null 2>&1 || true
+/etc/init.d/firewall restart >/dev/null 2>&1 || true
+wifi reload >/dev/null 2>&1 || true
+
+write_status restore "卸载刷机前已移除的插件"
+REMOVED="$ETC/removed-pkgs"
+[ -f "$REMOVED" ] || REMOVED="$DATA/removed-pkgs"
+if [ -f "$REMOVED" ]; then
+	while read -r line; do
+		[ -n "$line" ] || continue
+		pkg=$(syskeep_pkg_name "$line")
+		[ -n "$pkg" ] || continue
+		overlay_has "$pkg" && continue
+		apk info -e "$pkg" >/dev/null 2>&1 || continue
+		if apk del "$pkg" >>"$LOG" 2>&1; then
+			log "del $pkg"
+		else
+			log "del fail $pkg"
+		fi
+	done < "$REMOVED"
+fi
+
 rm -f "$ETC/restoring"
 write_status done "恢复结束"
 log "restore finished"

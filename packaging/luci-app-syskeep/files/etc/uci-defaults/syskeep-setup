@@ -5,6 +5,12 @@ chmod 755 /etc/init.d/syskeep /usr/bin/syskeep-upgrade.sh /etc/syskeep/restore.s
 if [ -f /etc/sysupgrade.conf ]; then
 	grep -q '^/etc/syskeep/' /etc/sysupgrade.conf 2>/dev/null || echo '/etc/syskeep/' >> /etc/sysupgrade.conf
 	grep -q '^/etc/init.d/syskeep' /etc/sysupgrade.conf 2>/dev/null || echo '/etc/init.d/syskeep' >> /etc/sysupgrade.conf
+	grep -q '^/etc/config/network' /etc/sysupgrade.conf 2>/dev/null || echo '/etc/config/network' >> /etc/sysupgrade.conf
+	grep -q '^/etc/config/wireless' /etc/sysupgrade.conf 2>/dev/null || echo '/etc/config/wireless' >> /etc/sysupgrade.conf
+	grep -q '^/etc/config/dhcp' /etc/sysupgrade.conf 2>/dev/null || echo '/etc/config/dhcp' >> /etc/sysupgrade.conf
+	grep -q '^/etc/config/firewall' /etc/sysupgrade.conf 2>/dev/null || echo '/etc/config/firewall' >> /etc/sysupgrade.conf
+	grep -q '^/etc/firewall.user' /etc/sysupgrade.conf 2>/dev/null || echo '/etc/firewall.user' >> /etc/sysupgrade.conf
+	grep -q '^/etc/nftables.d/' /etc/sysupgrade.conf 2>/dev/null || echo '/etc/nftables.d/' >> /etc/sysupgrade.conf
 fi
 
 rm -f /tmp/luci-indexcache.*

@@ -207,6 +207,14 @@ cmd_backup() {
 	write_status backup "备份配置和已装插件"
 	cp /etc/apk/world "$ETC/world"
 	cp /etc/apk/world "$DATA/world"
+	awk '{gsub(/[=<>].*/,""); print}' /rom/etc/apk/world 2>/dev/null | sort -u > "$ETC/rom-world"
+	cp "$ETC/rom-world" "$DATA/rom-world" 2>/dev/null || true
+	awk '{gsub(/[=<>].*/,""); print}' /etc/apk/world | sort -u > /tmp/syskeep.world.$$
+	comm -23 "$ETC/rom-world" /tmp/syskeep.world.$$ > "$ETC/removed-pkgs"
+	cp "$ETC/removed-pkgs" "$DATA/removed-pkgs"
+	rm -f /tmp/syskeep.world.$$
+	syskeep_backup_uci "$ETC/uci"
+	syskeep_backup_uci "$DATA/uci"
 	date '+%F %T' > "$ETC/saved_at"
 	chmod 755 "$ETC/restore.sh" 2>/dev/null || true
 	backup_overlay_apks
