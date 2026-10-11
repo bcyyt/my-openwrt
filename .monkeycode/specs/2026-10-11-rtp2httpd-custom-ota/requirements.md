@@ -21,8 +21,8 @@
 
 #### Acceptance Criteria
 
-1. WHEN 管理员编译 Custom Binary, the System SHALL 把 `BUFFER_POOL_INITIAL_SIZE` 设为 512
-2. WHEN 管理员编译 Custom Binary, the System SHALL 把 `BUFFER_POOL_EXPAND_SIZE` 设为 512
+1. WHEN 管理员编译 Custom Binary, the System SHALL 把 `BUFFER_POOL_INITIAL_SIZE` 设为 1024
+2. WHEN 管理员编译 Custom Binary, the System SHALL 把 `BUFFER_POOL_EXPAND_SIZE` 设为 1024
 3. WHEN Custom Binary 启动, the System SHALL 在 `--help` 输出版本号，版本号与 Upstream 标签一致
 
 ### Requirement 2

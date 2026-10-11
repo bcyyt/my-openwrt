@@ -6,7 +6,7 @@ ImmortalWrt / OpenWrt APK 插件：IPTV 代理、影视中心、状态监控、�
 
 | 包名 | 版本 | 架构 | 说明 |
 |------|------|------|------|
-| `iptv-auth` | 2.3.17-r0 | noarch | 鉴权、M3U/EPG、RTSP 回看、rtp2httpd；rtp2httpd OTA 走本仓库自编译包 |
+| `iptv-auth` | 2.3.18-r0 | noarch | 鉴权、M3U/EPG、RTSP 回看、rtp2httpd；rtp2httpd OTA 走本仓库自编译包；状态页检查官方源并提示编译 |
 | `luci-app-mediahub` | 1.5.7-r0 | x86_64 | 影视中心（CMS + AList + ffmpeg） |
 | `luci-app-statusmon` | 4.26 | noarch | 状态监控；客户端分页；PPPoE 流量跨重拨累计 |
 | `luci-app-netqueue` | 1.0.16-r0 | noarch | 网络优化：转发、DHCP、DNS、静态 IP、过期 ARP 清理 |
@@ -22,7 +22,7 @@ cp my-openwrt.rsa.pub /etc/apk/keys/
 chmod 644 /etc/apk/keys/my-openwrt.rsa.pub
 
 # IPTV 代理
-apk add iptv-auth-2.3.17-r0.apk
+apk add iptv-auth-2.3.18-r0.apk
 
 # 影视中心
 apk add luci-app-mediahub-1.5.7-r0.apk
@@ -50,7 +50,7 @@ LuCI 菜单：**服务 → IPTV 代理**。
 
 OTA：`packages/iptv-auth/version.json`。改 `version` 后 LuCI 状态页可热更新。仓库需 Public，否则 raw.githubusercontent.com 会 404。
 
-rtp2httpd 自编译（缓冲池 512）在 `packages/rtp2httpd/`。上游发新版后：
+rtp2httpd 自编译（缓冲池 1024）在 `packages/rtp2httpd/`。上游发新版后：
 
 ```bash
 # 拉取官方标签、打补丁、编 x86_64 与 aarch64 静态包

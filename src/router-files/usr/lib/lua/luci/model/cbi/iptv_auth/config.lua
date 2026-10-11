@@ -133,11 +133,19 @@ function r2hCheck() {
                 return;
             }
             r2hButtons(true, true);
+            var msg, color;
             if (r2hCmpVer(d.latest, d.current) <= 0) {
-                r2hMsg('已是最新版本 v' + d.current + '（如遇异常可点“立即更新”重装修复）', '#2eb872');
+                msg = '仓库自编译已是 v' + d.current;
+                color = '#2eb872';
             } else {
-                r2hMsg('发现新版本 v' + d.latest + '（当前 v' + d.current + '）', '#f0ad4e');
+                msg = '仓库有新自编译 v' + d.latest + '（当前 v' + d.current + '）';
+                color = '#f0ad4e';
             }
+            if (d.official && r2hCmpVer(d.official, d.latest || d.current) > 0) {
+                msg += '。官方源已发布 v' + d.official + '，请及时编译：bash packaging/rtp2httpd/build.sh ' + d.official;
+                color = '#b45309';
+            }
+            r2hMsg(msg, color);
         })
         .catch(function(e) { r2hMsg('查询失败: ' + e, '#d9534f'); r2hButtons(true, false); });
 }

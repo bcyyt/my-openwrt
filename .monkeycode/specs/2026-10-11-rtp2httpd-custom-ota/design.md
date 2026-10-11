@@ -5,7 +5,7 @@ Updated: 2026-10-11
 
 ## Description
 
-从 Upstream 标签拉取源码，把 `BUFFER_POOL_INITIAL_SIZE` 与 `BUFFER_POOL_EXPAND_SIZE` 改为 512，用 musl 静态工具链编出 x86_64 与 aarch64 二进制，放到本仓库 `packages/rtp2httpd/`。路由器 LuCI 检查/更新只读该目录的 `version.json`。
+从 Upstream 标签拉取源码，把 `BUFFER_POOL_INITIAL_SIZE` 与 `BUFFER_POOL_EXPAND_SIZE` 改为 1024，用 musl 静态工具链编出 x86_64 与 aarch64 二进制，放到本仓库 `packages/rtp2httpd/`。路由器 LuCI 检查/更新只读该目录的 `version.json`。
 
 ## Architecture
 
@@ -27,7 +27,7 @@ flowchart LR
 
 ## Components and Interfaces
 
-- `packaging/rtp2httpd/buffer-pool-512.patch`: 改 INITIAL/EXPAND 为 512
+- `packaging/rtp2httpd/buffer-pool-1024.patch`: 改 INITIAL/EXPAND 为 1024
 - `packaging/rtp2httpd/build.sh`: 参数为 Upstream 版本号；下载源码、打补丁、编两架构、写 Manifest
 - `packages/rtp2httpd/version.json`: version、date、changelog、url、url_aarch64
 - `rtp2httpd-ota-check.sh`: curl Manifest，缓存 latest

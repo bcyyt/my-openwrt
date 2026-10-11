@@ -20,11 +20,13 @@ wan_domain = wan_domain:match("^%s*(.-)%s*$") or ""
 local rtp2_cur_v = sys.exec("/usr/bin/rtp2httpd --help 2>&1 | grep -oE '[0-9]+[.][0-9]+[.][0-9]+' | head -1") or ""
 rtp2_cur_v = rtp2_cur_v:gsub("%s+", "")
 local rtp2_latest_v = ""
+local rtp2_official_v = ""
 local rtp2_cache = io.open("/tmp/rtp2httpd-version.json", "r")
 if rtp2_cache then
     local rtp2_raw = rtp2_cache:read("*a") or ""
     rtp2_cache:close()
     rtp2_latest_v = rtp2_raw:match('"latest"%s*:%s*"([^"]+)"') or ""
+    rtp2_official_v = rtp2_raw:match('"official"%s*:%s*"([^"]+)"') or ""
 end
 local rtp2_last_check = sys.exec("uci -q get iptv-auth.main.rtp2_last_check 2>/dev/null") or ""
 rtp2_last_check = rtp2_last_check:match("^%s*(.-)%s*$") or ""
@@ -42,6 +44,8 @@ local function ver_gt(a, b)
     return false
 end
 local rtp2_alert = (rtp2_latest_v ~= "" and rtp2_cur_v ~= "" and ver_gt(rtp2_latest_v, rtp2_cur_v))
+local rtp2_official_base = rtp2_latest_v ~= "" and rtp2_latest_v or rtp2_cur_v
+local rtp2_official_alert = (rtp2_official_v ~= "" and rtp2_official_base ~= "" and ver_gt(rtp2_official_v, rtp2_official_base))
 %>
 
 <script type="text/javascript">
@@ -269,6 +273,46 @@ function clientsRefresh() {
 
 // ===== OTA 在线更新（服务器地址在配置页设置）=====
 var OTA_BASE = '<%=luci.dispatcher.build_url("admin/services/iptv_auth")%>/';
+
+function rtp2CmpVer(a, b) {
+    var pa = (a || '0').split('.'), pb = (b || '0').split('.');
+    for (var i = 0; i < 3; i++) {
+        var x = parseInt(pa[i] || '0', 10), y = parseInt(pb[i] || '0', 10);
+        if (x !== y) return x - y;
+    }
+    return 0;
+}
+function rtp2CheckOfficial() {
+    var btn = document.getElementById('rtp2-official-btn');
+    var box = document.getElementById('rtp2-official-result');
+    if (btn) { btn.disabled = true; btn.value = '检查中...'; }
+    if (box) box.innerHTML = '<span class="ota-msg ota-note">正在查询官方 GitHub Release…</span>';
+    fetch(OTA_BASE + 'rtp2httpd_check', { credentials: 'same-origin' })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (btn) { btn.disabled = false; btn.value = '检查官方源'; }
+            if (!d) { if (box) box.innerHTML = '<span class="ota-msg ota-err">查询失败</span>'; return; }
+            var cur = d.current || '<%=rtp2_cur_v%>';
+            var repo = d.latest || '';
+            var off = d.official || '';
+            var html = '<span class="ota-msg ota-note">当前自编译 v' + cur;
+            if (repo) html += ' · 仓库 v' + repo;
+            html += '</span>';
+            if (d.error) html += '<br/><span class="ota-msg ota-err">' + d.error + '</span>';
+            if (!off) {
+                html += '<br/><span class="ota-msg ota-err">未能读取官方源（可在配置页设置镜像前缀后重试）</span>';
+            } else if (rtp2CmpVer(off, repo || cur) > 0) {
+                html += '<br/><span class="ota-msg ota-new">官方源已发布 v' + off + '，请及时编译：bash packaging/rtp2httpd/build.sh ' + off + '</span>';
+            } else {
+                html += '<br/><span class="ota-msg ota-ok">官方源 v' + off + '，与仓库自编译一致</span>';
+            }
+            if (box) box.innerHTML = html;
+        })
+        .catch(function(e) {
+            if (btn) { btn.disabled = false; btn.value = '检查官方源'; }
+            if (box) box.innerHTML = '<span class="ota-msg ota-err">查询失败: ' + (e && e.message ? e.message : e) + '</span>';
+        });
+}
 var _otaPollTimer = null;
 
 function otaMsg(html, cls) {
@@ -882,6 +926,18 @@ document.addEventListener('visibilitychange', function() {
 .iptv-rtp2-banner-old { font-size: 12px; font-weight: 400; color: #a16207; margin-left: 8px; }
 .iptv-rtp2-banner-sub { font-size: 12px; color: #a16207; margin-top: 2px; }
 .iptv-rtp2-banner-actions { display: flex; gap: 8px; align-items: center; }
+.iptv-rtp2-banner-info {
+    background: #eff6ff;
+    border-color: #bfdbfe;
+    border-left-color: #2563eb;
+}
+.iptv-rtp2-banner-info .iptv-rtp2-banner-icon { background: #dbeafe; color: #1d4ed8; }
+.iptv-rtp2-banner-info .iptv-rtp2-banner-title { color: #1e3a8a; }
+.iptv-rtp2-banner-info .iptv-rtp2-banner-title b { color: #1d4ed8; }
+.iptv-rtp2-banner-info .iptv-rtp2-banner-old,
+.iptv-rtp2-banner-info .iptv-rtp2-banner-sub { color: #1e40af; }
+.ota-ok { color: #2e7d32; }
+.ota-new { color: #b45309; font-weight: 600; }
 
 /* ===== Page footer ===== */
 .iptv-page-footer {
@@ -923,6 +979,19 @@ document.addEventListener('visibilitychange', function() {
     </div>
     <div class="iptv-rtp2-banner-actions">
         <input type="button" class="cbi-button cbi-button-apply" id="rtp2-upgrade-btn" value="立即升级到 <%=rtp2_latest_v%>" onclick="rtp2UpdateNow()" />
+    </div>
+</div>
+<% end %>
+<% if rtp2_official_alert then %>
+<div class="iptv-rtp2-banner iptv-rtp2-banner-info">
+    <div class="iptv-rtp2-banner-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>
+        </svg>
+    </div>
+    <div class="iptv-rtp2-banner-body">
+        <div class="iptv-rtp2-banner-title">官方源 rtp2httpd 已发布<b>v<%=rtp2_official_v%></b><span class="iptv-rtp2-banner-old">仓库自编译 <%=rtp2_official_base%></span></div>
+        <div class="iptv-rtp2-banner-sub">请及时编译后再更新：bash packaging/rtp2httpd/build.sh <%=rtp2_official_v%> · 上次检测：<%=rtp2_last_check%></div>
     </div>
 </div>
 <% end %>
@@ -1066,6 +1135,13 @@ document.addEventListener('visibilitychange', function() {
     </div>
     <div class="iptv-ota-card">
         <div id="ota-result"><span class="ota-msg ota-note"><% if ota_last_check ~= "" then %>上次自动检测：<%=ota_last_check%><% else %>尚未自动检测<% end %> · 点击「检查更新」立即检测</span></div>
+    </div>
+    <div class="iptv-ota-card" style="margin-top:10px;">
+        <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:6px;">
+            <span class="ota-msg ota-note">rtp2httpd 自编译 v<%=rtp2_cur_v%>（缓冲池 1024）</span>
+            <input type="button" class="cbi-button cbi-button-apply" id="rtp2-official-btn" value="检查官方源" onclick="rtp2CheckOfficial()" />
+        </div>
+        <div id="rtp2-official-result"><span class="ota-msg ota-note"><% if rtp2_last_check ~= "" then %>上次自动检测：<%=rtp2_last_check%><% else %>尚未自动检测<% end %> · 官方有新版本时请及时编译，不要直接装 GitHub Release</span></div>
     </div>
 </div>
 

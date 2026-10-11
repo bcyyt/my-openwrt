@@ -1,7 +1,7 @@
 {
   "version": "3.17.2",
   "date": "2026-10-11",
-  "changelog": "自编译：BUFFER_POOL_INITIAL_SIZE=512，EXPAND_SIZE=512。",
+  "changelog": "自编译：BUFFER_POOL_INITIAL_SIZE=1024，EXPAND_SIZE=1024。",
   "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/rtp2httpd/rtp2httpd-3.17.2-x86_64",
   "url_aarch64": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/rtp2httpd/rtp2httpd-3.17.2-aarch64"
 }

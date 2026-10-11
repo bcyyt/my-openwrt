@@ -12,7 +12,7 @@ APK="${APK:-/tmp/apk-tools/build/src/apk}"
 SIGN_KEY="$KEYS/my-openwrt.rsa"
 PUB_KEY="$KEYS/my-openwrt.rsa.pub"
 
-IPTV_VER="${IPTV_VER:-2.3.17-r0}"
+IPTV_VER="${IPTV_VER:-2.3.18-r0}"
 MEDIA_VER="${MEDIA_VER:-1.5.7-r0}"
 STATUS_VER="${STATUS_VER:-4.26}"
 NETQ_VER="${NETQ_VER:-1.0.16-r0}"
@@ -95,7 +95,7 @@ cat > "$OUT/iptv-auth/version.json" <<EOF
 {
   "version": "${IPTV_VER}",
   "date": "${DATE_STR}",
-	"changelog": "rtp2httpd 更新改走本仓库自编译包（BUFFER_POOL 512）。",
+	"changelog": "rtp2httpd 缓冲池 1024；状态页检查官方源，有新版则提示编译。",
   "url": "${OTA_URL_BASE}/iptv-auth/iptv-auth-${IPTV_VER}.apk",
   "ipk_url": ""
 }

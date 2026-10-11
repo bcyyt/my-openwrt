@@ -301,7 +301,16 @@ function get_rtp2httpd_versions()
     if latest == "" then
         err = "无法访问本仓库 version.json（可在本页设置镜像前缀后重试）"
     end
-    http.write(json.stringify({current = current, latest = latest, error = err}))
+
+    local official = ""
+    local official_api = "https://api.github.com/repos/stackia/rtp2httpd/releases/latest"
+    if mirror ~= "" then official_api = mirror .. official_api end
+    local off_out = sys.exec(string.format("curl -s -m 15 %q 2>/dev/null", official_api)) or ""
+    if off_out ~= "" then
+        official = off_out:match('"tag_name"%s*:%s*"v?([^"]+)"') or ""
+        official = official:gsub("^v", "")
+    end
+    http.write(json.stringify({current = current, latest = latest, official = official, error = err}))
 end
 
 function do_rtp2httpd_update()

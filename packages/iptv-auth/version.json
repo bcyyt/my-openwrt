@@ -1,7 +1,7 @@
 {
-  "version": "2.3.17-r0",
+  "version": "2.3.18-r0",
   "date": "2026-10-11",
-  "changelog": "rtp2httpd 更新改走本仓库自编译包（BUFFER_POOL 512）。",
-  "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth-2.3.17-r0.apk",
+  "changelog": "rtp2httpd 缓冲池 1024；状态页检查官方源，有新版则提示编译。",
+  "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth-2.3.18-r0.apk",
   "ipk_url": ""
 }
