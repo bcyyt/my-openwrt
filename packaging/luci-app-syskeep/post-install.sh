@@ -7,7 +7,8 @@ if [ -x /etc/uci-defaults/syskeep-setup ]; then
 	rm -f /etc/uci-defaults/syskeep-setup
 fi
 
-chmod 755 /etc/init.d/syskeep /usr/bin/syskeep-upgrade.sh /etc/syskeep/restore.sh /lib/upgrade/syskeep-hook.sh 2>/dev/null || true
+chmod 755 /etc/init.d/syskeep /etc/init.d/syskeep-early /usr/bin/syskeep-upgrade.sh /etc/syskeep/restore.sh /lib/upgrade/syskeep-hook.sh 2>/dev/null || true
+[ -x /etc/init.d/syskeep-early ] && /etc/init.d/syskeep-early enable >/dev/null 2>&1 || true
 [ -x /etc/init.d/syskeep ] && /etc/init.d/syskeep enable >/dev/null 2>&1 || true
 
 if [ -f /etc/syskeep/datadir.sh ]; then

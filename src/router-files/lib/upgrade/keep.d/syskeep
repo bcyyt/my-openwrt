@@ -1,5 +1,8 @@
 /etc/syskeep/
 /etc/init.d/syskeep
+/etc/init.d/syskeep-early
+/etc/rc.d/S15syskeep-early
+/etc/rc.d/S99syskeep
 /etc/config/network
 /etc/config/wireless
 /etc/config/dhcp

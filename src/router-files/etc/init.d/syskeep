@@ -1,23 +1,14 @@
 #!/bin/sh /etc/rc.common
 
-START=15
+START=99
 USE_PROCD=0
 
 boot() {
-	if [ -f /etc/syskeep/pending ] || [ -f /etc/syskeep/restoring ]; then
-		if [ -f /etc/syskeep/datadir.sh ]; then
-			. /etc/syskeep/datadir.sh
-			syskeep_restore_uci /etc/syskeep/uci
-		fi
-	fi
 	[ -f /etc/syskeep/pending ] || [ -f /etc/syskeep/restoring ] || return 0
 	[ -x /etc/syskeep/restore.sh ] || return 0
-	(
-		. /etc/syskeep/datadir.sh
-		root=$(syskeep_wait_root 30) || exit 1
-		mkdir -p "$root/syskeep"
-		/etc/syskeep/restore.sh >>"$root/syskeep/restore.log" 2>&1
-	) &
+	logger -t syskeep "boot: start restore"
+	trap '' HUP
+	nohup /etc/syskeep/restore.sh >>/tmp/syskeep-restore.out 2>&1 &
 }
 
 start() {

@@ -25,6 +25,7 @@ add_fail() {
 
 [ -f "$ETC/pending" ] || [ -f "$ETC/restoring" ] || exit 0
 mv "$ETC/pending" "$ETC/restoring" 2>/dev/null || true
+echo "$(date '+%F %T') restore begin" >> "$ETC/boot.log"
 
 ROOT=$(syskeep_wait_root 30) || ROOT=""
 if [ -z "$ROOT" ]; then

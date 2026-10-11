@@ -16,7 +16,7 @@ IPTV_VER="${IPTV_VER:-2.3.14-r0}"
 MEDIA_VER="${MEDIA_VER:-1.5.7-r0}"
 STATUS_VER="${STATUS_VER:-4.26}"
 NETQ_VER="${NETQ_VER:-1.0.16-r0}"
-SYSKEEP_VER="${SYSKEEP_VER:-1.0.9-r0}"
+SYSKEEP_VER="${SYSKEEP_VER:-1.0.10-r0}"
 DATE_STR="$(date +%Y-%m-%d)"
 OTA_URL_BASE="https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages"
 
@@ -232,6 +232,7 @@ install -d "$SYSKEEP_ROOT/etc/init.d" "$SYSKEEP_ROOT/etc/uci-defaults" "$SYSKEEP
 
 install -m 755 "$PACK/luci-app-syskeep/files/etc/uci-defaults/syskeep-setup" "$SYSKEEP_ROOT/etc/uci-defaults/syskeep-setup"
 install -m 755 "$SRC/etc/init.d/syskeep" "$SYSKEEP_ROOT/etc/init.d/syskeep"
+install -m 755 "$SRC/etc/init.d/syskeep-early" "$SYSKEEP_ROOT/etc/init.d/syskeep-early"
 install -m 755 "$SRC/etc/syskeep/restore.sh" "$SYSKEEP_ROOT/etc/syskeep/restore.sh"
 install -m 644 "$SRC/etc/syskeep/datadir.sh" "$SYSKEEP_ROOT/etc/syskeep/datadir.sh"
 install -m 644 "$SRC/etc/syskeep/custom-apks.txt" "$SYSKEEP_ROOT/etc/syskeep/custom-apks.txt"
