@@ -4,6 +4,7 @@
 ETC=/etc/syskeep
 WORLD="$ETC/world"
 . /etc/syskeep/datadir.sh
+CUSTOM="$ETC/custom-apks.txt"
 
 log() {
 	echo "$(date '+%F %T') $*" | tee -a "$LOG"
@@ -69,6 +70,15 @@ overlay_has() {
 	grep -qx "$1" "$OVERLAY"
 }
 
+custom_url() {
+	[ -f "$CUSTOM" ] || [ -f "$DATA/custom-apks.txt" ] || return 1
+	if [ -f "$CUSTOM" ]; then
+		awk -v n="$1" 'NF >= 2 && $1 == n { print $2; exit }' "$CUSTOM"
+	else
+		awk -v n="$1" 'NF >= 2 && $1 == n { print $2; exit }' "$DATA/custom-apks.txt"
+	fi
+}
+
 if [ -f "$OVERLAY" ]; then
 	total=$(grep -cve '^$' "$OVERLAY" 2>/dev/null || echo 0)
 	n=0
@@ -86,9 +96,31 @@ if [ -f "$OVERLAY" ]; then
 				ok=1
 				break
 			fi
-			log "fail $base"
-			add_fail "$base"
+			log "fail local $base"
 		done
+		if [ "$ok" != 1 ]; then
+			url=$(custom_url "$pkg")
+			if [ -n "$url" ]; then
+				ubase=$(basename "$url")
+				out="$DATA/apks/$ubase"
+				write_status restore "下载 $pkg"
+				if curl -fL --connect-timeout 15 --max-time 120 -o "$out.part" "$url" && mv "$out.part" "$out"; then
+					if apk add --allow-untrusted "$out" >>"$LOG" 2>&1; then
+						log "ok $ubase"
+						ok=1
+					else
+						log "fail $ubase"
+					fi
+				else
+					rm -f "$out.part"
+					log "fetch fail $pkg"
+				fi
+			fi
+		fi
+		if [ "$ok" != 1 ]; then
+			log "miss apk $pkg"
+			add_fail "$pkg"
+		fi
 	done < "$OVERLAY"
 elif [ -d "$DATA/apks" ]; then
 	for f in "$DATA/apks"/*.apk; do
@@ -160,6 +192,12 @@ fi
 /etc/init.d/network reload >/dev/null 2>&1 || true
 /etc/init.d/firewall restart >/dev/null 2>&1 || true
 wifi reload >/dev/null 2>&1 || true
+
+if [ -f "$DATA/custom-apks.txt" ]; then
+	cp "$DATA/custom-apks.txt" "$ETC/custom-apks.txt"
+	rm -f "$ETC/custom-apks.txt.apk-new"
+	log "restore custom-apks.txt"
+fi
 
 write_status restore "卸载刷机前已移除的插件"
 REMOVED="$ETC/removed-pkgs"

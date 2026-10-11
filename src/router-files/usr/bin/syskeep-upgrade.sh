@@ -63,20 +63,37 @@ rm_pkg_apks() {
 	done
 }
 
+find_pkg_apk() {
+	local pkg="$1" id="$2" f base
+	for f in "$DATA/apks"/*.apk; do
+		[ -f "$f" ] || continue
+		base=$(basename "$f" .apk)
+		syskeep_apk_for_pkg "$base" "$pkg" || continue
+		if [ -n "$id" ]; then
+			[ "$base" = "$id" ] && { echo "$f"; return 0; }
+			case "$base" in
+				"$id"-*) echo "$f"; return 0 ;;
+			esac
+			continue
+		fi
+		echo "$f"
+		return 0
+	done
+	return 1
+}
+
 fetch_custom_apk() {
 	local pkg="$1" id="$2" url ubase out
 	url=$(custom_url "$pkg")
 	[ -n "$url" ] || return 1
 	ubase=$(basename "$url" .apk)
-	[ "$ubase" = "$id" ] || [ "$ubase" = "$pkg" ] || {
-		log "custom url $pkg is $ubase, installed $id, skip"
-		return 1
-	}
-	if [ -n "$id" ]; then
-		out="$DATA/apks/${id}.apk"
-	else
-		out="$DATA/apks/${pkg}.apk"
+	if [ "$ubase" != "$id" ] && [ "$ubase" != "$pkg" ]; then
+		syskeep_apk_for_pkg "$ubase" "$pkg" || {
+			log "custom url $pkg is $ubase, installed $id, skip"
+			return 1
+		}
 	fi
+	out="$DATA/apks/${ubase}.apk"
 	log "fetch $pkg"
 	if curl -fsSL --connect-timeout 15 --max-time 120 -o "$out.part" "$url"; then
 		mv "$out.part" "$out"
@@ -114,6 +131,7 @@ backup_overlay_apks() {
 	mkdir -p "$DATA/apks" "$DATA/files"
 	list_overlay_pkgs > "$ETC/overlay-pkgs"
 	cp "$ETC/overlay-pkgs" "$DATA/overlay-pkgs"
+	[ -f "$CUSTOM" ] && cp "$CUSTOM" "$DATA/custom-apks.txt"
 	total=$(wc -l < "$ETC/overlay-pkgs" | tr -d ' ')
 	[ "$total" -gt 0 ] || { log "no overlay packages"; return 0; }
 	apk update >>"$LOG" 2>&1 || true
@@ -123,10 +141,9 @@ backup_overlay_apks() {
 		n=$((n + 1))
 		write_status backup "备份插件 $pkg ($n/$total)"
 		id=$(pkg_installed_id "$pkg")
-		want=""
-		[ -n "$id" ] && want="$DATA/apks/${id}.apk"
-		if [ -n "$want" ] && [ -f "$want" ]; then
-			log "have apk $id"
+		want=$(find_pkg_apk "$pkg" "$id") || want=""
+		if [ -n "$want" ]; then
+			log "have apk $(basename "$want")"
 			rm_pkg_apks "$pkg" "$want"
 			rm -f "$DATA/files/$pkg.files.tgz"
 			continue
@@ -137,8 +154,9 @@ backup_overlay_apks() {
 			continue
 		fi
 		if apk fetch -o "$DATA/apks" "$pkg" >>"$LOG" 2>&1; then
-			if [ -n "$want" ] && [ -f "$want" ]; then
-				log "fetched $id"
+			want=$(find_pkg_apk "$pkg" "$id") || want=$(find_pkg_apk "$pkg") || want=""
+			if [ -n "$want" ]; then
+				log "fetched $(basename "$want")"
 				rm_pkg_apks "$pkg" "$want"
 				rm -f "$DATA/files/$pkg.files.tgz"
 				continue
@@ -210,7 +228,7 @@ cmd_backup() {
 	awk '{gsub(/[=<>].*/,""); print}' /rom/etc/apk/world 2>/dev/null | sort -u > "$ETC/rom-world"
 	cp "$ETC/rom-world" "$DATA/rom-world" 2>/dev/null || true
 	awk '{gsub(/[=<>].*/,""); print}' /etc/apk/world | sort -u > /tmp/syskeep.world.$$
-	comm -23 "$ETC/rom-world" /tmp/syskeep.world.$$ > "$ETC/removed-pkgs"
+	awk 'NR==FNR {a[$1]=1; next} !a[$1]' /tmp/syskeep.world.$$ "$ETC/rom-world" > "$ETC/removed-pkgs"
 	cp "$ETC/removed-pkgs" "$DATA/removed-pkgs"
 	rm -f /tmp/syskeep.world.$$
 	syskeep_backup_uci "$ETC/uci"

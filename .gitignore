@@ -5,3 +5,4 @@ src/router-files/tmp/
 packages/keys/my-openwrt.rsa
 src/router-files/www-retired/
 **/__pycache__/
+.monkeycode-tmp-files/
