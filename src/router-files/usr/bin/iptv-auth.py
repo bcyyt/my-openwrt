@@ -1052,7 +1052,6 @@ def start_rtsp_proxy():
 def run_task():
     now_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     log("=== 开始执行 IPTV 鉴权任务 ===")
-    save_status(last_run=now_str, auth_ok=False)
     session = authenticate()
     if session is None:
         log("鉴权失败，无法继续", error=True)
@@ -1064,8 +1063,6 @@ def run_task():
         save_status(last_run=now_str, auth_ok=False, channels=0)
         return False
     generate_m3u(channels)
-    # 台标自动下载（跳过已存在的，只下载新增频道）
-    download_logos(channels)
     # M3U 写完立即通知 rtp2httpd 重载（不等 EPG——EPG 抓取耗时约 10 分钟，
     # 频道列表应尽快生效）
     try:
@@ -1076,6 +1073,7 @@ def run_task():
     # 鉴权与频道已就绪，先落盘状态（EPG 在后台继续抓）
     save_status(last_run=now_str, auth_ok=True, channels=len(channels),
                 next_run=(datetime.datetime.now() + timedelta(hours=config.get('interval', 10))).strftime('%Y-%m-%d %H:%M:%S'))
+    download_logos(channels)
     if config.get('epg_enabled', True):
         fetch_epg(session, channels)
         # EPG 就绪后补一次重载：rtp2httpd 在上面 M3U 重载时会顺带抓 EPG，

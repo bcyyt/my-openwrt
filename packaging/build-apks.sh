@@ -12,11 +12,11 @@ APK="${APK:-/tmp/apk-tools/build/src/apk}"
 SIGN_KEY="$KEYS/my-openwrt.rsa"
 PUB_KEY="$KEYS/my-openwrt.rsa.pub"
 
-IPTV_VER="${IPTV_VER:-2.3.12-r0}"
+IPTV_VER="${IPTV_VER:-2.3.14-r0}"
 MEDIA_VER="${MEDIA_VER:-1.5.7-r0}"
 STATUS_VER="${STATUS_VER:-4.26}"
 NETQ_VER="${NETQ_VER:-1.0.16-r0}"
-SYSKEEP_VER="${SYSKEEP_VER:-1.0.6-r0}"
+SYSKEEP_VER="${SYSKEEP_VER:-1.0.8-r0}"
 DATE_STR="$(date +%Y-%m-%d)"
 OTA_URL_BASE="https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages"
 
@@ -88,13 +88,14 @@ mkpkg \
 	"IPTV auth + M3U/EPG generation + RTSP replay + rtp2httpd live proxy + OTA update detection" \
 	iptv-auth GPL-2.0 "https://github.com/bcyyt/my-openwrt" \
 	"$IPTV_ROOT" "$IPTV_APK" \
+	-I "depends:libc python3 python3-pip luci-base" \
 	-s "post-install:$PACK/iptv-auth/post-install.sh"
 
 cat > "$OUT/iptv-auth/version.json" <<EOF
 {
   "version": "${IPTV_VER}",
   "date": "${DATE_STR}",
-	"changelog": "4K 频道运营商未返回节目单时，按去掉 4K 后的台名回填同名高清台 EPG。",
+	"changelog": "新装自动拉取 python3、pip，并补齐 requests。",
   "url": "${OTA_URL_BASE}/iptv-auth/iptv-auth-${IPTV_VER}.apk",
   "ipk_url": ""
 }

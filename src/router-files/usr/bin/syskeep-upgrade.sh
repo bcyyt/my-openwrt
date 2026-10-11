@@ -38,6 +38,55 @@ pkg_base() {
 	echo "$1" | sed 's/[=<>].*//'
 }
 
+pkg_installed_id() {
+	apk info -v 2>/dev/null | awk -v p="$1" '
+		index($0, p "-") == 1 {
+			rest = substr($0, length(p) + 2)
+			if (rest ~ /^[0-9]/) { print $0; exit }
+		}'
+}
+
+custom_url() {
+	[ -f "$CUSTOM" ] || return 1
+	awk -v n="$1" 'NF >= 2 && $1 == n { print $2; exit }' "$CUSTOM"
+}
+
+rm_pkg_apks() {
+	local pkg="$1" keep="$2" f
+	local base
+	for f in "$DATA/apks"/*.apk; do
+		[ -f "$f" ] || continue
+		[ -n "$keep" ] && [ "$f" = "$keep" ] && continue
+		base=$(basename "$f" .apk)
+		syskeep_apk_for_pkg "$base" "$pkg" || continue
+		rm -f "$f"
+	done
+}
+
+fetch_custom_apk() {
+	local pkg="$1" id="$2" url ubase out
+	url=$(custom_url "$pkg")
+	[ -n "$url" ] || return 1
+	ubase=$(basename "$url" .apk)
+	[ "$ubase" = "$id" ] || [ "$ubase" = "$pkg" ] || {
+		log "custom url $pkg is $ubase, installed $id, skip"
+		return 1
+	}
+	if [ -n "$id" ]; then
+		out="$DATA/apks/${id}.apk"
+	else
+		out="$DATA/apks/${pkg}.apk"
+	fi
+	log "fetch $pkg"
+	if curl -fsSL --connect-timeout 15 --max-time 120 -o "$out.part" "$url"; then
+		mv "$out.part" "$out"
+		return 0
+	fi
+	rm -f "$out.part"
+	log "fetch fail $pkg"
+	return 1
+}
+
 list_overlay_pkgs() {
 	awk '{gsub(/[=<>].*/,""); print}' /etc/apk/world 2>/dev/null | sort -u > /tmp/syskeep.world
 	awk '{gsub(/[=<>].*/,""); print}' /rom/etc/apk/world 2>/dev/null | sort -u > /tmp/syskeep.rom
@@ -61,7 +110,7 @@ pack_installed() {
 }
 
 backup_overlay_apks() {
-	local pkg n total
+	local pkg n total id want
 	mkdir -p "$DATA/apks" "$DATA/files"
 	list_overlay_pkgs > "$ETC/overlay-pkgs"
 	cp "$ETC/overlay-pkgs" "$DATA/overlay-pkgs"
@@ -73,38 +122,59 @@ backup_overlay_apks() {
 		[ -n "$pkg" ] || continue
 		n=$((n + 1))
 		write_status backup "备份插件 $pkg ($n/$total)"
-		if [ -f "$DATA/apks/$pkg.apk" ] || ls "$DATA/apks/$pkg"-*.apk >/dev/null 2>&1; then
-			log "have apk $pkg"
+		id=$(pkg_installed_id "$pkg")
+		want=""
+		[ -n "$id" ] && want="$DATA/apks/${id}.apk"
+		if [ -n "$want" ] && [ -f "$want" ]; then
+			log "have apk $id"
+			rm_pkg_apks "$pkg" "$want"
+			rm -f "$DATA/files/$pkg.files.tgz"
+			continue
+		fi
+		rm_pkg_apks "$pkg" ""
+		if fetch_custom_apk "$pkg" "$id"; then
+			rm -f "$DATA/files/$pkg.files.tgz"
 			continue
 		fi
 		if apk fetch -o "$DATA/apks" "$pkg" >>"$LOG" 2>&1; then
-			log "fetched $pkg"
-			continue
+			if [ -n "$want" ] && [ -f "$want" ]; then
+				log "fetched $id"
+				rm_pkg_apks "$pkg" "$want"
+				rm -f "$DATA/files/$pkg.files.tgz"
+				continue
+			fi
+			log "repo apk for $pkg is not $id, keep installed files"
+			rm_pkg_apks "$pkg" ""
 		fi
 		if pack_installed "$pkg"; then
 			continue
 		fi
 		log "backup miss $pkg"
 	done < "$ETC/overlay-pkgs"
+	purge_unlisted_cache
 }
 
-fetch_custom() {
-	[ -f "$CUSTOM" ] || return 0
-	while read -r name url; do
-		[ -z "$name" ] && continue
-		case "$name" in \#*) continue ;; esac
-		[ -n "$url" ] || continue
-		ls "$DATA/apks/${name}"-*.apk "$DATA/apks/${name}.apk" >/dev/null 2>&1 && continue
-		[ -f "$DATA/files/${name}.files.tgz" ] && continue
-		out="$DATA/apks/${name}.apk"
-		log "fetch $name"
-		if curl -fsSL --connect-timeout 15 --max-time 120 -o "$out.part" "$url"; then
-			mv "$out.part" "$out"
-		else
-			rm -f "$out.part"
-			log "fetch fail $name"
-		fi
-	done < "$CUSTOM"
+purge_unlisted_cache() {
+	local f base pkg listed
+	[ -f "$ETC/overlay-pkgs" ] || return 0
+	for f in "$DATA/apks"/*.apk; do
+		[ -f "$f" ] || continue
+		base=$(basename "$f" .apk)
+		listed=0
+		while read -r pkg; do
+			[ -n "$pkg" ] || continue
+			if syskeep_apk_for_pkg "$base" "$pkg"; then
+				listed=1
+				break
+			fi
+		done < "$ETC/overlay-pkgs"
+		[ "$listed" = 1 ] || rm -f "$f"
+	done
+	for f in "$DATA/files"/*.files.tgz; do
+		[ -f "$f" ] || continue
+		pkg=$(basename "$f" .files.tgz)
+		grep -qx "$pkg" "$ETC/overlay-pkgs" 2>/dev/null || rm -f "$f"
+	done
 }
 
 cmd_status() {
@@ -140,7 +210,6 @@ cmd_backup() {
 	date '+%F %T' > "$ETC/saved_at"
 	chmod 755 "$ETC/restore.sh" 2>/dev/null || true
 	backup_overlay_apks
-	fetch_custom
 	if sysupgrade -c -k -u -b "$DATA/sysupgrade.tgz"; then
 		write_status backup "备份完成"
 		log "backup $DATA/sysupgrade.tgz"

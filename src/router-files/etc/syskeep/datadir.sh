@@ -143,3 +143,18 @@ syskeep_wait_root() {
 	done
 	return 1
 }
+
+# True if apk basename (no .apk) belongs to package name, not a longer prefix.
+syskeep_apk_for_pkg() {
+	local base="$1" pkg="$2" ver
+	[ "$base" = "$pkg" ] && return 0
+	case "$base" in
+		"$pkg"-*)
+			ver=${base#"$pkg"-}
+			case "$ver" in
+				[0-9]*) return 0 ;;
+			esac
+			;;
+	esac
+	return 1
+}

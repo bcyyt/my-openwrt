@@ -27,6 +27,16 @@ chmod 755 /etc/init.d/iptv-auth /usr/bin/iptv-auth.py \
 	/usr/bin/iptv-auth-ota.sh /usr/bin/iptv-auth-ota-check.sh \
 	/usr/bin/rtp2httpd-ota-check.sh /usr/bin/rtp2httpd-update.sh 2>/dev/null || true
 
+ensure_pkg() {
+	apk info -e "$1" >/dev/null 2>&1 && return 0
+	apk add "$1" >/dev/null 2>&1
+}
+ensure_pkg python3
+ensure_pkg python3-pip
+if ! python3 -c "import requests" >/dev/null 2>&1; then
+	pip3 install requests >/dev/null 2>&1 || apk add python3-requests >/dev/null 2>&1 || true
+fi
+
 if [ -x /etc/init.d/iptv-auth ]; then
 	/etc/init.d/iptv-auth enable >/dev/null 2>&1 || true
 	/etc/init.d/iptv-auth restart >/dev/null 2>&1 || true

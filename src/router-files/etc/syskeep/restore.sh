@@ -61,7 +61,35 @@ write_status restore "更新软件源"
 apk update >>"$LOG" 2>&1 || log "apk update failed, continue"
 
 write_status restore "安装已备份 APK"
-if [ -d "$DATA/apks" ]; then
+OVERLAY="$ETC/overlay-pkgs"
+[ -f "$OVERLAY" ] || OVERLAY="$DATA/overlay-pkgs"
+overlay_has() {
+	[ -f "$OVERLAY" ] || return 1
+	grep -qx "$1" "$OVERLAY"
+}
+
+if [ -f "$OVERLAY" ]; then
+	total=$(grep -cve '^$' "$OVERLAY" 2>/dev/null || echo 0)
+	n=0
+	while read -r pkg; do
+		[ -n "$pkg" ] || continue
+		n=$((n + 1))
+		write_status restore "安装 $pkg ($n/$total)"
+		ok=0
+		for f in "$DATA/apks"/*.apk; do
+			[ -f "$f" ] || continue
+			base=$(basename "$f")
+			syskeep_apk_for_pkg "$(basename "$f" .apk)" "$pkg" || continue
+			if apk add --allow-untrusted "$f" >>"$LOG" 2>&1; then
+				log "ok $base"
+				ok=1
+				break
+			fi
+			log "fail $base"
+			add_fail "$base"
+		done
+	done < "$OVERLAY"
+elif [ -d "$DATA/apks" ]; then
 	for f in "$DATA/apks"/*.apk; do
 		[ -f "$f" ] || continue
 		base=$(basename "$f")
@@ -80,6 +108,10 @@ if [ -d "$DATA/files" ]; then
 	for f in "$DATA/files"/*.files.tgz; do
 		[ -f "$f" ] || continue
 		base=$(basename "$f" .files.tgz)
+		if [ -f "$OVERLAY" ] && ! overlay_has "$base"; then
+			log "skip files $base"
+			continue
+		fi
 		if apk info -e "$base" >/dev/null 2>&1; then
 			continue
 		fi
@@ -103,6 +135,9 @@ if [ -f "$WORLD" ]; then
 		pkg=${pkg%%[<>]*}
 		n=$((n + 1))
 		write_status restore "重装 $pkg ($n/$total)"
+		if overlay_has "$pkg"; then
+			continue
+		fi
 		if apk info -e "$pkg" >/dev/null 2>&1; then
 			continue
 		fi

@@ -1,7 +1,7 @@
 {
-  "version": "2.3.12-r0",
+  "version": "2.3.14-r0",
   "date": "2026-10-11",
-	"changelog": "4K 频道运营商未返回节目单时，按去掉 4K 后的台名回填同名高清台 EPG。",
-  "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth-2.3.12-r0.apk",
+	"changelog": "新装自动拉取 python3、pip，并补齐 requests。",
+  "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth-2.3.14-r0.apk",
   "ipk_url": ""
 }
