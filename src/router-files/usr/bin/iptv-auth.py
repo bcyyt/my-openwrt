@@ -1053,6 +1053,16 @@ def run_task():
     now_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     log("=== 开始执行 IPTV 鉴权任务 ===")
     session = authenticate()
+    # 刷机/开机后专线 DHCP 已拿到地址但网关 ARP 未 REACHABLE 时，
+    # 第一次会 Host unreachable；不重试就要等到 interval（默认 10 小时）
+    if session is None:
+        for attempt in range(1, 12):
+            log(f"鉴权未连通，20 秒后重试 ({attempt}/11)")
+            time.sleep(20)
+            load_config()
+            session = authenticate()
+            if session is not None:
+                break
     if session is None:
         log("鉴权失败，无法继续", error=True)
         save_status(last_run=now_str, auth_ok=False)
