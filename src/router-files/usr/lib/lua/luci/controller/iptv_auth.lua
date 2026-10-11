@@ -289,18 +289,17 @@ function get_rtp2httpd_versions()
     local mirror = sys.exec("uci -q get iptv-auth.main.update_mirror 2>/dev/null") or ""
     mirror = mirror:gsub("%s+", "")
 
-    local api = "https://api.github.com/repos/stackia/rtp2httpd/releases/latest"
+    local api = "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/rtp2httpd/version.json"
     if mirror ~= "" then api = mirror .. api end
 
     local latest = ""
     local err = ""
     local out = sys.exec(string.format("curl -s -m 15 %q 2>/dev/null", api)) or ""
     if out ~= "" then
-        latest = out:match('"tag_name"%s*:%s*"([^"]+)"') or ""
-        latest = latest:gsub("^v", "")
+        latest = out:match('"version"%s*:%s*"([^"]+)"') or ""
     end
     if latest == "" then
-        err = "无法访问 GitHub API（网络受限？可在本页设置镜像前缀后重试）"
+        err = "无法访问本仓库 version.json（可在本页设置镜像前缀后重试）"
     end
     http.write(json.stringify({current = current, latest = latest, error = err}))
 end

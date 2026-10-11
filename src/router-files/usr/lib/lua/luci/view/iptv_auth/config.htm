@@ -608,6 +608,7 @@ if (document.readyState === 'loading') {
 
 <div class="iptv-section">
     <div class="iptv-section-title-bar">rtp2httpd 在线更新</div>
+    <div class="iptv-info-note" style="margin:8px 16px 0;">更新源为本仓库自编译包（初始缓冲池 512），不是 GitHub 官方 Release。</div>
     <div class="iptv-section-body">
         <div class="iptv-field">
             <div class="iptv-field-label">当前版本</div>
@@ -617,7 +618,7 @@ if (document.readyState === 'loading') {
             <div class="iptv-field-label">下载镜像前缀<small>选择常用代理或自定义</small></div>
             <div class="iptv-field-input">
                 <select id="cfg-update_mirror-select" onchange="onMirrorSelectChange(this)" style="width:100%;max-width:420px;padding:7px 10px;border:1px solid var(--iptv-border);border-radius:6px;font-size:13px;color:var(--iptv-text);background:#fff;margin-bottom:8px;box-sizing:border-box;">
-                    <option value="">留空 — 直连 GitHub（国内可能无法访问）</option>
+                    <option value="">留空 — 直连本仓库 raw GitHub（国内可能需要镜像）</option>
                     <option value="https://gh-proxy.com/">https://gh-proxy.com/</option>
                     <option value="https://ghproxy.net/">https://ghproxy.net/</option>
                     <option value="https://ghfast.top/">https://ghfast.top/</option>

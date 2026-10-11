@@ -1,7 +1,7 @@
 {
-  "version": "2.3.16-r0",
+  "version": "2.3.17-r0",
   "date": "2026-10-11",
-	"changelog": "rtp2httpd 默认日志 INFO(3)，UDP 接收缓冲 4MB；LuCI 可调日志级别。",
-  "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth-2.3.16-r0.apk",
+  "changelog": "rtp2httpd 更新改走本仓库自编译包（BUFFER_POOL 512）。",
+  "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth-2.3.17-r0.apk",
   "ipk_url": ""
 }

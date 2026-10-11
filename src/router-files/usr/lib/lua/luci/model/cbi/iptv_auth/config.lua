@@ -91,7 +91,7 @@ o_cur.rawhtml = true
 o_cur.cfgvalue = function() return cur_ver end
 
 local o_mirror = s6:option(Value, "update_mirror", translate("下载镜像前缀（可选）"))
-o_mirror.placeholder = "留空直连 GitHub；如 https://ghproxy.net/"
+o_mirror.placeholder = "留空直连本仓库 raw GitHub；如 https://ghproxy.net/"
 o_mirror.rmempty = true
 
 local o_ui = s6:option(DummyValue, "_r2h_update_ui", translate("检查并更新"))

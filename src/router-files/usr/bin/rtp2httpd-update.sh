@@ -6,7 +6,8 @@
 #       → killall 触发 procd 按 respawn 策略自动拉起新版（python/鉴权不受影响）
 # 状态写入 /tmp/rtp2httpd-update.json 供 LuCI 轮询
 STATUS=/tmp/rtp2httpd-update.json
-API="https://api.github.com/repos/stackia/rtp2httpd/releases/latest"
+MANIFEST="https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/rtp2httpd/version.json"
+OTA_BASE="https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/rtp2httpd"
 
 set_status() {
     # $1=state $2=message $3=version
@@ -30,13 +31,13 @@ set_status "running" "正在准备更新 (v$VER)" "$VER"
 
 MIRROR=$(uci -q get iptv-auth.main.update_mirror 2>/dev/null)
 
-# latest → 查询 GitHub API（支持镜像前缀）
+# latest → 本仓库 version.json（支持镜像前缀）
 if [ "$VER" = "latest" ]; then
-    API_URL="$API"
-    [ -n "$MIRROR" ] && API_URL="$MIRROR$API"
-    VER=$(curl -s -m 15 "$API_URL" 2>/dev/null | grep -oE '"tag_name": *"[^"]+"' | cut -d'"' -f4 | sed 's/^v//')
+    MF_URL="$MANIFEST"
+    [ -n "$MIRROR" ] && MF_URL="$MIRROR$MANIFEST"
+    VER=$(curl -s -m 15 "$MF_URL" 2>/dev/null | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
     if [ -z "$VER" ]; then
-        set_status "failed" "无法查询最新版本（GitHub 不可达，可在 LuCI 设置镜像前缀后重试）" ""
+        set_status "failed" "无法查询本仓库 version.json（可在 LuCI 设置镜像前缀后重试）" ""
         exit 1
     fi
 fi
@@ -46,7 +47,7 @@ case "$ARCH" in
     aarch64*) BIN="rtp2httpd-$VER-aarch64" ;;
     *)        BIN="rtp2httpd-$VER-$ARCH" ;;
 esac
-URL="https://github.com/stackia/rtp2httpd/releases/download/v$VER/$BIN"
+URL="$OTA_BASE/$BIN"
 [ -n "$MIRROR" ] && URL="$MIRROR$URL"
 
 set_status "running" "正在下载 v$VER（$BIN）" "$VER"
