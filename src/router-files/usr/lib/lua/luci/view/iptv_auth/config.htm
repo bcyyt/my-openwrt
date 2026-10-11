@@ -34,6 +34,7 @@ function loadConfig() {
                 'usergroupnmb','epggroupnmb','usertoken','stbid','stbinfo',
                 'live_port','replay_port','upstream_interface',
                 'rtp2h_workers','rtp2h_rcvbuf','rtp2h_bufpool',
+                'rtp2h_verbose',
                 'rtp2h_if_multicast','rtp2h_if_fcc','rtp2h_if_rtsp','rtp2h_if_http',
             'filter_keywords','interval','update_mirror','ota_url',
                 'wan_domain'
@@ -148,6 +149,7 @@ function saveConfig() {
         'usergroupnmb','epggroupnmb','usertoken','stbid','stbinfo',
         'live_port','replay_port','upstream_interface',
         'rtp2h_workers','rtp2h_rcvbuf','rtp2h_bufpool',
+        'rtp2h_verbose',
         'rtp2h_if_multicast','rtp2h_if_fcc','rtp2h_if_rtsp','rtp2h_if_http',
             'filter_keywords','interval','update_mirror','ota_url',
                 'wan_domain'
@@ -173,6 +175,9 @@ function saveConfig() {
     }
     if (data.rtp2h_workers && (parseInt(data.rtp2h_workers) < 1 || parseInt(data.rtp2h_workers) > 16)) {
         alert('工作线程数必须在 1-16 之间'); return;
+    }
+    if (data.rtp2h_verbose && (parseInt(data.rtp2h_verbose) < 0 || parseInt(data.rtp2h_verbose) > 4)) {
+        alert('日志级别必须在 0-4 之间'); return;
     }
     if (data.interval && (parseInt(data.interval) < 1 || parseInt(data.interval) > 24)) {
         alert('执行间隔必须在 1-24 小时之间'); return;
@@ -537,11 +542,15 @@ if (document.readyState === 'loading') {
         </div>
         <div class="iptv-field">
             <div class="iptv-field-label">UDP 接收缓冲<small>字节</small></div>
-            <div class="iptv-field-input"><input type="number" id="cfg-rtp2h_rcvbuf" placeholder="1572864" /></div>
+            <div class="iptv-field-input"><input type="number" id="cfg-rtp2h_rcvbuf" placeholder="4194304" /></div>
         </div>
         <div class="iptv-field">
             <div class="iptv-field-label">缓冲池大小</div>
             <div class="iptv-field-input"><input type="number" id="cfg-rtp2h_bufpool" placeholder="32768" /></div>
+        </div>
+        <div class="iptv-field">
+            <div class="iptv-field-label">日志级别<small>0致命 1错误 2警告 3信息 4调试</small></div>
+            <div class="iptv-field-input"><input type="number" id="cfg-rtp2h_verbose" placeholder="3" min="0" max="4" /></div>
         </div>
     </div>
 </div>

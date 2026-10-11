@@ -57,10 +57,13 @@ o_w.datatype = "range(1,16)"
 o_w.placeholder = "4"
 o_rb = s3:option(Value, "rtp2h_rcvbuf", translate("UDP 接收缓冲（字节）"))
 o_rb.datatype = "integer"
-o_rb.placeholder = "1572864"
+o_rb.placeholder = "4194304"
 o_bp = s3:option(Value, "rtp2h_bufpool", translate("缓冲池大小"))
 o_bp.datatype = "integer"
 o_bp.placeholder = "32768"
+o_v = s3:option(Value, "rtp2h_verbose", translate("日志级别（0-4）"))
+o_v.datatype = "range(0,4)"
+o_v.placeholder = "3"
 
 -- ============ 频道过滤 ============
 local s4 = m:section(NamedSection, "main", "iptv-auth", translate("频道过滤"))
