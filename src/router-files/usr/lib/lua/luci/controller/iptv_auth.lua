@@ -436,7 +436,7 @@ local OUI_VENDORS = {
 function get_clients()
     -- 当前连接的客户端（IP + 设备标识）：
     -- 直播以 rtp2httpd 快照为准（仅有 service_url 的媒体流，不含 /status），
-    -- 回看/网页仍用 netstat 的 554/2000；频道名对照 /www/Lan.m3u。
+    -- 回看/网页仍用 netstat 的 554/2000；无外部直播连接时不请求快照。
     local http = require "luci.http"
     local sys = require "luci.sys"
     local fs = require "nixio.fs"
@@ -520,45 +520,61 @@ function get_clients()
         return ""
     end
 
-    -- 1. 直播/经 rtp2httpd 的回看：快照只含有 service_url 的媒体流
-    local sse = sys.exec(string.format(
-        "curl -s --max-time 3 -H %q %q 2>/dev/null",
-        "X-Request-Snapshot: 1",
-        "http://127.0.0.1:" .. live_port .. "/status/sse"
-    )) or ""
-    local clients_raw = sse:match('"clients":(%b[])')
-    local snap_clients = clients_raw and json.parse(clients_raw) or nil
-    if type(snap_clients) == "table" then
-        for _, sc in ipairs(snap_clients) do
-            if type(sc) == "table" then
-                local rip = client_ip(sc.clientAddr or sc.client_addr or "")
-                local url = sc.serviceUrl or sc.service_url or ""
-                if rip and type(url) == "string" and url ~= "" then
-                    local c = ensure(rip)
-                    c.count = c.count + 1
-                    if url:match("^/rtsp/") or url:match("/PLTV/") then
-                        c.tset["回看"] = true
-                    else
-                        c.tset["直播"] = true
-                    end
-                    add_channel(c, channel_from_service(url))
-                end
-            end
-        end
-    end
-
-    -- 2. 回看 554 / 网页 2000（不含 live_port，避免把 /status 算成直播）
+    -- 1. 回看 554 / 网页 2000；并检测 live_port 是否有外部连接
     local ns = sys.exec("netstat -tn 2>/dev/null") or ""
+    local live_peers = false
     for line in ns:gmatch("[^\r\n]+") do
         if line:match("ESTABLISHED") then
             local laddr, raddr = line:match("%s+(%S+:%d+)%s+(%S+:%d+)%s+")
             if laddr and raddr then
                 local _, lport = host_port(laddr)
                 local rip = host_port(raddr)
-                if rip and lport and port_label[lport] and not self_ips[rip] then
-                    local c = ensure(rip)
-                    c.count = c.count + 1
-                    c.tset[port_label[lport]] = true
+                if rip and lport and not self_ips[rip] then
+                    if lport == live_port then
+                        live_peers = true
+                    elseif port_label[lport] then
+                        local c = ensure(rip)
+                        c.count = c.count + 1
+                        c.tset[port_label[lport]] = true
+                    end
+                end
+            end
+        end
+    end
+
+    -- 2. 仅当 23234 有外部连接时才拉快照；结果缓存 15 秒，避免刷 /status/sse 日志
+    if live_peers then
+        local snap_cache = "/tmp/iptv-auth-rtp2h-snap.json"
+        local clients_raw = nil
+        local mtime = fs.stat(snap_cache, "mtime")
+        if mtime and (os.time() - mtime) < 15 then
+            clients_raw = fs.readfile(snap_cache)
+        end
+        if not clients_raw or clients_raw == "" then
+            local sse = sys.exec(string.format(
+                "curl -s --max-time 3 -H %q %q 2>/dev/null",
+                "X-Request-Snapshot: 1",
+                "http://127.0.0.1:" .. live_port .. "/status/sse"
+            )) or ""
+            clients_raw = sse:match('"clients":(%b[])') or "[]"
+            fs.writefile(snap_cache, clients_raw)
+        end
+        local snap_clients = json.parse(clients_raw)
+        if type(snap_clients) == "table" then
+            for _, sc in ipairs(snap_clients) do
+                if type(sc) == "table" then
+                    local rip = client_ip(sc.clientAddr or sc.client_addr or "")
+                    local url = sc.serviceUrl or sc.service_url or ""
+                    if rip and type(url) == "string" and url ~= "" then
+                        local c = ensure(rip)
+                        c.count = c.count + 1
+                        if url:match("^/rtsp/") or url:match("/PLTV/") then
+                            c.tset["回看"] = true
+                        else
+                            c.tset["直播"] = true
+                        end
+                        add_channel(c, channel_from_service(url))
+                    end
                 end
             end
         end
