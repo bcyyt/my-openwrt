@@ -743,6 +743,14 @@ var SM_SC_ICONS={
   ttyd:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>',
   upnp:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83"/></svg>'
 };
+function sm_scHref(href){
+  if(!href||href.charAt(0)==='/')return href;
+  try{
+    var u=new URL(href,location.href);
+    u.hostname=location.hostname;
+    return u.href;
+  }catch(e){return href;}
+}
 function sm_renderShortcuts(list){
   var wrap=document.getElementById('sm-sc');if(!wrap)return;
   Array.prototype.slice.call(wrap.querySelectorAll('a[data-sc]')).forEach(function(n){n.parentNode.removeChild(n)});
@@ -751,7 +759,7 @@ function sm_renderShortcuts(list){
     if(!s||!s.href||!s.label)return;
     var a=document.createElement('a');
     a.setAttribute('data-sc',s.id||'');
-    a.href=s.href;
+    a.href=sm_scHref(s.href);
     a.innerHTML=(SM_SC_ICONS[s.id]||'')+s.label;
     if(fm)wrap.insertBefore(a,fm);else wrap.appendChild(a);
   });

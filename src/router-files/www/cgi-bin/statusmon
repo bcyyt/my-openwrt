@@ -1,5 +1,5 @@
 #!/bin/sh
-# statusmon v4.26 — OpenWrt 系统状态数据采集 CGI
+# statusmon v4.27 — OpenWrt 系统状态数据采集 CGI
 # 部署到 /www/cgi-bin/statusmon
 # v4.24 修复：同一 MAC 多 IPv4 时优先 REACHABLE/DELAY/PROBE，其次 DHCP 租约，避免 STALE 旧地址盖住当前 IP
 # v4.1 修复：ip neigh 字段解析（MAC=$5/状态=末字段）、CPU 采样公式、
@@ -76,6 +76,7 @@
 #           TCP443 回填 CDN IP（须在 web 规则之前命中）
 # v4.26 修复：网络接口里 PPPoE 收发字节跨重拨累计 —— 逻辑口重建后内核计数归零，
 #           用上次采样做偏移，页面总量不随重拨清零（重启 /tmp 仍会从 0 计）
+# v4.27 修复：rtp2httpd 快捷入口用浏览器 Host，公网/FRP 打开不再跳 LAN IP
 
 echo "Content-Type: application/json"
 echo "Access-Control-Allow-Origin: *"
@@ -1633,6 +1634,17 @@ lan_ip=${lan_ip%%/*}
 [ -z "$lan_ip" ] && lan_ip="192.168.10.1"
 live_port=$(uci -q get iptv-auth.main.live_port)
 live_port=${live_port:-23234}
+_sc_host=$HTTP_HOST
+case "$_sc_host" in
+    *:*)
+        _sc_port=${_sc_host##*:}
+        case "$_sc_port" in
+            *[!0-9]*) ;;
+            *) _sc_host=${_sc_host%:*} ;;
+        esac
+        ;;
+esac
+[ -z "$_sc_host" ] && _sc_host=$lan_ip
 _sc_alive() {
     local p pat
     for p in "$@"; do
@@ -1658,7 +1670,7 @@ sc_add() { sc_lines="${sc_lines}{\"id\":\"$1\",\"label\":\"$2\",\"href\":\"$3\"}
 sc_lines=""
 if _sc_on "$(uci -q get iptv-auth.main.enabled)" iptv-auth.py rtp2httpd; then
     sc_add iptv "IPTV 代理" "/cgi-bin/luci/admin/services/iptv_auth/status"
-    sc_add rtp2httpd "rtp2httpd" "http://${lan_ip}:${live_port}/st"
+    sc_add rtp2httpd "rtp2httpd" "http://${_sc_host}:${live_port}/st"
 fi
 if _sc_on "" mediahub-cms.py alist; then
     sc_add mediahub "影视中心" "/cgi-bin/luci/admin/services/mediahub"
