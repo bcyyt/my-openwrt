@@ -1,7 +1,8 @@
 {
-  "version": "2.3.27-r0",
+  "version": "2.3.28-r0",
   "date": "2026-10-12",
   "changelog": "状态页无外部直播连接时不再轮询 rtp2httpd /status/sse，避免刷日志。",
-  "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth-2.3.27-r0.apk",
-  "ipk_url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth_2.3.27-r0_x86_64.ipk"
+  "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth-2.3.28-r0.apk",
+  "ipk_url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth_2.3.28-r0_x86_64.ipk"
 }
+  "changelog": "打开 rtp2httpd 监控页不再被当成直播客户端，空闲时不再轮询 /status/sse。",

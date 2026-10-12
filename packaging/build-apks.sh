@@ -12,7 +12,7 @@ APK="${APK:-/tmp/apk-tools/build/src/apk}"
 SIGN_KEY="$KEYS/my-openwrt.rsa"
 PUB_KEY="$KEYS/my-openwrt.rsa.pub"
 
-IPTV_VER="${IPTV_VER:-2.3.27-r0}"
+IPTV_VER="${IPTV_VER:-2.3.28-r0}"
 MEDIA_VER="${MEDIA_VER:-1.5.7-r0}"
 STATUS_VER="${STATUS_VER:-4.29}"
 NETQ_VER="${NETQ_VER:-1.0.16-r0}"
@@ -147,7 +147,7 @@ cat > "$OUT/iptv-auth/version.json" <<EOF
 {
   "version": "${IPTV_VER}",
   "date": "${DATE_STR}",
-  "changelog": "状态页无外部直播连接时不再轮询 rtp2httpd /status/sse，避免刷日志。",
+  "changelog": "打开 rtp2httpd 监控页不再被当成直播客户端，空闲时不再轮询 /status/sse。",
   "url": "${OTA_URL_BASE}/iptv-auth/iptv-auth-${IPTV_VER}.apk",
   "ipk_url": "${OTA_URL_BASE}/iptv-auth/iptv-auth_${IPTV_VER}_${IPK_ARCH}.ipk"
 }

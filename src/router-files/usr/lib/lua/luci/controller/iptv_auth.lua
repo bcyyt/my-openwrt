@@ -436,7 +436,7 @@ local OUI_VENDORS = {
 function get_clients()
     -- 当前连接的客户端（IP + 设备标识）：
     -- 直播以 rtp2httpd 快照为准（仅有 service_url 的媒体流，不含 /status），
-    -- 回看/网页仍用 netstat 的 554/2000；无外部直播连接时不请求快照。
+    -- 回看/网页仍用 netstat 的 554/2000；监控页连接不算直播，快照为空且连接未变则不再请求。
     local http = require "luci.http"
     local sys = require "luci.sys"
     local fs = require "nixio.fs"
@@ -523,15 +523,17 @@ function get_clients()
     -- 1. 回看 554 / 网页 2000；并检测 live_port 是否有外部连接
     local ns = sys.exec("netstat -tn 2>/dev/null") or ""
     local live_peers = false
+    local live_fp_parts = {}
     for line in ns:gmatch("[^\r\n]+") do
         if line:match("ESTABLISHED") then
             local laddr, raddr = line:match("%s+(%S+:%d+)%s+(%S+:%d+)%s+")
             if laddr and raddr then
                 local _, lport = host_port(laddr)
-                local rip = host_port(raddr)
+                local rip, rport = host_port(raddr)
                 if rip and lport and not self_ips[rip] then
                     if lport == live_port then
                         live_peers = true
+                        live_fp_parts[#live_fp_parts + 1] = rip .. ":" .. (rport or "")
                     elseif port_label[lport] then
                         local c = ensure(rip)
                         c.count = c.count + 1
@@ -541,14 +543,25 @@ function get_clients()
             end
         end
     end
+    table.sort(live_fp_parts)
+    local live_fp = table.concat(live_fp_parts, ",")
 
-    -- 2. 仅当 23234 有外部连接时才拉快照；结果缓存 15 秒，避免刷 /status/sse 日志
+    -- 2. 仅当 23234 有外部连接时才考虑快照。
+    -- 上次快照为空且连接集合未变（例如只开着 /status 监控页）则不再请求。
     if live_peers then
         local snap_cache = "/tmp/iptv-auth-rtp2h-snap.json"
+        local fp_cache = "/tmp/iptv-auth-rtp2h-peers.txt"
         local clients_raw = nil
+        local cached = fs.readfile(snap_cache)
+        local prev_fp = (fs.readfile(fp_cache) or ""):gsub("%s+$", "")
+        local cached_empty = (not cached or cached == "" or cached == "[]")
         local mtime = fs.stat(snap_cache, "mtime")
-        if mtime and (os.time() - mtime) < 15 then
-            clients_raw = fs.readfile(snap_cache)
+        if prev_fp == live_fp and cached and cached ~= "" then
+            if cached_empty then
+                clients_raw = cached
+            elseif mtime and (os.time() - mtime) < 15 then
+                clients_raw = cached
+            end
         end
         if not clients_raw or clients_raw == "" then
             local sse = sys.exec(string.format(
@@ -558,6 +571,7 @@ function get_clients()
             )) or ""
             clients_raw = sse:match('"clients":(%b[])') or "[]"
             fs.writefile(snap_cache, clients_raw)
+            fs.writefile(fp_cache, live_fp)
         end
         local snap_clients = json.parse(clients_raw)
         if type(snap_clients) == "table" then
