@@ -58,7 +58,7 @@
 <div class="sk-wrap">
   <div class="sk-page-header">
     <h2>保留升级</h2>
-    <span class="sk-ver-badge">v1.0.12</span>
+    <span class="sk-ver-badge">v1.0.13</span>
   </div>
   <div class="sk-hero">
     <div class="sk-hero-cell">
@@ -150,7 +150,7 @@ function skRefresh(){
     document.getElementById('sk-fw').textContent = skBytes(d.firmware_bytes);
     var st = d.status || {};
     document.getElementById('sk-phase').textContent = (st.phase || 'idle') + (st.message ? ' · ' + st.message : '');
-    skPollMs = (st.phase && st.phase !== 'idle') ? 800 : 3000;
+    skPollMs = (st.phase && st.phase !== 'idle' && st.phase !== 'done') ? 800 : 3000;
   }).catch(function(){
     skPollMs = 3000;
   }).then(function(){
@@ -164,10 +164,12 @@ function skRefresh(){
 }
 function skPost(name){
   skPollMs = 800;
+  var el = document.getElementById('sk-log');
+  if (el) el.textContent = (el.textContent && el.textContent !== '暂无日志' && el.textContent !== '加载中…' ? el.textContent + '\n' : '') + '正在启动任务…';
+  if (skPollTimer) { clearTimeout(skPollTimer); skPollTimer = null; }
   fetch(skApi(name), {method:'POST', credentials:'same-origin'}).then(function(){
-    if (skPollTimer) { clearTimeout(skPollTimer); skPollTimer = null; }
     skRefresh();
-  });
+  }).catch(function(){ skRefresh(); });
 }
 function skDownload(){
   var url = document.getElementById('sk-url').value.trim();

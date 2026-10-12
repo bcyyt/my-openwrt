@@ -73,17 +73,38 @@ function quote(s)
 	return '"' .. s .. '"'
 end
 
-local function bg_run(cmd)
-	local sys = require "luci.sys"
-	if type(sys.fork_exec) == "function" then
-		sys.fork_exec(cmd)
+local function sh_quote(s)
+	return "'" .. tostring(s or ""):gsub("'", "'\\''") .. "'"
+end
+
+local function bg_exec(bin, ...)
+	local cmd = "start-stop-daemon -S -b -x " .. sh_quote(bin) .. " --"
+	local n = select("#", ...)
+	local i = 1
+	while i <= n do
+		cmd = cmd .. " " .. sh_quote((select(i, ...)))
+		i = i + 1
+	end
+	os.execute(cmd .. " >/dev/null 2>&1")
+end
+
+local function append_log(msg)
+	local home = data_home()
+	if not home then
 		return
 	end
-	os.execute("start-stop-daemon -S -b -x /bin/sh -- -c " .. string.format("%q", cmd))
+	os.execute("mkdir -p " .. sh_quote(home))
+	local f = io.open(home .. "/upgrade.log", "a")
+	if f then
+		f:write(os.date("%Y-%m-%d %H:%M:%S") .. " " .. msg .. "\n")
+		f:flush()
+		f:close()
+	end
 end
 
 function action_backup()
-	bg_run("/usr/bin/syskeep-upgrade.sh backup")
+	append_log("收到备份请求")
+	bg_exec("/usr/bin/syskeep-upgrade.sh", "backup")
 	json_ok()
 end
 
@@ -95,7 +116,8 @@ function action_download()
 		json_ok('{"ok":false,"error":"缺少 URL"}')
 		return
 	end
-	bg_run(string.format("/usr/bin/syskeep-upgrade.sh download %q", url))
+	append_log("收到下载请求")
+	bg_exec("/usr/bin/syskeep-upgrade.sh", "download", url)
 	json_ok()
 end
 
@@ -121,17 +143,21 @@ function action_upload()
 end
 
 function action_test()
-	bg_run("/usr/bin/syskeep-upgrade.sh test")
+	append_log("收到校验请求")
+	bg_exec("/usr/bin/syskeep-upgrade.sh", "test")
 	json_ok()
 end
 
 function action_flash()
-	bg_run("/usr/bin/syskeep-upgrade.sh flash")
+	append_log("收到升级请求")
+	bg_exec("/usr/bin/syskeep-upgrade.sh", "flash")
 	json_ok()
 end
 
 function action_restore()
-	bg_run("touch /etc/syskeep/pending; /etc/syskeep/restore.sh")
+	append_log("收到恢复请求")
+	os.execute("touch /etc/syskeep/pending")
+	bg_exec("/etc/syskeep/restore.sh")
 	json_ok()
 end
 

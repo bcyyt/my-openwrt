@@ -10,7 +10,7 @@ ImmortalWrt / OpenWrt APK 插件：IPTV 代理、影视中心、状态监控、�
 | `luci-app-mediahub` | 1.5.7-r0 | x86_64 | 影视中心（CMS + AList + ffmpeg） |
 | `luci-app-statusmon` | 4.27 | noarch | 状态监控；客户端分页；PPPoE 流量跨重拨累计；rtp2httpd 快捷入口跟当前访问主机 |
 | `luci-app-netqueue` | 1.0.16-r0 | noarch | 网络优化：转发、DHCP、DNS、静态 IP、过期 ARP 清理 |
-| `luci-app-syskeep` | 1.0.12-r0 | noarch | 保留升级：刷机还原网络/接口/防火墙；备份/升级实时日志；已卸载插件不再装回 |
+| `luci-app-syskeep` | 1.0.13-r0 | noarch | 保留升级：刷机还原网络/接口/防火墙；备份/升级实时日志；已卸载插件不再装回 |
 
 APK 在 `packages/`，用 `keys/my-openwrt.rsa` 签名。
 
@@ -34,7 +34,7 @@ apk add luci-app-statusmon-4.27.apk
 apk add luci-app-netqueue-1.0.16-r0.apk
 
 # 保留升级
-apk add luci-app-syskeep-1.0.12-r0.apk
+apk add luci-app-syskeep-1.0.13-r0.apk
 ```
 
 签名未信任时：
