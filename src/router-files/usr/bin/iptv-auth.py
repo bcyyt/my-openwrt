@@ -1034,14 +1034,24 @@ def check_ota_update():
 def start_rtsp_proxy():
     global proxy_listening
     replay_port = int(config.get('ReplayPort', 554))
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    _tune_socket(sock)
-    sock.bind(('0.0.0.0', replay_port))
+    sock = None
+    listen_desc = f'0.0.0.0:{replay_port}'
+    try:
+        sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+        _tune_socket(sock)
+        sock.bind(('::', replay_port))
+        listen_desc = f'[::]:{replay_port}'
+    except OSError:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        _tune_socket(sock)
+        sock.bind(('0.0.0.0', replay_port))
     sock.listen(32)
     sock.settimeout(3)
     proxy_listening = True
-    log(f"RTSP 代理已启动: 0.0.0.0:{replay_port}, 源站: {rtsp_source_ip or '待首次鉴权确定'}:{rtsp_source_port}")
+    log(f"RTSP 代理已启动: {listen_desc}, 源站: {rtsp_source_ip or '待首次鉴权确定'}:{rtsp_source_port}")
     while proxy_listening:
         try:
             client, addr = sock.accept()

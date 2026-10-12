@@ -6,7 +6,7 @@ ImmortalWrt / OpenWrt 插件：IPTV 代理、影视中心、状态监控、网�
 
 | 包名 | 版本 | 架构 | 说明 |
 |------|------|------|------|
-| `iptv-auth` | 2.3.22-r0 | noarch | 鉴权、M3U/EPG、RTSP 回看、rtp2httpd；内网直播列表 Lan.m3u；全新安装自动部署本仓库 1024 池 rtp2httpd，并设置 rmem_max=33554432 |
+| `iptv-auth` | 2.3.23-r0 | noarch | 鉴权、M3U/EPG、RTSP 回看、rtp2httpd；IPv6 双栈；内网直播列表 Lan.m3u；全新安装自动部署本仓库 1024 池 rtp2httpd |
 | `luci-app-mediahub` | 1.5.7-r0 | x86_64 | 影视中心（CMS + AList + ffmpeg） |
 | `luci-app-statusmon` | 4.29 | noarch | 状态监控；客户端分页；PPPoE 流量跨重拨累计；rtp2httpd 快捷入口新开页；显示固件与内核 |
 | `luci-app-netqueue` | 1.0.16-r0 | noarch | 网络优化：转发、DHCP、DNS、静态 IP、过期 ARP 清理 |
@@ -23,7 +23,7 @@ cp my-openwrt.rsa.pub /etc/apk/keys/
 chmod 644 /etc/apk/keys/my-openwrt.rsa.pub
 
 # IPTV 代理
-apk add iptv-auth-2.3.22-r0.apk
+apk add iptv-auth-2.3.23-r0.apk
 
 # 影视中心
 apk add luci-app-mediahub-1.5.7-r0.apk
@@ -49,7 +49,7 @@ apk add --allow-untrusted xxx.apk
 
 ```bash
 # IPTV 代理
-opkg install iptv-auth_2.3.22-r0_x86_64.ipk
+opkg install iptv-auth_2.3.23-r0_x86_64.ipk
 
 # 状态监控
 opkg install luci-app-statusmon_4.29_x86_64.ipk

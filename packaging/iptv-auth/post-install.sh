@@ -52,6 +52,23 @@ if [ -x /etc/init.d/iptv-auth ]; then
 	/etc/init.d/iptv-auth restart >/dev/null 2>&1 || true
 fi
 
+# WAN IPv6 放行 rtp2httpd 直播、uhttpd EPG/台标、RTSP 回看
+live_port=$(uci -q get iptv-auth.main.live_port)
+live_port=${live_port:-23234}
+replay_port=$(uci -q get iptv-auth.main.replay_port)
+replay_port=${replay_port:-554}
+uci -q batch <<-EOF
+	set firewall.iptv_auth_ipv6=rule
+	set firewall.iptv_auth_ipv6.name='Allow-IPTV-proxy-IPv6'
+	set firewall.iptv_auth_ipv6.src='wan'
+	set firewall.iptv_auth_ipv6.proto='tcp'
+	set firewall.iptv_auth_ipv6.dest_port='${live_port} 2000 ${replay_port}'
+	set firewall.iptv_auth_ipv6.family='ipv6'
+	set firewall.iptv_auth_ipv6.target='ACCEPT'
+	commit firewall
+EOF
+fw4 reload >/dev/null 2>&1 || /etc/init.d/firewall reload >/dev/null 2>&1 || true
+
 rm -f /tmp/luci-indexcache.*
 rm -rf /tmp/luci-modulecache/
 /etc/init.d/rpcd reload >/dev/null 2>&1 || true
