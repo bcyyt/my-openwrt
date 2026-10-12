@@ -1,6 +1,6 @@
 # my-openwrt
 
-ImmortalWrt / OpenWrt APK 插件：IPTV 代理、影视中心、状态监控、网络优化、保留升级。
+ImmortalWrt / OpenWrt 插件：IPTV 代理、影视中心、状态监控、网络优化、保留升级。APK（apk）与 x86_64 IPK（opkg）均在 `packages/`。
 
 ## 软件包
 
@@ -13,6 +13,7 @@ ImmortalWrt / OpenWrt APK 插件：IPTV 代理、影视中心、状态监控、�
 | `luci-app-syskeep` | 1.0.13-r0 | noarch | 保留升级：刷机还原网络/接口/防火墙；备份/升级实时日志；已卸载插件不再装回 |
 
 APK 在 `packages/`，用 `keys/my-openwrt.rsa` 签名。
+影视中心只有 APK。其余插件另有 x86_64 IPK，供传统 opkg 使用。
 
 ## 安装
 
@@ -42,6 +43,22 @@ apk add luci-app-syskeep-1.0.13-r0.apk
 ```bash
 # 临时允许未信任签名
 apk add --allow-untrusted xxx.apk
+```
+
+传统 opkg（x86_64 IPK，不含影视中心）：
+
+```bash
+# IPTV 代理
+opkg install iptv-auth_2.3.21-r0_x86_64.ipk
+
+# 状态监控
+opkg install luci-app-statusmon_4.28_x86_64.ipk
+
+# 网络优化
+opkg install luci-app-netqueue_1.0.16-r0_x86_64.ipk
+
+# 保留升级
+opkg install luci-app-syskeep_1.0.13-r0_x86_64.ipk
 ```
 
 ## IPTV

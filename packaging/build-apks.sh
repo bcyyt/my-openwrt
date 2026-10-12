@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build signed OpenWrt APKv3 packages for iptv-auth / mediahub / statusmon / netqueue / syskeep
+# Build signed OpenWrt APKv3 packages, plus x86_64 IPK (opkg) except mediahub
 
 set -euo pipefail
 
@@ -54,6 +54,46 @@ mkpkg() {
 	echo "built $(basename "$out_apk") ($(du -h "$out_apk" | awk '{print $1}'))"
 }
 
+IPK_ARCH="${IPK_ARCH:-x86_64}"
+
+mkipk() {
+	local name="$1" version="$2" arch="$3" desc="$4" section="$5" depends="$6"
+	local files_dir="$7" out_ipk="$8" postinst="${9:-}"
+	shift 9
+	local work ctrl size
+	work="$(mktemp -d /tmp/mkipk.XXXXXX)"
+	ctrl="$work/control"
+	mkdir -p "$ctrl"
+	size="$(du -sb "$files_dir" | awk '{print $1}')"
+	cat > "$ctrl/control" <<EOF
+Package: $name
+Version: $version
+Depends: $depends
+Section: $section
+Architecture: $arch
+Installed-Size: $size
+Maintainer: bcyyt <bcyyt@users.noreply.github.com>
+Source: https://github.com/bcyyt/my-openwrt
+Description: $desc
+EOF
+	if [ "$#" -gt 0 ]; then
+		printf '%s\n' "$@" > "$ctrl/conffiles"
+	fi
+	if [ -n "$postinst" ] && [ -f "$postinst" ]; then
+		install -m 755 "$postinst" "$ctrl/postinst"
+	fi
+	tar --format=gnu --owner=0 --group=0 --numeric-owner -C "$files_dir" -czf "$work/data.tar.gz" .
+	tar --format=gnu --owner=0 --group=0 --numeric-owner -C "$ctrl" -czf "$work/control.tar.gz" .
+	printf '2.0\n' > "$work/debian-binary"
+	(
+		cd "$work"
+		ar rc "$work/pkg.ipk" debian-binary control.tar.gz data.tar.gz
+	)
+	mv -f "$work/pkg.ipk" "$out_ipk"
+	rm -rf "$work"
+	echo "built $(basename "$out_ipk") ($(du -h "$out_ipk" | awk '{print $1}'))"
+}
+
 # ---------- IPTV 代理 ----------
 IPTV_ROOT="$(mktemp -d /tmp/pkg-iptv.XXXXXX)"
 trap 'rm -rf "$IPTV_ROOT" "$MEDIA_ROOT" "$STATUS_ROOT" "$NETQ_ROOT" "$SYSKEEP_ROOT"' EXIT
@@ -93,13 +133,23 @@ mkpkg \
 	-I "depends:libc python3 python3-pip luci-base" \
 	-s "post-install:$PACK/iptv-auth/post-install.sh"
 
+IPTV_IPK="$OUT/iptv-auth/iptv-auth_${IPTV_VER}_${IPK_ARCH}.ipk"
+mkipk \
+	iptv-auth "$IPTV_VER" "$IPK_ARCH" \
+	"IPTV auth + M3U/EPG generation + RTSP replay + rtp2httpd live proxy + OTA update detection" \
+	net "libc, python3, python3-pip, luci-base" \
+	"$IPTV_ROOT" "$IPTV_IPK" \
+	"$PACK/iptv-auth/post-install.sh" \
+	/etc/config/iptv-auth \
+	/etc/sysctl.d/15-iptv-auth.conf
+
 cat > "$OUT/iptv-auth/version.json" <<EOF
 {
   "version": "${IPTV_VER}",
   "date": "${DATE_STR}",
   "changelog": "默认 UDP 缓冲 16MB、缓冲池上限 1048576；安装/启动时将 net.core.rmem_max 设为 33554432。",
   "url": "${OTA_URL_BASE}/iptv-auth/iptv-auth-${IPTV_VER}.apk",
-  "ipk_url": ""
+  "ipk_url": "${OTA_URL_BASE}/iptv-auth/iptv-auth_${IPTV_VER}_${IPK_ARCH}.ipk"
 }
 EOF
 
@@ -200,6 +250,14 @@ mkpkg \
 	-I "tags:openwrt:section=luci" \
 	-s "post-install:$PACK/luci-app-statusmon/post-install.sh"
 
+STATUS_IPK="$OUT/luci-app-statusmon/luci-app-statusmon_${STATUS_VER}_${IPK_ARCH}.ipk"
+mkipk \
+	luci-app-statusmon "$STATUS_VER" "$IPK_ARCH" \
+	"LuCI 状态监控（statusmon）含流量分类、文件管理器与中文语言包" \
+	luci "libc, luci-base" \
+	"$STATUS_ROOT" "$STATUS_IPK" \
+	"$PACK/luci-app-statusmon/post-install.sh"
+
 # ---------- 网络优化 ----------
 NETQ_ROOT="$(mktemp -d /tmp/pkg-netq.XXXXXX)"
 install -d "$NETQ_ROOT/etc/config" "$NETQ_ROOT/etc/init.d" "$NETQ_ROOT/etc/uci-defaults" \
@@ -223,6 +281,15 @@ mkpkg \
 	-I "depends:libc luci-base" \
 	-I "tags:openwrt:section=luci" \
 	-s "post-install:$PACK/luci-app-netqueue/post-install.sh"
+
+NETQ_IPK="$OUT/luci-app-netqueue/luci-app-netqueue_${NETQ_VER}_${IPK_ARCH}.ipk"
+mkipk \
+	luci-app-netqueue "$NETQ_VER" "$IPK_ARCH" \
+	"LuCI 网络优化：转发、DHCP、DNS" \
+	luci "libc, luci-base" \
+	"$NETQ_ROOT" "$NETQ_IPK" \
+	"$PACK/luci-app-netqueue/post-install.sh" \
+	/etc/config/netqueue
 
 # ---------- 保留升级 ----------
 SYSKEEP_ROOT="$(mktemp -d /tmp/pkg-syskeep.XXXXXX)"
@@ -253,6 +320,16 @@ mkpkg \
 	-I "depends:libc luci-base" \
 	-I "tags:openwrt:section=luci" \
 	-s "post-install:$PACK/luci-app-syskeep/post-install.sh"
+
+SYSKEEP_IPK="$OUT/luci-app-syskeep/luci-app-syskeep_${SYSKEEP_VER}_${IPK_ARCH}.ipk"
+mkipk \
+	luci-app-syskeep "$SYSKEEP_VER" "$IPK_ARCH" \
+	"LuCI 保留升级：刷机保留配置、分区和插件清单，开机重装 apk" \
+	luci "libc, luci-base" \
+	"$SYSKEEP_ROOT" "$SYSKEEP_IPK" \
+	"$PACK/luci-app-syskeep/post-install.sh" \
+	/etc/syskeep/custom-apks.txt \
+	/etc/syskeep/datadir.sh
 
 echo
 echo "==== packages ===="
