@@ -9,11 +9,10 @@
   4. 定时循环刷新频道和节目单
   5. 输出状态 JSON 供 LuCI 读取
 """
-import os, sys, re, json, time, gzip, socket, subprocess, datetime, threading
+import os, sys, re, json, time, gzip, socket, subprocess, datetime, threading, select
 import requests
 from urllib.parse import quote
 from datetime import timedelta
-
 # ===================== 路径常量 =====================
 M3U_PATH = '/www/Lan.m3u'
 REPLAY_M3U_PATH = '/www/LanReplay.m3u'     # 回看专用播放列表
@@ -726,6 +725,8 @@ def generate_epg_xml(playlistdata):
 # ===================== RTSP 代理 ======================
 SOCK_TIMEOUT = 30
 PROXY_RECV_BUF = 262144
+SC_SILENCE_SEC = 10
+SC_KEEPALIVE_MAX = 3
 
 def _tune_socket(sock):
     try:
@@ -867,23 +868,164 @@ def record_client(ip, ua, channel):
     except Exception as e:
         log(f"客户端档案写入失败: {e}", error=True)
 
-def handle_fwd(src, dst, direction):
-    log(f"代理: 开始{direction}转发")
+def _strip_rtsp_reply(data):
+    if not data or not data.startswith(b'RTSP/'):
+        return data
+    end = data.find(b'\r\n\r\n')
+    if end < 0:
+        return b''
+    header, rest = data[:end + 4], data[end + 4:]
+    cl = 0
+    m = re.search(br'Content-Length:\s*(\d+)', header, re.I)
+    if m:
+        cl = int(m.group(1))
+    rest = rest[cl:] if cl else rest
+    status = _parse_rtsp_status(header)
+    if status:
+        log(f"代理: 上游 RTSP 应答 {status}")
+    return rest
+
+def _send_options_keepalive(sock, location, cseq, session=''):
+    loc = location or '*'
+    cseq[0] += 1
+    lines = [
+        f'OPTIONS {loc} RTSP/1.0',
+        f'CSeq: {cseq[0]}',
+        'User-Agent: Lavf62.1.100',
+    ]
+    if session:
+        lines.append(f'Session: {session}')
+    msg = ('\r\n'.join(lines) + '\r\n\r\n').encode()
+    try:
+        sock.sendall(msg)
+        log(f"代理: S→C 静默，OPTIONS keepalive CSeq={cseq[0]}")
+        return True
+    except OSError as e:
+        log(f"代理: OPTIONS keepalive 失败: {e}", error=True)
+        return False
+
+def _parse_session(resp):
+    txt = _safe_decode(resp) or ''
+    m = re.search(r'Session:\s*([^;\r\n]+)', txt, re.I)
+    return m.group(1).strip() if m else ''
+
+def _replace_session(req, session):
+    if not req or not session:
+        return req
+    sid = session.encode()
+    if re.search(br'(?i)^Session:', req, re.M):
+        return re.sub(br'(?i)^Session:\s*[^\r\n]*', b'Session: ' + sid, req, count=1, flags=re.M)
+    return req
+
+def _reconnect_origin(saved_reqs):
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(SOCK_TIMEOUT)
+    _tune_socket(sock)
+    _bind_upstream(sock)
+    sock.connect((rtsp_source_ip, rtsp_source_port))
+    location = ''
+    session = ''
+    names = ['OPTIONS', 'DESCRIBE', 'SETUP', 'PLAY']
+    for idx, req in enumerate(saved_reqs):
+        tosend = replacelocation(req, location) if location else req
+        if session:
+            tosend = _replace_session(tosend, session)
+        sock.sendall(tosend)
+        resp = sock.recv(PROXY_RECV_BUF)
+        if not resp:
+            raise OSError('rebuild empty response')
+        sid = _parse_session(resp)
+        if sid:
+            session = sid
+        if idx == 0:
+            sock.sendall(describe(tosend))
+            resp = sock.recv(PROXY_RECV_BUF)
+            if not resp:
+                raise OSError('rebuild empty describe')
+            sid = _parse_session(resp)
+            if sid:
+                session = sid
+            addr, port = getaddress(resp)
+            loc = getlocation(resp)
+            if loc:
+                log(f"代理: 重建 302 → {addr}:{port}")
+                sock.close()
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(SOCK_TIMEOUT)
+                _tune_socket(sock)
+                _bind_upstream(sock)
+                sock.connect((addr, port))
+                sock.sendall(newoptions(loc))
+                resp = sock.recv(PROXY_RECV_BUF)
+                location = loc
+                sid = _parse_session(resp)
+                if sid:
+                    session = sid
+        log(f"代理: 重建 {names[idx] if idx < 4 else idx} {_parse_rtsp_status(resp)}")
+    sock.settimeout(None)
+    return sock, location, session
+
+def _pump_session(client_socket, server_socket, location, saved_reqs, session=''):
+    log('代理: 开始双向转发（S→C 静默检测 10s）')
+    last_sc = time.time()
+    ka = 0
+    rebuilt = False
+    cseq = [20]
     try:
         while True:
-            data = src.recv(PROXY_RECV_BUF)
-            if not data: break
-            dst.sendall(data)
+            r, _, _ = select.select([client_socket, server_socket], [], [], 1.0)
+            now = time.time()
+            if server_socket in r:
+                data = server_socket.recv(PROXY_RECV_BUF)
+                if not data:
+                    log('代理: 上游关闭')
+                    break
+                data = _strip_rtsp_reply(data)
+                if data:
+                    last_sc = now
+                    ka = 0
+                    client_socket.sendall(data)
+            if client_socket in r:
+                data = client_socket.recv(PROXY_RECV_BUF)
+                if not data:
+                    log('代理: 客户端关闭')
+                    break
+                server_socket.sendall(data)
+            if now - last_sc < SC_SILENCE_SEC:
+                continue
+            last_sc = now
+            ka += 1
+            log(f"代理: S→C 静默 {SC_SILENCE_SEC}s ({ka}/{SC_KEEPALIVE_MAX}) 节点 {location or rtsp_source_ip}")
+            if ka <= SC_KEEPALIVE_MAX:
+                if not _send_options_keepalive(server_socket, location, cseq, session):
+                    break
+            elif not rebuilt:
+                log('代理: keepalive 未恢复媒体，重建上游会话')
+                try:
+                    server_socket.close()
+                except Exception:
+                    pass
+                try:
+                    server_socket, location, session = _reconnect_origin(saved_reqs)
+                except Exception as e:
+                    log(f"代理: 重建失败: {e}", error=True)
+                    break
+                rebuilt = True
+                ka = 0
+                last_sc = time.time()
+            else:
+                log('代理: 重建后仍静默，结束会话')
+                break
     except OSError as e:
         if e.errno not in (9, 32, 104, 107):
-            log(f"代理: {direction}转发错误: {e}", error=True)
+            log(f"代理: 转发错误: {e}", error=True)
     except Exception as e:
-        log(f"代理: {direction}转发错误: {e}", error=True)
+        log(f"代理: 转发错误: {e}", error=True)
     finally:
-        try: src.close()
-        except: pass
-        try: dst.close()
-        except: pass
+        try:
+            server_socket.close()
+        except Exception:
+            pass
 
 def handle_entrance(client_socket, addr):
     global proxy_listening
@@ -905,6 +1047,8 @@ def handle_entrance(client_socket, addr):
         targetaddress = rtsp_source_ip
         targetport = rtsp_source_port
         location = ""
+        saved_reqs = []
+        session = ""
 
         # 连接源站（先连源站再进入四轮握手；出站绑定上游接口）
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -938,10 +1082,14 @@ def handle_entrance(client_socket, addr):
                 except Exception:
                     pass
             toserver = Translator(toserver)
+            saved_reqs.append(toserver)
             server_socket.sendall(toserver)
             response = server_socket.recv(PROXY_RECV_BUF)
             if not response: break
             status = _parse_rtsp_status(response)
+            sid = _parse_session(response)
+            if sid:
+                session = sid
             if once == '1':
                 # DESCRIBE + 302 跳转处理（DESCRIBE 基于已翻译的请求构造，
                 # 源站只认 live/xxx.mpg?vcdnid=...&programbegin=... 格式）
@@ -964,6 +1112,9 @@ def handle_entrance(client_socket, addr):
                         targetaddress, targetport = addr, port
                         location = loc
                     status = _parse_rtsp_status(response)
+                    sid = _parse_session(response)
+                    if sid:
+                        session = sid
             log(f"代理: {[ 'OPTIONS','DESCRIBE','SETUP','PLAY'][idx]} {status}")
             toclient = replaceip(response, *client_socket.getsockname()[:2])
             client_socket.sendall(toclient)
@@ -974,10 +1125,7 @@ def handle_entrance(client_socket, addr):
         except: pass
         try: client_socket.settimeout(None)
         except: pass
-        t1 = threading.Thread(target=handle_fwd, args=(server_socket, client_socket, 'S→C'), daemon=True)
-        t2 = threading.Thread(target=handle_fwd, args=(client_socket, server_socket, 'C→S'), daemon=True)
-        t1.start(); t2.start()
-        t1.join(); t2.join()
+        _pump_session(client_socket, server_socket, location, saved_reqs, session)
     except Exception as e:
         log(f"代理: 连接异常: {e}", error=True)
     finally:

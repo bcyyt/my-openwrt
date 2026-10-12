@@ -1,7 +1,7 @@
 {
-  "version": "2.3.29-r0",
+  "version": "2.3.30-r0",
   "date": "2026-10-12",
-  "changelog": "不再请求 /status/sse；从 rtp2httpd 日志识别直播/回看频道。",
-  "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth-2.3.29-r0.apk",
-  "ipk_url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth_2.3.29-r0_x86_64.ipk"
+  "changelog": "回看上游静默 10s 发 OPTIONS keepalive，无效则重建会话。",
+  "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth-2.3.30-r0.apk",
+  "ipk_url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth_2.3.30-r0_x86_64.ipk"
 }
