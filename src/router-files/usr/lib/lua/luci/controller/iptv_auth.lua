@@ -448,14 +448,30 @@ function get_clients()
     -- 1. 活跃连接
     local conns, order = {}, {}
     local ns = sys.exec("netstat -tn 2>/dev/null") or ""
+    local function host_port(addr)
+        local port = addr:match(":(%d+)$")
+        if not port then return nil, nil end
+        local host = addr:sub(1, #addr - #port - 1)
+        host = host:gsub("^%[(.*)%]$", "%1")
+        local mapped = host:match("^::ffff:(%d+%.%d+%.%d+%.%d+)$")
+        if mapped then host = mapped end
+        return host, port
+    end
+
+    local self_ips = { ["127.0.0.1"] = true, ["::1"] = true }
+    if lan_ip ~= "" then self_ips[lan_ip] = true end
+    local addr_out = sys.exec("ip -o addr show 2>/dev/null") or ""
+    for ip in addr_out:gmatch("inet6?%s+([^/%s]+)") do
+        self_ips[ip] = true
+    end
+
     for line in ns:gmatch("[^\r\n]+") do
         if line:match("ESTABLISHED") then
             local laddr, raddr = line:match("%s+(%S+:%d+)%s+(%S+:%d+)%s+")
             if laddr and raddr then
-                local lport = laddr:match(":(%d+)$")
-                local rip = raddr:match("^::ffff:(%d+%.%d+%.%d+%.%d+):%d+$")
-                             or raddr:match("^(%d+%.%d+%.%d+%.%d+):%d+$")
-                if rip and rip ~= "127.0.0.1" and rip ~= lan_ip and port_label[lport] then
+                local _, lport = host_port(laddr)
+                local rip = host_port(raddr)
+                if rip and lport and port_label[lport] and not self_ips[rip] then
                     local c = conns[rip]
                     if not c then
                         c = { count = 0, tset = {} }
@@ -521,6 +537,35 @@ end
 
 -- ===================== OTA 在线热更新 =====================
 
+local OTA_GH_FALLBACK = "https://gh-proxy.com/"
+
+local function ota_mirror()
+    local m = (require("luci.sys").exec("uci -q get iptv-auth.main.update_mirror 2>/dev/null") or ""):gsub("%s+", "")
+    return m
+end
+
+local function ota_with_mirror(url, mirror)
+    if not url or url == "" then return url end
+    if not mirror or mirror == "" then return url end
+    if url:sub(1, #mirror) == mirror then return url end
+    if not url:match("^https?://") then return url end
+    return mirror .. url
+end
+
+local function ota_curl(url)
+    local sys = require "luci.sys"
+    local mirror = ota_mirror()
+    local first = ota_with_mirror(url, mirror)
+    local resp = sys.exec(string.format("curl -s -m 15 %q 2>/dev/null", first)) or ""
+    if resp ~= "" then return resp, first end
+    if mirror == "" and (url:match("githubusercontent%.com") or url:match("github%.com")) then
+        local fb = OTA_GH_FALLBACK .. url
+        resp = sys.exec(string.format("curl -s -m 15 %q 2>/dev/null", fb)) or ""
+        if resp ~= "" then return resp, fb end
+    end
+    return "", first
+end
+
 function run_ota_auto_check()
     -- 手动触发自动检测（与 cron 同逻辑：更新缓存与检测时间戳）
     local http = require "luci.http"
@@ -543,9 +588,9 @@ function check_ota_update()
         return
     end
 
-    local resp = sys.exec(string.format("curl -s -m 15 %q 2>/dev/null", ota_url)) or ""
+    local resp = ota_curl(ota_url)
     if resp == "" then
-        http.write(json.stringify({ ok = false, error = "无法访问 OTA 服务器" }))
+        http.write(json.stringify({ ok = false, error = "无法访问 OTA 服务器（可在配置页设置镜像前缀）" }))
         return
     end
 
@@ -558,13 +603,14 @@ function check_ota_update()
     local current = get_current_version()
     local latest = parsed.version
     local has_update = is_newer(latest, current)
+    local mirror = ota_mirror()
     http.write(json.stringify({
         ok = true,
         current = current,
         latest = latest,
         has_update = has_update,
-        url = parsed.url or "",
-        ipk_url = parsed.ipk_url or "",
+        url = ota_with_mirror(parsed.url or "", mirror),
+        ipk_url = ota_with_mirror(parsed.ipk_url or "", mirror),
         date = parsed.date or "",
         changelog = parsed.changelog or ""
     }))
@@ -581,6 +627,9 @@ function do_ota_update()
     local apk_url = http.formvalue("url") or ""
     local ipk_url = http.formvalue("ipk_url") or ""
     local ver = http.formvalue("version") or ""
+    local mirror = ota_mirror()
+    apk_url = ota_with_mirror(apk_url, mirror)
+    ipk_url = ota_with_mirror(ipk_url, mirror)
     if ver == "" then
         http.write(json.stringify({ ok = false, error = "缺少版本号" }))
         return

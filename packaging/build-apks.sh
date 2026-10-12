@@ -12,7 +12,7 @@ APK="${APK:-/tmp/apk-tools/build/src/apk}"
 SIGN_KEY="$KEYS/my-openwrt.rsa"
 PUB_KEY="$KEYS/my-openwrt.rsa.pub"
 
-IPTV_VER="${IPTV_VER:-2.3.23-r0}"
+IPTV_VER="${IPTV_VER:-2.3.24-r0}"
 MEDIA_VER="${MEDIA_VER:-1.5.7-r0}"
 STATUS_VER="${STATUS_VER:-4.29}"
 NETQ_VER="${NETQ_VER:-1.0.16-r0}"
@@ -147,7 +147,7 @@ cat > "$OUT/iptv-auth/version.json" <<EOF
 {
   "version": "${IPTV_VER}",
   "date": "${DATE_STR}",
-  "changelog": "IPTV 代理开启 IPv6：RTSP 双栈监听；WAN IPv6 放行 23234/2000/554。",
+  "changelog": "状态页显示 IPv6 客户端；插件 OTA 使用可选镜像前缀，直连失败回退 gh-proxy.com。",
   "url": "${OTA_URL_BASE}/iptv-auth/iptv-auth-${IPTV_VER}.apk",
   "ipk_url": "${OTA_URL_BASE}/iptv-auth/iptv-auth_${IPTV_VER}_${IPK_ARCH}.ipk"
 }

@@ -11,13 +11,27 @@ TMP="${CACHE}.new"
 OTA_URL=$(uci -q get iptv-auth.main.ota_url 2>/dev/null)
 [ -z "$OTA_URL" ] && exit 1
 
-if ! curl -s -m 20 -o "$TMP" "$OTA_URL" 2>/dev/null; then
-    rm -f "$TMP"
-    exit 1
-fi
+MIRROR=$(uci -q get iptv-auth.main.update_mirror 2>/dev/null)
+FETCH_URL="$OTA_URL"
+[ -n "$MIRROR" ] && case "$OTA_URL" in
+	"$MIRROR"*) ;;
+	http://*|https://*) FETCH_URL="$MIRROR$OTA_URL" ;;
+esac
 
-# 有效性校验：必须包含 "version" 字段（防止把 404 页面等错误响应当缓存）
-grep -q '"version"' "$TMP" 2>/dev/null || { rm -f "$TMP"; exit 1; }
+ok=0
+if curl -s -m 20 -o "$TMP" "$FETCH_URL" 2>/dev/null && grep -q '"version"' "$TMP" 2>/dev/null; then
+	ok=1
+fi
+if [ "$ok" != "1" ] && [ -z "$MIRROR" ]; then
+	case "$OTA_URL" in
+		*githubusercontent.com*|*github.com*)
+			if curl -s -m 20 -o "$TMP" "https://gh-proxy.com/$OTA_URL" 2>/dev/null && grep -q '"version"' "$TMP" 2>/dev/null; then
+				ok=1
+			fi
+			;;
+	esac
+fi
+[ "$ok" = "1" ] || { rm -f "$TMP"; exit 1; }
 
 mv "$TMP" "$CACHE"
 uci set iptv-auth.main.ota_last_check="$(date '+%Y-%m-%d %H:%M')"

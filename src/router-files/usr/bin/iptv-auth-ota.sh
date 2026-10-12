@@ -33,6 +33,13 @@ fi
 
 [ -z "$DL_URL" ] && { set_status "failed" "缺少下载地址（$PKG_MGR 模式）" "$VER"; exit 1; }
 
+ORIG_URL="$DL_URL"
+MIRROR=$(uci -q get iptv-auth.main.update_mirror 2>/dev/null)
+[ -n "$MIRROR" ] && case "$DL_URL" in
+	"$MIRROR"*) ;;
+	http://*|https://*) DL_URL="$MIRROR$DL_URL" ;;
+esac
+
 # 并发保护
 if [ -f "$STATUS" ] && grep -q '"state":"running"' "$STATUS" 2>/dev/null; then
     echo "concurrent update detected, exiting" >&2
@@ -49,9 +56,17 @@ else
 fi
 rm -f "$TMP_PKG"
 if ! curl -sL -m 120 -o "$TMP_PKG" "$DL_URL" 2>/dev/null; then
-    set_status "failed" "下载失败: $DL_URL" "$VER"
-    rm -f "$TMP_PKG"
-    exit 1
+    DL_URL="$ORIG_URL"
+    if [ -z "$MIRROR" ]; then
+        case "$ORIG_URL" in
+            *githubusercontent.com*|*github.com*) DL_URL="https://gh-proxy.com/$ORIG_URL" ;;
+        esac
+    fi
+    if [ "$DL_URL" = "$ORIG_URL" ] || ! curl -sL -m 120 -o "$TMP_PKG" "$DL_URL" 2>/dev/null; then
+        set_status "failed" "下载失败: $DL_URL" "$VER"
+        rm -f "$TMP_PKG"
+        exit 1
+    fi
 fi
 
 if [ ! -s "$TMP_PKG" ]; then

@@ -207,6 +207,7 @@ def load_config():
             'rtp2h_bufpool': g('rtp2h_bufpool', '1048576'),
             'wan_domain': g('wan_domain', ''),
             'ota_url': g('ota_url', ''),
+            'update_mirror': g('update_mirror', ''),
         }
         raw_iface = g('upstream_interface', 'eth1')
         upstream_iface = _resolve_l3_device(raw_iface) if raw_iface else ''
@@ -828,6 +829,8 @@ _clients_lock = threading.Lock()   # 客户端档案并发写保护（每个代�
 
 def record_client(ip, ua, channel):
     """记录回看客户端档案（IP + 设备标识 UA + 频道），供 LuCI 状态页"连接的客户端"展示"""
+    if ip and ip.startswith('::ffff:'):
+        ip = ip[7:]
     try:
         with _clients_lock:
             data = {}
@@ -1010,10 +1013,23 @@ def check_ota_update():
     if not ota_url:
         return
     try:
-        resp = requests.get(ota_url, timeout=15)
-        if resp.status_code != 200:
+        urls = [ota_url]
+        mirror = config.get('update_mirror', '') or ''
+        if mirror and not ota_url.startswith(mirror):
+            urls = [mirror + ota_url]
+        elif 'githubusercontent.com' in ota_url or 'github.com' in ota_url:
+            urls.append('https://gh-proxy.com/' + ota_url)
+        info = None
+        for u in urls:
+            try:
+                resp = requests.get(u, timeout=15)
+                if resp.status_code == 200:
+                    info = resp.json()
+                    break
+            except Exception:
+                continue
+        if not info:
             return
-        info = resp.json()
         latest = info.get('version', '')
         if not latest:
             return

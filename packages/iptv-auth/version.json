@@ -1,7 +1,7 @@
 {
-  "version": "2.3.23-r0",
+  "version": "2.3.24-r0",
   "date": "2026-10-12",
-  "changelog": "IPTV 代理开启 IPv6：RTSP 双栈监听；WAN IPv6 放行 23234/2000/554。",
-  "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth-2.3.23-r0.apk",
-  "ipk_url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth_2.3.23-r0_x86_64.ipk"
+  "changelog": "状态页显示 IPv6 客户端；插件 OTA 使用可选镜像前缀，直连失败回退 gh-proxy.com。",
+  "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth-2.3.24-r0.apk",
+  "ipk_url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth_2.3.24-r0_x86_64.ipk"
 }
