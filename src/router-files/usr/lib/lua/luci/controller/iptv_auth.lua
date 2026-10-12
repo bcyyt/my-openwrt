@@ -435,8 +435,8 @@ local OUI_VENDORS = {
 
 function get_clients()
     -- 当前连接的客户端（IP + 设备标识）：
-    -- 直播以 rtp2httpd 快照为准（仅有 service_url 的媒体流，不含 /status），
-    -- 回看/网页仍用 netstat 的 554/2000；监控页连接不算直播，快照为空且连接未变则不再请求。
+    -- 23234 用 netstat 连接 + rtp2httpd 日志中的媒体 URL，不访问 /status/sse。
+    -- 回看含 /catchup、playseek、/rtsp/、/PLTV/ 与 554；网页 2000。
     local http = require "luci.http"
     local sys = require "luci.sys"
     local fs = require "nixio.fs"
@@ -510,8 +510,9 @@ function get_clients()
         local mcast = url:match("/rtp/([%d%.]+:%d+)") or url:match("/udp/([%d%.]+:%d+)")
         if mcast then return by_mcast[mcast] or mcast end
         local path = url:gsub("%?.*$", ""):gsub("/+$", "")
+        path = path:gsub("/catchup$", "")
         local last = path:match("([^/]+)$")
-        if last and last ~= "rtp" and last ~= "udp" and last ~= "rtsp" and last ~= "http" then
+        if last and last ~= "rtp" and last ~= "udp" and last ~= "rtsp" and last ~= "http" and last ~= "catchup" then
             last = last:gsub("%%(%x%x)", function(h)
                 return string.char(tonumber(h, 16) or 0)
             end)
@@ -520,10 +521,20 @@ function get_clients()
         return ""
     end
 
-    -- 1. 回看 554 / 网页 2000；并检测 live_port 是否有外部连接
+    local function is_replay_url(url)
+        return url:match("^/rtsp/") or url:match("/PLTV/")
+            or url:match("/catchup") or url:match("[?&]playseek=")
+    end
+    local function is_media_url(url)
+        if type(url) ~= "string" or url == "" then return false end
+        if url:match("^/status") or url:match("^/assets/") then return false end
+        if url:match("^/playlist%.m3u") or url:match("^/favicon") then return false end
+        return true
+    end
+
+    -- 1. 回看 554 / 网页 2000；收集 23234 外部连接
     local ns = sys.exec("netstat -tn 2>/dev/null") or ""
-    local live_peers = false
-    local live_fp_parts = {}
+    local live_conns = {}
     for line in ns:gmatch("[^\r\n]+") do
         if line:match("ESTABLISHED") then
             local laddr, raddr = line:match("%s+(%S+:%d+)%s+(%S+:%d+)%s+")
@@ -532,8 +543,7 @@ function get_clients()
                 local rip, rport = host_port(raddr)
                 if rip and lport and not self_ips[rip] then
                     if lport == live_port then
-                        live_peers = true
-                        live_fp_parts[#live_fp_parts + 1] = rip .. ":" .. (rport or "")
+                        live_conns[#live_conns + 1] = { ip = rip, port = rport }
                     elseif port_label[lport] then
                         local c = ensure(rip)
                         c.count = c.count + 1
@@ -543,53 +553,41 @@ function get_clients()
             end
         end
     end
-    table.sort(live_fp_parts)
-    local live_fp = table.concat(live_fp_parts, ",")
 
-    -- 2. 仅当 23234 有外部连接时才考虑快照。
-    -- 上次快照为空且连接集合未变（例如只开着 /status 监控页）则不再请求。
-    if live_peers then
-        local snap_cache = "/tmp/iptv-auth-rtp2h-snap.json"
-        local fp_cache = "/tmp/iptv-auth-rtp2h-peers.txt"
-        local clients_raw = nil
-        local cached = fs.readfile(snap_cache)
-        local prev_fp = (fs.readfile(fp_cache) or ""):gsub("%s+$", "")
-        local cached_empty = (not cached or cached == "" or cached == "[]")
-        local mtime = fs.stat(snap_cache, "mtime")
-        if prev_fp == live_fp and cached and cached ~= "" then
-            if cached_empty then
-                clients_raw = cached
-            elseif mtime and (os.time() - mtime) < 15 then
-                clients_raw = cached
-            end
+    -- 2. 从 rtp2httpd 日志匹配正在播放的 URL，不请求 /status/sse
+    if #live_conns > 0 then
+        local url_cache = "/tmp/iptv-auth-rtp2h-urls.json"
+        local url_map = nil
+        local mtime = fs.stat(url_cache, "mtime")
+        if mtime and (os.time() - mtime) < 15 then
+            url_map = json.parse(fs.readfile(url_cache) or "")
         end
-        if not clients_raw or clients_raw == "" then
-            local sse = sys.exec(string.format(
-                "curl -s --max-time 3 -H %q %q 2>/dev/null",
-                "X-Request-Snapshot: 1",
-                "http://127.0.0.1:" .. live_port .. "/status/sse"
-            )) or ""
-            clients_raw = sse:match('"clients":(%b[])') or "[]"
-            fs.writefile(snap_cache, clients_raw)
-            fs.writefile(fp_cache, live_fp)
-        end
-        local snap_clients = json.parse(clients_raw)
-        if type(snap_clients) == "table" then
-            for _, sc in ipairs(snap_clients) do
-                if type(sc) == "table" then
-                    local rip = client_ip(sc.clientAddr or sc.client_addr or "")
-                    local url = sc.serviceUrl or sc.service_url or ""
-                    if rip and type(url) == "string" and url ~= "" then
-                        local c = ensure(rip)
-                        c.count = c.count + 1
-                        if url:match("^/rtsp/") or url:match("/PLTV/") then
-                            c.tset["回看"] = true
-                        else
-                            c.tset["直播"] = true
-                        end
-                        add_channel(c, channel_from_service(url))
-                    end
+        if type(url_map) ~= "table" then
+            url_map = {}
+            local logs = sys.exec("logread 2>/dev/null | grep 'requested URL:'") or ""
+            for line in logs:gmatch("[^\r\n]+") do
+                local ip, port, url = line:match("New client %[([^%]]+)%]:(%d+) requested URL: (%S+)")
+                if not ip then
+                    ip, port, url = line:match("New client ([%d%.]+):(%d+) requested URL: (%S+)")
                 end
+                if ip and url and is_media_url(url) and not self_ips[ip] then
+                    url_map[ip .. ":" .. port] = url
+                    url_map[ip] = url
+                end
+            end
+            fs.writefile(url_cache, json.stringify(url_map) or "{}")
+        end
+        for _, peer in ipairs(live_conns) do
+            local url = url_map[peer.ip .. ":" .. (peer.port or "")] or url_map[peer.ip]
+            if url and is_media_url(url) then
+                local c = ensure(peer.ip)
+                c.count = c.count + 1
+                if is_replay_url(url) then
+                    c.tset["回看"] = true
+                else
+                    c.tset["直播"] = true
+                end
+                add_channel(c, channel_from_service(url))
             end
         end
     end
