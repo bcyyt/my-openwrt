@@ -1,0 +1,234 @@
+<%# atkmon/status.htm — 安全监测：攻击/PPPoE/DNS/IPTV/DHCP %>
+<%+header%>
+<style>
+:root{
+  --am-ink:#1c1410;--am-paper:#f6f0e6;--am-card:#fffaf3;--am-line:#e4d5c3;
+  --am-mute:#8a7460;--am-copper:#b4532a;--am-rust:#9a3412;--am-ok:#3f6b3a;
+  --am-warn:#b45309;--am-bad:#b91c1c;--am-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+.am-wrap{max-width:1180px;margin:0 auto 28px;color:var(--am-ink);font-family:Georgia,"Iowan Old Style","Songti SC",serif}
+.am-head{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin:4px 0 16px;border-bottom:2px solid var(--am-ink);padding-bottom:10px}
+.am-head h2{margin:0;font-size:26px;letter-spacing:.04em}
+.am-head .am-sub{font-size:12px;color:var(--am-mute);font-family:var(--am-mono);letter-spacing:.08em}
+.am-tog{margin-left:auto;display:flex;gap:6px}
+.am-tog button{border:1px solid var(--am-ink);background:transparent;color:var(--am-ink);padding:4px 12px;font-size:12px;cursor:pointer;font-family:var(--am-mono)}
+.am-tog button.on{background:var(--am-ink);color:var(--am-paper)}
+.am-hero{display:grid;grid-template-columns:repeat(5,1fr);gap:1px;background:var(--am-line);border:1px solid var(--am-line);margin-bottom:16px}
+.am-hero>div{background:var(--am-card);padding:14px 16px}
+.am-k{font-size:11px;color:var(--am-mute);letter-spacing:.12em;font-family:var(--am-mono)}
+.am-n{font-size:28px;font-weight:700;line-height:1.15;font-variant-numeric:tabular-nums;margin-top:4px;font-family:var(--am-mono)}
+.am-n.bad{color:var(--am-bad)}.am-n.warn{color:var(--am-warn)}.am-n.ok{color:var(--am-ok)}
+.am-s{font-size:11px;color:var(--am-mute);margin-top:4px}
+.am-grid{display:grid;grid-template-columns:1.6fr 1fr;gap:14px;margin-bottom:14px}
+.am-card{background:var(--am-card);border:1px solid var(--am-line);padding:14px 16px}
+.am-h{font-size:14px;font-weight:700;margin:0 0 10px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.am-note{font-size:11px;color:var(--am-mute);font-family:var(--am-mono)}
+.am-svg{width:100%;height:140px;display:block}
+.am-bars{display:flex;flex-direction:column;gap:7px}
+.am-bar{display:grid;grid-template-columns:110px 1fr 42px;gap:8px;align-items:center;font-size:12px;font-family:var(--am-mono)}
+.am-bar .lab{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.am-track{height:8px;background:#efe4d4;overflow:hidden}
+.am-fill{height:100%;background:var(--am-copper)}
+.am-table{width:100%;border-collapse:collapse;font-size:12.5px}
+.am-table th{text-align:left;font-size:11px;color:var(--am-mute);font-weight:600;padding:6px 8px;border-bottom:1px solid var(--am-line);font-family:var(--am-mono)}
+.am-table td{padding:8px;border-bottom:1px solid #f0e6d8;font-family:var(--am-mono);vertical-align:middle}
+.am-tag{display:inline-block;padding:1px 7px;border:1px solid currentColor;font-size:10px;letter-spacing:.06em}
+.am-tag.auth{color:var(--am-bad)}.am-tag.scan{color:var(--am-copper)}.am-tag.probe{color:var(--am-warn)}
+.am-btn{border:1px solid var(--am-ink);background:#fff;font-size:11px;padding:3px 8px;cursor:pointer;font-family:var(--am-mono)}
+.am-btn.bad{border-color:var(--am-bad);color:var(--am-bad)}
+.am-btn.ok{border-color:var(--am-ok);color:var(--am-ok)}
+.am-cols{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+.am-list{margin:0;padding:0;list-style:none;font-size:12.5px;font-family:var(--am-mono)}
+.am-list li{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px dashed var(--am-line)}
+.am-log{max-height:220px;overflow:auto;background:#1c1410;color:#f3e6d4;padding:12px;font:12px/1.55 var(--am-mono);white-space:pre-wrap}
+.am-empty{color:var(--am-mute);padding:18px 0;text-align:center;font-size:13px}
+.am-warnbox{background:#fff4e5;border:1px solid #f0d3a8;color:#9a3412;padding:8px 10px;font-size:12px;margin-bottom:8px;font-family:var(--am-mono)}
+@media(max-width:980px){.am-hero{grid-template-columns:repeat(2,1fr)}.am-grid,.am-cols{grid-template-columns:1fr}}
+@media(max-width:640px){.am-hero{grid-template-columns:1fr}.am-head h2{font-size:22px}}
+</style>
+<div class="am-wrap">
+  <div class="am-head">
+    <h2>安全监测</h2>
+    <span class="am-sub" id="am-ts">采集中</span>
+    <div class="am-tog">
+      <button type="button" class="on" data-r="24" onclick="amRange(24,this)">24h</button>
+      <button type="button" data-r="168" onclick="amRange(168,this)">7d</button>
+    </div>
+  </div>
+  <div class="am-hero">
+    <div><div class="am-k">攻击</div><div class="am-n" id="c-atk">0</div><div class="am-s" id="c-atk-s">来源 0</div></div>
+    <div><div class="am-k">爆破</div><div class="am-n" id="c-auth">0</div><div class="am-s">SSH / LuCI</div></div>
+    <div><div class="am-k">探测</div><div class="am-n" id="c-probe">0</div><div class="am-s" id="c-probe-s">nft 日志</div></div>
+    <div><div class="am-k">PPPoE 重拨</div><div class="am-n" id="c-ppp">0</div><div class="am-s" id="c-ppp-s">链路</div></div>
+    <div><div class="am-k">新终端</div><div class="am-n" id="c-dhcp">0</div><div class="am-s" id="c-dns">DNS / IPTV</div></div>
+  </div>
+  <div class="am-grid">
+    <div class="am-card">
+      <div class="am-h">攻击趋势<span class="am-note">爆破 + 探测</span></div>
+      <svg class="am-svg" id="am-line" viewBox="0 0 640 140" preserveAspectRatio="none"></svg>
+    </div>
+    <div class="am-card">
+      <div class="am-h">来源 Top 10<span class="am-note">按次数</span></div>
+      <div class="am-bars" id="am-top"></div>
+    </div>
+  </div>
+  <div class="am-card" style="margin-bottom:14px">
+    <div class="am-h">来源摘要<span class="am-note">仅手动拉黑，拒绝 WAN 访问本机</span></div>
+    <div id="am-probe-tip"></div>
+    <div style="overflow-x:auto">
+      <table class="am-table">
+        <thead><tr><th>地址</th><th>标记</th><th>次数</th><th>爆破</th><th>探测</th><th>端口</th><th>最近</th><th></th></tr></thead>
+        <tbody id="am-atk-body"></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="am-cols">
+    <div class="am-card">
+      <div class="am-h">PPPoE<span class="am-note" id="ppp-flag"></span></div>
+      <div class="am-s" id="ppp-meta" style="margin-bottom:8px"></div>
+      <ul class="am-list" id="ppp-ev"></ul>
+    </div>
+    <div class="am-card">
+      <div class="am-h">DNS<span class="am-note" id="dns-flag"></span></div>
+      <div class="am-s" id="dns-meta" style="margin-bottom:8px"></div>
+      <div class="am-cols" style="grid-template-columns:1fr 1fr;gap:8px">
+        <div><div class="am-k">高频域名</div><ul class="am-list" id="dns-top"></ul></div>
+        <div><div class="am-k">NXDOMAIN</div><ul class="am-list" id="dns-nx"></ul></div>
+      </div>
+    </div>
+  </div>
+  <div class="am-cols">
+    <div class="am-card">
+      <div class="am-h">IPTV<span class="am-note" id="iptv-flag"></span></div>
+      <div class="am-s" id="iptv-meta" style="margin-bottom:8px"></div>
+      <ul class="am-list" id="iptv-ev"></ul>
+    </div>
+    <div class="am-card">
+      <div class="am-h">DHCP<span class="am-note" id="dhcp-flag"></span></div>
+      <div class="am-s" id="dhcp-meta" style="margin-bottom:8px"></div>
+      <ul class="am-list" id="dhcp-ev"></ul>
+    </div>
+  </div>
+  <div class="am-card">
+    <div class="am-h">最近事件<span class="am-note">原始日志聚合</span></div>
+    <div class="am-log" id="am-log">加载中</div>
+  </div>
+</div>
+<script>
+var AM_DATA="<%=luci.dispatcher.build_url('admin/atkmon/data')%>";
+var AM_BLOCK="<%=luci.dispatcher.build_url('admin/atkmon/block')%>";
+var AM_UNBLOCK="<%=luci.dispatcher.build_url('admin/atkmon/unblock')%>";
+var AM_EV="<%=luci.dispatcher.build_url('admin/atkmon/events')%>";
+var RANGE=24, SNAP=null;
+function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]})}
+function fmtTs(ts){if(!ts)return "-";var d=new Date(ts*1000);function p(n){return n<10?"0"+n:n}return (d.getMonth()+1)+"/"+p(d.getDate())+" "+p(d.getHours())+":"+p(d.getMinutes())}
+function dur(s){s=parseInt(s||0,10);if(s<60)return s+"s";if(s<3600)return Math.floor(s/60)+"m";return Math.floor(s/3600)+"h"+Math.floor((s%3600)/60)+"m"}
+function amRange(n,btn){RANGE=n;document.querySelectorAll(".am-tog button").forEach(function(b){b.className=b===btn?"on":""});if(SNAP)render(SNAP)}
+function sliceSeries(series){var n=RANGE;if(!series||!series.length)return [];return series.slice(Math.max(0,series.length-n))}
+function sumField(rows,k){var t=0;for(var i=0;i<rows.length;i++)t+=parseInt(rows[i][k]||0,10);return t}
+function drawLine(series){
+  var svg=document.getElementById("am-line"), w=640,h=140,p=8;
+  if(!series.length){svg.innerHTML="";return}
+  var vals=series.map(function(r){return (r.auth||0)+(r.probe||0)});
+  var mx=Math.max.apply(null,vals.concat([1]));
+  function x(i){return p+i*(w-2*p)/Math.max(series.length-1,1)}
+  function y(v){return h-p-(v/mx)*(h-2*p)}
+  var d="";
+  for(var i=0;i<vals.length;i++)d+=(i?" L":"M")+x(i).toFixed(1)+" "+y(vals[i]).toFixed(1);
+  var area=d+" L"+x(vals.length-1).toFixed(1)+" "+(h-p)+" L"+x(0).toFixed(1)+" "+(h-p)+" Z";
+  svg.innerHTML='<path d="'+area+'" fill="rgba(180,83,42,.18)"/><path d="'+d+'" fill="none" stroke="#b4532a" stroke-width="2"/>';
+}
+function renderTop(rows){
+  var el=document.getElementById("am-top");
+  if(!rows||!rows.length){el.innerHTML='<div class="am-empty">暂无外网攻击</div>';return}
+  var mx=Math.max.apply(null,rows.map(function(r){return r.count||0}).concat([1]));
+  el.innerHTML=rows.map(function(r){
+    return '<div class="am-bar"><span class="lab" title="'+esc(r.ip)+'">'+esc(r.ip)+'</span><div class="am-track"><div class="am-fill" style="width:'+(100*(r.count||0)/mx)+'%"></div></div><span>'+(r.count||0)+'</span></div>';
+  }).join("");
+}
+function tagHtml(t){t=t||"probe";var lab={auth:"爆破",scan:"扫描",probe:"探测"}[t]||t;return '<span class="am-tag '+t+'">'+lab+'</span>'}
+function renderAtk(rows,blocked){
+  var body=document.getElementById("am-atk-body");
+  var cut=Date.now()/1000-(RANGE===24?86400:7*86400);
+  rows=(rows||[]).filter(function(r){return (r.last_ts||0)>=cut});
+  if(!rows.length){body.innerHTML='<tr><td colspan="8" class="am-empty">这段时间没有外网攻击</td></tr>';return}
+  var blk={};(blocked||[]).forEach(function(ip){blk[ip]=1});
+  body.innerHTML=rows.slice(0,40).map(function(r){
+    var ip=r.ip, on=blk[ip];
+    var btn=on
+      ? '<button class="am-btn ok" onclick="amUnblock(\''+esc(ip)+'\')">解除</button>'
+      : '<button class="am-btn bad" onclick="amBlock(\''+esc(ip)+'\')">拉黑</button>';
+    return '<tr><td>'+esc(ip)+'</td><td>'+tagHtml(r.tag)+'</td><td>'+(r.count||0)+'</td><td>'+(r.auth_count||0)+'</td><td>'+(r.probe_count||0)+'</td><td>'+esc((r.ports||[]).join(","))+'</td><td>'+fmtTs(r.last_ts)+'</td><td>'+btn+'</td></tr>';
+  }).join("");
+}
+function listEv(id, rows, fn){
+  var el=document.getElementById(id);
+  if(!rows||!rows.length){el.innerHTML='<li class="am-empty" style="border:0">暂无事件</li>';return}
+  el.innerHTML=rows.slice().reverse().slice(0,12).map(fn).join("");
+}
+function render(d){
+  SNAP=d;
+  var series=sliceSeries(d.series||[]);
+  var atk=sumField(series,"auth")+sumField(series,"probe");
+  var auth=sumField(series,"auth"), probe=sumField(series,"probe");
+  var cards=d.cards||{};
+  document.getElementById("c-atk").textContent=RANGE===24?(cards.attack_24h||0):atk;
+  document.getElementById("c-atk").className="am-n"+(atk||cards.attack_24h?" bad":"");
+  document.getElementById("c-atk-s").textContent="来源 "+(cards.sources_24h||0);
+  document.getElementById("c-auth").textContent=RANGE===24?(cards.auth_24h||0):auth;
+  document.getElementById("c-probe").textContent=RANGE===24?(cards.probe_24h||0):probe;
+  document.getElementById("c-probe-s").textContent=d.probe_available?"nft 已记录":"探测日志尚未出现";
+  document.getElementById("c-ppp").textContent=cards.pppoe_redial_24h||0;
+  document.getElementById("c-ppp").className="am-n"+((d.pppoe&&d.pppoe.frequent)?" warn":"");
+  document.getElementById("c-ppp-s").textContent=(d.pppoe&&d.pppoe.up)?"在线 "+dur(d.pppoe.uptime):"离线";
+  document.getElementById("c-dhcp").textContent=cards.dhcp_new_24h||0;
+  document.getElementById("c-dns").textContent="NX "+(cards.dns_nx_24h||0)+" · 直播 "+(cards.iptv_live||0)+" · 回看 "+(cards.iptv_catchup||0);
+  document.getElementById("am-ts").textContent=d.ts?("更新 "+fmtTs(d.ts)):"采集中";
+  if(!d.probe_available) document.getElementById("am-probe-tip").innerHTML='<div class="am-warnbox">WAN 探测日志尚未出现，爆破与其它分区仍可用</div>';
+  else document.getElementById("am-probe-tip").innerHTML="";
+  drawLine(series);
+  renderTop(d.top_ip||[]);
+  renderAtk(d.attack_summary||[], d.blocked||[]);
+  var p=d.pppoe||{};
+  document.getElementById("ppp-flag").textContent=p.frequent?"频繁重拨":(p.up?"UP":"DOWN");
+  document.getElementById("ppp-meta").textContent=(p.ipv4||"-")+" / "+(p.ipv6||"-")+" · "+(p.device||"");
+  listEv("ppp-ev", p.events||[], function(e){return "<li><span>"+esc(e.type)+" "+esc((e.msg||"").slice(-80))+"</span><span>"+fmtTs(e.ts)+"</span></li>"});
+  var dns=d.dns||{};
+  document.getElementById("dns-flag").textContent=dns.available?"查询日志开":"明细不可用";
+  document.getElementById("dns-meta").textContent="查询 "+(dns.queries||0)+" · NXDOMAIN "+(dns.nxdomain||0)+((dns.hot_clients&&dns.hot_clients.length)?" · 高频客户端 "+dns.hot_clients.length:"");
+  if(!dns.available) document.getElementById("dns-top").innerHTML='<li class="am-empty" style="border:0">未开 dnsmasq logqueries</li>';
+  else listEv("dns-top", dns.top||[], function(e){return "<li><span>"+esc(e.name)+"</span><span>"+e.count+"</span></li>"});
+  listEv("dns-nx", dns.nx_top||[], function(e){return "<li><span>"+esc(e.name)+"</span><span>"+e.count+"</span></li>"});
+  var iptv=d.iptv||{};
+  document.getElementById("iptv-flag").textContent=iptv.running?(iptv.auth_ok?"鉴权正常":"鉴权异常"):"未运行";
+  document.getElementById("iptv-meta").textContent="直播 "+(iptv.live||0)+" · 回看 "+(iptv.catchup||0);
+  listEv("iptv-ev", iptv.events||[], function(e){return "<li><span>"+esc(e.type)+" "+esc(e.channel||e.msg||"")+"</span><span>"+fmtTs(e.ts)+"</span></li>"});
+  var dhcp=d.dhcp||{};
+  document.getElementById("dhcp-flag").textContent="租约 "+(dhcp.leases||0);
+  document.getElementById("dhcp-meta").textContent="24h 新终端 "+(dhcp.new_24h||0);
+  listEv("dhcp-ev", dhcp.events||[], function(e){return "<li><span>"+esc(e.type)+" "+esc(e.name||"")+" "+esc(e.ip||"")+"</span><span>"+fmtTs(e.ts)+"</span></li>"});
+}
+function amBlock(ip){
+  if(!confirm("拉黑 "+ip+"？仅拒绝它访问本机，不影响局域网转发。")) return;
+  fetch(AM_BLOCK,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:"ip="+encodeURIComponent(ip)})
+    .then(function(r){return r.json()}).then(function(){amLoad()}).catch(function(){alert("拉黑失败")});
+}
+function amUnblock(ip){
+  fetch(AM_UNBLOCK,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:"ip="+encodeURIComponent(ip)})
+    .then(function(r){return r.json()}).then(function(){amLoad()}).catch(function(){alert("解除失败")});
+}
+function amLoad(){
+  fetch(AM_DATA,{credentials:"same-origin",cache:"no-store"}).then(function(r){return r.json()}).then(render).catch(function(){document.getElementById("am-ts").textContent="采集失败"});
+  fetch(AM_EV,{credentials:"same-origin",cache:"no-store"}).then(function(r){return r.json()}).then(function(d){
+    var rows=(d.events||[]);
+    var el=document.getElementById("am-log");
+    if(!rows.length){el.textContent="暂无事件";return}
+    el.textContent=rows.slice(-40).map(function(e){
+      return fmtTs(e.ts)+"  "+(e.cat||"")+"/"+(e.type||"")+"  "+(e.ip||"")+"  "+(e.channel||e.user||e.msg||"")+"  "+(e.port||"");
+    }).join("\n");
+  }).catch(function(){});
+}
+amLoad();
+setInterval(amLoad,5000);
+</script>
+<%+footer%>

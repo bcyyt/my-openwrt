@@ -1,0 +1,17 @@
+#!/bin/sh
+chmod 755 /etc/init.d/atkmon /usr/bin/atkmon-collect.py /usr/bin/atkmon-nft.sh 2>/dev/null || true
+
+if [ "$(uci -q get atkmon.main.dns_log)" != "0" ]; then
+	sec=$(uci -q show dhcp 2>/dev/null | sed -n 's/^\(dhcp\.[^=]*\)=dnsmasq$/\1/p' | head -n 1)
+	if [ -n "$sec" ]; then
+		uci -q set "$sec.logqueries=1"
+		uci -q commit dhcp
+		/etc/init.d/dnsmasq reload >/dev/null 2>&1 || true
+	fi
+fi
+
+[ -x /etc/init.d/atkmon ] && /etc/init.d/atkmon enable 2>/dev/null || true
+
+rm -f /tmp/luci-indexcache.*
+rm -rf /tmp/luci-modulecache/
+exit 0
