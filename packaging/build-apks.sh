@@ -14,7 +14,7 @@ PUB_KEY="$KEYS/my-openwrt.rsa.pub"
 
 IPTV_VER="${IPTV_VER:-2.3.21-r0}"
 MEDIA_VER="${MEDIA_VER:-1.5.7-r0}"
-STATUS_VER="${STATUS_VER:-4.27}"
+STATUS_VER="${STATUS_VER:-4.28}"
 NETQ_VER="${NETQ_VER:-1.0.16-r0}"
 SYSKEEP_VER="${SYSKEEP_VER:-1.0.13-r0}"
 DATE_STR="$(date +%Y-%m-%d)"
