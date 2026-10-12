@@ -87,8 +87,8 @@ start_service() {
     port=$(uci -q get iptv-auth.main.live_port); port=${port:-23234}
     iface=$(uci -q get iptv-auth.main.upstream_interface)
     workers=$(uci -q get iptv-auth.main.rtp2h_workers); workers=${workers:-4}
-    rcvbuf=$(uci -q get iptv-auth.main.rtp2h_rcvbuf); rcvbuf=${rcvbuf:-4194304}
-    bufpool=$(uci -q get iptv-auth.main.rtp2h_bufpool); bufpool=${bufpool:-32768}
+    rcvbuf=$(uci -q get iptv-auth.main.rtp2h_rcvbuf); rcvbuf=${rcvbuf:-16777216}
+    bufpool=$(uci -q get iptv-auth.main.rtp2h_bufpool); bufpool=${bufpool:-1048576}
     verbose=$(uci -q get iptv-auth.main.rtp2h_verbose); verbose=${verbose:-3}
 
     # 上游接口（与原版 rtp2httpd 参数语义一致）：

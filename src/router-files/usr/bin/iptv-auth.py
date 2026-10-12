@@ -203,8 +203,8 @@ def load_config():
             'interval': int(g('interval', '10') or '10'),
             'epg_enabled': g('epg_enabled', '1') == '1',
             'rtp2h_workers': g('rtp2h_workers', '4'),
-            'rtp2h_rcvbuf': g('rtp2h_rcvbuf', '1572864'),
-            'rtp2h_bufpool': g('rtp2h_bufpool', '32768'),
+            'rtp2h_rcvbuf': g('rtp2h_rcvbuf', '16777216'),
+            'rtp2h_bufpool': g('rtp2h_bufpool', '1048576'),
             'wan_domain': g('wan_domain', ''),
             'ota_url': g('ota_url', ''),
         }
