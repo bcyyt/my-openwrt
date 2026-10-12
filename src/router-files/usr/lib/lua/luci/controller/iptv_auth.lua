@@ -435,8 +435,8 @@ local OUI_VENDORS = {
 
 function get_clients()
     -- 当前连接的客户端（IP + 设备标识）：
-    -- netstat 解析 ESTABLISHED（排除本机自连接），MAC/厂商来自 ip neigh，
-    -- 回看的 UA 与频道来自 iptv-auth.py 维护的 clients.json 档案
+    -- 直播以 rtp2httpd 快照为准（仅有 service_url 的媒体流，不含 /status），
+    -- 回看/网页仍用 netstat 的 554/2000；频道名对照 /www/Lan.m3u。
     local http = require "luci.http"
     local sys = require "luci.sys"
     local fs = require "nixio.fs"
@@ -445,11 +445,9 @@ function get_clients()
 
     local live_port = (sys.exec("uci -q get iptv-auth.main.live_port 2>/dev/null") or "23234"):gsub("%s", "")
     local lan_ip = (sys.exec("uci -q get network.lan.ipaddr 2>/dev/null") or ""):gsub("%s", "")
-    local port_label = { [live_port] = "直播", ["554"] = "回看", ["2000"] = "网页" }
+    local port_label = { ["554"] = "回看", ["2000"] = "网页" }
 
-    -- 1. 活跃连接
     local conns, order = {}, {}
-    local ns = sys.exec("netstat -tn 2>/dev/null") or ""
     local function host_port(addr)
         local port = addr:match(":(%d+)$")
         if not port then return nil, nil end
@@ -467,6 +465,90 @@ function get_clients()
         self_ips[ip] = true
     end
 
+    local function ensure(rip)
+        local c = conns[rip]
+        if not c then
+            c = { count = 0, tset = {}, chset = {}, chlist = {} }
+            conns[rip] = c
+            order[#order + 1] = rip
+        end
+        return c
+    end
+    local function add_channel(c, name)
+        if not name or name == "" or c.chset[name] then return end
+        c.chset[name] = true
+        c.chlist[#c.chlist + 1] = name
+    end
+    local function client_ip(addr)
+        if type(addr) ~= "string" or addr == "" or addr == "localhost" then return nil end
+        local host = host_port(addr)
+        if not host then
+            host = addr:gsub("^%[(.*)%]$", "%1")
+            local mapped = host:match("^::ffff:(%d+%.%d+%.%d+%.%d+)$")
+            if mapped then host = mapped end
+        end
+        if not host or host == "" or self_ips[host] then return nil end
+        return host
+    end
+
+    local by_mcast, by_chid = {}, {}
+    local m3u = fs.readfile("/www/Lan.m3u") or ""
+    local cur_name = ""
+    for line in m3u:gmatch("[^\r\n]+") do
+        local n = line:match('tvg%-name="([^"]+)"')
+        if n and n ~= "" then cur_name = n end
+        local chid = line:match("/PLTV/(ch[%w%-_]+)%.smil")
+        if chid and cur_name ~= "" then by_chid[chid] = cur_name end
+        local mcast = line:match("rtp://([%d%.]+:%d+)") or line:match("udp://([%d%.]+:%d+)")
+        if mcast and cur_name ~= "" then by_mcast[mcast] = cur_name end
+    end
+
+    local function channel_from_service(url)
+        if type(url) ~= "string" or url == "" then return "" end
+        local chid = url:match("/PLTV/(ch[%w%-_]+)%.smil")
+        if chid then return by_chid[chid] or chid end
+        local mcast = url:match("/rtp/([%d%.]+:%d+)") or url:match("/udp/([%d%.]+:%d+)")
+        if mcast then return by_mcast[mcast] or mcast end
+        local path = url:gsub("%?.*$", ""):gsub("/+$", "")
+        local last = path:match("([^/]+)$")
+        if last and last ~= "rtp" and last ~= "udp" and last ~= "rtsp" and last ~= "http" then
+            last = last:gsub("%%(%x%x)", function(h)
+                return string.char(tonumber(h, 16) or 0)
+            end)
+            return by_mcast[last] or last
+        end
+        return ""
+    end
+
+    -- 1. 直播/经 rtp2httpd 的回看：快照只含有 service_url 的媒体流
+    local sse = sys.exec(string.format(
+        "curl -s --max-time 3 -H %q %q 2>/dev/null",
+        "X-Request-Snapshot: 1",
+        "http://127.0.0.1:" .. live_port .. "/status/sse"
+    )) or ""
+    local clients_raw = sse:match('"clients":(%b[])')
+    local snap_clients = clients_raw and json.parse(clients_raw) or nil
+    if type(snap_clients) == "table" then
+        for _, sc in ipairs(snap_clients) do
+            if type(sc) == "table" then
+                local rip = client_ip(sc.clientAddr or sc.client_addr or "")
+                local url = sc.serviceUrl or sc.service_url or ""
+                if rip and type(url) == "string" and url ~= "" then
+                    local c = ensure(rip)
+                    c.count = c.count + 1
+                    if url:match("^/rtsp/") or url:match("/PLTV/") then
+                        c.tset["回看"] = true
+                    else
+                        c.tset["直播"] = true
+                    end
+                    add_channel(c, channel_from_service(url))
+                end
+            end
+        end
+    end
+
+    -- 2. 回看 554 / 网页 2000（不含 live_port，避免把 /status 算成直播）
+    local ns = sys.exec("netstat -tn 2>/dev/null") or ""
     for line in ns:gmatch("[^\r\n]+") do
         if line:match("ESTABLISHED") then
             local laddr, raddr = line:match("%s+(%S+:%d+)%s+(%S+:%d+)%s+")
@@ -474,12 +556,7 @@ function get_clients()
                 local _, lport = host_port(laddr)
                 local rip = host_port(raddr)
                 if rip and lport and port_label[lport] and not self_ips[rip] then
-                    local c = conns[rip]
-                    if not c then
-                        c = { count = 0, tset = {} }
-                        conns[rip] = c
-                        order[#order + 1] = rip
-                    end
+                    local c = ensure(rip)
                     c.count = c.count + 1
                     c.tset[port_label[lport]] = true
                 end
@@ -487,7 +564,7 @@ function get_clients()
         end
     end
 
-    -- 2. MAC 地址（ip neigh）
+    -- 3. MAC 地址（ip neigh）
     local macs = {}
     local nb = sys.exec("ip neigh show 2>/dev/null") or ""
     for line in nb:gmatch("[^\r\n]+") do
@@ -495,7 +572,7 @@ function get_clients()
         if ip and mac then macs[ip] = mac:lower() end
     end
 
-    -- 3. 回看客户端档案（UA/频道/最近时间，由 iptv-auth.py 记录）
+    -- 4. 回看客户端档案（UA/频道/最近时间，由 iptv-auth.py 记录）
     local profiles = {}
     local raw = fs.readfile("/var/log/iptv-auth/clients.json")
     if raw and #raw > 0 then
@@ -503,7 +580,7 @@ function get_clients()
         if type(parsed) == "table" then profiles = parsed end
     end
 
-    -- 4. 组装（类型固定顺序：直播 > 回看 > 网页）
+    -- 5. 组装（类型固定顺序：直播 > 回看 > 网页）
     local out = {}
     for _, ip in ipairs(order) do
         local c = conns[ip]
@@ -523,6 +600,12 @@ function get_clients()
         if c.tset["直播"] then types[#types + 1] = "直播" end
         if c.tset["回看"] then types[#types + 1] = "回看" end
         if c.tset["网页"] then types[#types + 1] = "网页" end
+        local replay_ch = p.channel or ""
+        if replay_ch ~= "" and by_chid[replay_ch] then
+            replay_ch = by_chid[replay_ch]
+        end
+        local watching = table.concat(c.chlist, "、")
+        if watching == "" then watching = replay_ch end
         out[#out + 1] = {
             ip = ip,
             conns = c.count,
@@ -530,7 +613,8 @@ function get_clients()
             mac = mac,
             vendor = vendor,
             ua = p.ua or "",
-            channel = p.channel or "",
+            channel = replay_ch,
+            watching = watching,
             last = p.last or 0
         }
     end

@@ -240,7 +240,7 @@ function clientsRefresh() {
                 return;
             }
             var html = '<table class="iptv-clients-table"><thead><tr>' +
-                '<th>客户端 IP</th><th>设备标识</th><th>用途</th><th style="text-align:right;">连接数</th><th>MAC 地址</th><th>最近回看</th>' +
+                '<th>客户端 IP</th><th>设备标识</th><th>用途</th><th>频道</th><th style="text-align:right;">连接数</th><th>MAC 地址</th><th>最近回看</th>' +
                 '</tr></thead><tbody>';
             for (var i = 0; i < list.length; i++) {
                 var c = list[i];
@@ -255,11 +255,13 @@ function clientsRefresh() {
                     var dt = new Date(c.last * 1000);
                     lastTxt = ('0' + dt.getHours()).slice(-2) + ':' + ('0' + dt.getMinutes()).slice(-2);
                 }
-                var chTxt = c.channel ? ' · ' + escHtml(c.channel.substring(0, 10)) : '';
+                var watch = c.watching || '';
+                var chTxt = c.channel ? ' · ' + escHtml(c.channel) : '';
                 html += '<tr>' +
                     '<td class="iptv-cip">' + escHtml(c.ip) + '</td>' +
                     '<td class="iptv-cident">' + escHtml(ident) + (c.ua && c.vendor ? '<span class="iptv-csub">' + escHtml(c.vendor) + '</span>' : '') + '</td>' +
                     '<td>' + types + '</td>' +
+                    '<td class="iptv-cch" title="' + escHtml(watch) + '">' + (watch ? escHtml(watch) : '—') + '</td>' +
                     '<td style="text-align:right;font-weight:600;">' + c.conns + '</td>' +
                     '<td class="iptv-cmac">' + escHtml(c.mac || '—') + '</td>' +
                     '<td>' + lastTxt + chTxt + '</td>' +
@@ -816,6 +818,7 @@ document.addEventListener('visibilitychange', function() {
 .iptv-cident { max-width: 300px; word-break: break-all; }
 .iptv-csub { display: block; font-size: 11px; color: #94a3b8; margin-top: 2px; }
 .iptv-cmac { font-family: Consolas, Monaco, 'Courier New', monospace; font-size: 12px; color: var(--iptv-muted); }
+.iptv-cch { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .iptv-ctype {
     display: inline-block;
     font-size: 11px;
@@ -1201,7 +1204,7 @@ document.addEventListener('visibilitychange', function() {
             </svg>
         </span>
         <span class="iptv-sec-title">连接的客户端</span>
-        <span class="iptv-sec-note">实时活跃连接 · 每 5 秒刷新 · 直播/回看/网页接入都会显示</span>
+        <span class="iptv-sec-note">实时活跃连接 · 每 5 秒刷新 · 直播来自 rtp2httpd 媒体流，不含监控页</span>
     </div>
     <div id="clients-area">加载中...</div>
 </div>

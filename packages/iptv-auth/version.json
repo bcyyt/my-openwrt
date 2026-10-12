@@ -1,7 +1,7 @@
 {
-  "version": "2.3.25-r0",
+  "version": "2.3.26-r0",
   "date": "2026-10-12",
-  "changelog": "状态页「在线更新」可直接选择 OTA 镜像前缀。",
-  "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth-2.3.25-r0.apk",
-  "ipk_url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth_2.3.25-r0_x86_64.ipk"
+  "changelog": "状态页客户端列表排除 rtp2httpd 监控页，并显示正在收看的频道。",
+  "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth-2.3.26-r0.apk",
+  "ipk_url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth_2.3.26-r0_x86_64.ipk"
 }
