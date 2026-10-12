@@ -27,6 +27,12 @@ chmod 755 /etc/init.d/iptv-auth /usr/bin/iptv-auth.py \
 	/usr/bin/iptv-auth-ota.sh /usr/bin/iptv-auth-ota-check.sh \
 	/usr/bin/rtp2httpd-ota-check.sh /usr/bin/rtp2httpd-update.sh 2>/dev/null || true
 
+mkdir -p /etc/sysctl.d
+cat > /etc/sysctl.d/15-iptv-auth.conf <<'EOF'
+net.core.rmem_max=33554432
+EOF
+sysctl -w net.core.rmem_max=33554432 >/dev/null 2>&1 || true
+
 ensure_pkg() {
 	apk info -e "$1" >/dev/null 2>&1 && return 0
 	apk add "$1" >/dev/null 2>&1

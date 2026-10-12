@@ -1,7 +1,7 @@
 {
-  "version": "2.3.20-r0",
+  "version": "2.3.21-r0",
   "date": "2026-10-12",
-  "changelog": "默认 UDP 缓冲 16MB、缓冲池上限 1048576。",
-  "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth-2.3.20-r0.apk",
+  "changelog": "默认 UDP 缓冲 16MB、缓冲池上限 1048576；安装/启动时将 net.core.rmem_max 设为 33554432。",
+  "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth-2.3.21-r0.apk",
   "ipk_url": ""
 }

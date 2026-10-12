@@ -12,7 +12,7 @@ APK="${APK:-/tmp/apk-tools/build/src/apk}"
 SIGN_KEY="$KEYS/my-openwrt.rsa"
 PUB_KEY="$KEYS/my-openwrt.rsa.pub"
 
-IPTV_VER="${IPTV_VER:-2.3.20-r0}"
+IPTV_VER="${IPTV_VER:-2.3.21-r0}"
 MEDIA_VER="${MEDIA_VER:-1.5.7-r0}"
 STATUS_VER="${STATUS_VER:-4.26}"
 NETQ_VER="${NETQ_VER:-1.0.16-r0}"
@@ -81,6 +81,8 @@ install -m 644 "$SRC/usr/lib/lua/luci/model/cbi/iptv_auth/config.lua" "$IPTV_ROO
 install -m 644 "$SRC/usr/lib/lua/luci/view/iptv_auth/"*.htm "$IPTV_ROOT/usr/lib/lua/luci/view/iptv_auth/"
 cp -a "$SRC/usr/share/iptv-auth/logos/." "$IPTV_ROOT/usr/share/iptv-auth/logos/"
 install -m 644 "$PUB_KEY" "$IPTV_ROOT/usr/share/iptv-auth/my-openwrt.rsa.pub"
+install -d "$IPTV_ROOT/etc/sysctl.d"
+install -m 644 "$SRC/etc/sysctl.d/15-iptv-auth.conf" "$IPTV_ROOT/etc/sysctl.d/15-iptv-auth.conf"
 
 IPTV_APK="$OUT/iptv-auth/iptv-auth-${IPTV_VER}.apk"
 mkpkg \
@@ -95,7 +97,7 @@ cat > "$OUT/iptv-auth/version.json" <<EOF
 {
   "version": "${IPTV_VER}",
   "date": "${DATE_STR}",
-  "changelog": "默认 UDP 缓冲 16MB、缓冲池上限 1048576。",
+  "changelog": "默认 UDP 缓冲 16MB、缓冲池上限 1048576；安装/启动时将 net.core.rmem_max 设为 33554432。",
   "url": "${OTA_URL_BASE}/iptv-auth/iptv-auth-${IPTV_VER}.apk",
   "ipk_url": ""
 }
