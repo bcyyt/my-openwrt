@@ -32,6 +32,8 @@ local rtp2_last_check = sys.exec("uci -q get iptv-auth.main.rtp2_last_check 2>/d
 rtp2_last_check = rtp2_last_check:match("^%s*(.-)%s*$") or ""
 local ota_last_check = sys.exec("uci -q get iptv-auth.main.ota_last_check 2>/dev/null") or ""
 ota_last_check = ota_last_check:match("^%s*(.-)%s*$") or ""
+local update_mirror = sys.exec("uci -q get iptv-auth.main.update_mirror 2>/dev/null") or ""
+update_mirror = update_mirror:match("^%s*(.-)%s*$") or ""
 local function ver_gt(a, b)
     local ta, tb = {0, 0, 0}, {0, 0, 0}
     local i = 0
@@ -273,6 +275,59 @@ function clientsRefresh() {
 
 // ===== OTA 在线更新（服务器地址在配置页设置）=====
 var OTA_BASE = '<%=luci.dispatcher.build_url("admin/services/iptv_auth")%>/';
+var CURRENT_MIRROR = <%=require("luci.jsonc").stringify(update_mirror or "")%>;
+function initOtaMirror() {
+    var sel = document.getElementById('ota-mirror-select');
+    var inp = document.getElementById('ota-mirror-custom');
+    if (!sel || !inp) return;
+    var val = CURRENT_MIRROR || '';
+    var matched = false;
+    for (var i = 0; i < sel.options.length; i++) {
+        if (sel.options[i].value === val) { sel.selectedIndex = i; matched = true; break; }
+    }
+    if (!matched && val) {
+        for (var j = 0; j < sel.options.length; j++) {
+            if (sel.options[j].value === '__custom__') { sel.selectedIndex = j; break; }
+        }
+        inp.value = val;
+        inp.style.display = '';
+    } else {
+        inp.value = val;
+        inp.style.display = (val === '') ? 'none' : '';
+    }
+}
+
+function onOtaMirrorSelect(sel) {
+    var inp = document.getElementById('ota-mirror-custom');
+    if (!inp) return;
+    if (sel.value === '__custom__') {
+        inp.style.display = '';
+        inp.focus();
+        return;
+    }
+    inp.value = sel.value;
+    inp.style.display = (sel.value === '') ? 'none' : '';
+    saveOtaMirror(sel.value);
+}
+
+function saveOtaMirror(val) {
+    var hint = document.getElementById('ota-mirror-hint');
+    var fd = new FormData();
+    fd.append('update_mirror', val || '');
+    fetch(OTA_BASE + 'save_mirror', { method: 'POST', body: fd, credentials: 'same-origin' })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (!d || d.ok === false) {
+                if (hint) hint.textContent = (d && d.error) || '镜像保存失败';
+                return;
+            }
+            CURRENT_MIRROR = d.update_mirror || '';
+            if (hint) hint.textContent = CURRENT_MIRROR ? ('已保存 ' + CURRENT_MIRROR) : '已保存：直连 GitHub';
+        })
+        .catch(function(e) {
+            if (hint) hint.textContent = '镜像保存失败: ' + (e && e.message ? e.message : e);
+        });
+}
 
 function rtp2CmpVer(a, b) {
     var pa = (a || '0').split('.'), pb = (b || '0').split('.');
@@ -474,6 +529,7 @@ function startAutoRefresh() {
     iptvRefresh();
     clientsRefresh();
     historyRefresh();
+    initOtaMirror();
 }
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', startAutoRefresh);
@@ -788,6 +844,25 @@ document.addEventListener('visibilitychange', function() {
     border-radius: 12px;
     padding: 14px 16px;
 }
+.ota-mirror-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 10px;
+}
+.ota-mirror-row select,
+.ota-mirror-row input[type="text"] {
+    max-width: 420px;
+    padding: 6px 10px;
+    border: 1px solid var(--iptv-border);
+    border-radius: 6px;
+    font-size: 13px;
+    color: var(--iptv-text);
+    background: #fff;
+    box-sizing: border-box;
+}
+.ota-mirror-row input[type="text"] { display: none; min-width: 240px; }
 .ota-msg { font-size: 13px; }
 .ota-msg b { font-weight: 600; }
 .ota-note { color: var(--iptv-muted); }
@@ -1139,12 +1214,25 @@ document.addEventListener('visibilitychange', function() {
             </svg>
         </span>
         <span class="iptv-sec-title">在线更新</span>
-        <span class="iptv-sec-note">系统每 12 小时自动检测一次 · 更新服务器地址在配置页设置 · 更新过程服务中断约 10 秒</span>
+        <span class="iptv-sec-note">系统每 12 小时自动检测一次 · 国内请选镜像前缀 · 更新过程服务中断约 10 秒</span>
         <span class="iptv-sec-actions">
             <input type="button" class="cbi-button cbi-button-apply" id="ota-check-btn" value="检查更新" onclick="otaCheck()" />
         </span>
     </div>
     <div class="iptv-ota-card">
+        <div class="ota-mirror-row">
+            <span class="ota-msg ota-note">下载镜像</span>
+            <select id="ota-mirror-select" onchange="onOtaMirrorSelect(this)">
+                <option value="">留空 — 直连 GitHub（失败自动走 gh-proxy.com）</option>
+                <option value="https://gh-proxy.com/">https://gh-proxy.com/</option>
+                <option value="https://ghproxy.net/">https://ghproxy.net/</option>
+                <option value="https://ghfast.top/">https://ghfast.top/</option>
+                <option value="https://gh-proxy.link/">https://gh-proxy.link/</option>
+                <option value="__custom__">自定义…</option>
+            </select>
+            <input type="text" id="ota-mirror-custom" placeholder="https://example.com/" onchange="saveOtaMirror(this.value.trim())" />
+            <span id="ota-mirror-hint" class="ota-msg ota-note"></span>
+        </div>
         <div id="ota-result"><span class="ota-msg ota-note"><% if ota_last_check ~= "" then %>上次自动检测：<%=ota_last_check%><% else %>尚未自动检测<% end %> · 点击「检查更新」立即检测</span></div>
     </div>
     <div class="iptv-ota-card" style="margin-top:10px;">

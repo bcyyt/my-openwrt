@@ -618,25 +618,11 @@ if (document.readyState === 'loading') {
 
 <div class="iptv-section">
     <div class="iptv-section-title-bar">rtp2httpd 在线更新</div>
-    <div class="iptv-info-note" style="margin:8px 16px 0;">更新源为本仓库自编译包（初始缓冲池 1024）。官方 GitHub 有新版本时请及时编译，再点「立即更新」。</div>
+    <div class="iptv-info-note" style="margin:8px 16px 0;">更新源为本仓库自编译包（初始缓冲池 1024）。下载镜像前缀在下方「iptv-auth 在线热更新」设置，rtp2httpd 共用。官方 GitHub 有新版本时请及时编译，再点「立即更新」。</div>
     <div class="iptv-section-body">
         <div class="iptv-field">
             <div class="iptv-field-label">当前版本</div>
             <div class="iptv-field-input"><span class="iptv-r2h-ver">v<%=r2h_cur%></span></div>
-        </div>
-        <div class="iptv-field">
-            <div class="iptv-field-label">下载镜像前缀<small>rtp2httpd 与插件 OTA 共用</small></div>
-            <div class="iptv-field-input">
-                <select id="cfg-update_mirror-select" onchange="onMirrorSelectChange(this)" style="width:100%;max-width:420px;padding:7px 10px;border:1px solid var(--iptv-border);border-radius:6px;font-size:13px;color:var(--iptv-text);background:#fff;margin-bottom:8px;box-sizing:border-box;">
-                    <option value="">留空 — 直连本仓库 raw GitHub（国内可能需要镜像）</option>
-                    <option value="https://gh-proxy.com/">https://gh-proxy.com/</option>
-                    <option value="https://ghproxy.net/">https://ghproxy.net/</option>
-                    <option value="https://ghfast.top/">https://ghfast.top/</option>
-                    <option value="https://gh-proxy.link/">https://gh-proxy.link/</option>
-                    <option value="__custom__">自定义…</option>
-                </select>
-                <input type="text" id="cfg-update_mirror" class="iptv-long" placeholder="如 https://gh-proxy.com/，留空直连" style="display:none;" />
-            </div>
         </div>
         <div class="iptv-field">
             <div class="iptv-field-label">检查并更新</div>
@@ -656,6 +642,20 @@ if (document.readyState === 'loading') {
     <div class="iptv-section-title-bar">iptv-auth 在线热更新</div>
     <div class="iptv-section-body">
         <div class="iptv-field">
+            <div class="iptv-field-label">下载镜像前缀<small>rtp2httpd 与插件 OTA 共用</small></div>
+            <div class="iptv-field-input">
+                <select id="cfg-update_mirror-select" onchange="onMirrorSelectChange(this)" style="width:100%;max-width:420px;padding:7px 10px;border:1px solid var(--iptv-border);border-radius:6px;font-size:13px;color:var(--iptv-text);background:#fff;margin-bottom:8px;box-sizing:border-box;">
+                    <option value="">留空 — 直连本仓库 raw GitHub（国内可能需要镜像）</option>
+                    <option value="https://gh-proxy.com/">https://gh-proxy.com/</option>
+                    <option value="https://ghproxy.net/">https://ghproxy.net/</option>
+                    <option value="https://ghfast.top/">https://ghfast.top/</option>
+                    <option value="https://gh-proxy.link/">https://gh-proxy.link/</option>
+                    <option value="__custom__">自定义…</option>
+                </select>
+                <input type="text" id="cfg-update_mirror" class="iptv-long" placeholder="如 https://gh-proxy.com/，留空直连" style="display:none;" />
+            </div>
+        </div>
+        <div class="iptv-field">
             <div class="iptv-field-label">OTA 更新地址<small>指向 version.json 的完整 URL</small></div>
             <div class="iptv-field-input">
                 <input type="text" id="cfg-ota_url" class="iptv-long" placeholder="如 https://your-server.com/iptv-auth/version.json（留空不检测）" />
@@ -663,7 +663,7 @@ if (document.readyState === 'loading') {
                     在文件服务器放一个 version.json（含 version/url/date/changelog 字段），路由器检测到新版本后提示更新<br/>
                     APK 下载后经签名验证安装（公钥已部署），更新过程服务中断约 10 秒<br/>
                     <b>检测更新与安装操作请到「运行状态与日志」页</b>
-                    <br/>直连 GitHub 失败时，使用上方「下载镜像前缀」；留空会自动尝试 gh-proxy.com
+                    <br/>直连 GitHub 失败时，使用本段「下载镜像前缀」；留空会自动尝试 gh-proxy.com。状态页「在线更新」也可改镜像。
                 </div>
             </div>
         </div>

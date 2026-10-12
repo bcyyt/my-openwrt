@@ -60,6 +60,7 @@ function index()
     entry({"admin", "services", "iptv_auth", "ota_do"}, call("do_ota_update")).leaf = true
     entry({"admin", "services", "iptv_auth", "ota_status"}, call("get_ota_status")).leaf = true
     entry({"admin", "services", "iptv_auth", "ota_auto_check"}, call("run_ota_auto_check")).leaf = true
+    entry({"admin", "services", "iptv_auth", "save_mirror"}, call("save_update_mirror")).leaf = true
 end
 
 function get_log()
@@ -252,6 +253,7 @@ function get_info()
     end
     ota.last_check = sys_exec("uci -q get iptv-auth.main.ota_last_check 2>/dev/null")
     info.ota = ota
+    info.update_mirror = sys_exec("uci -q get iptv-auth.main.update_mirror 2>/dev/null")
 
     http.write(json.stringify(info))
 end
@@ -725,4 +727,25 @@ function get_interfaces()
     end
     http.prepare_content("application/json")
     http.write(json.stringify(list))
+end
+
+function save_update_mirror()
+    -- 仅保存镜像前缀，不重启服务
+    local http = require "luci.http"
+    local sys = require "luci.sys"
+    http.prepare_content("application/json")
+    local json = require "luci.jsonc"
+    local val = http.formvalue("update_mirror") or ""
+    val = val:gsub("^%s+", ""):gsub("%s+$", "")
+    if val == "__custom__" then
+        http.write(json.stringify({ ok = false, error = "请填写自定义镜像前缀" }))
+        return
+    end
+    if val ~= "" and not val:match("^https?://") then
+        http.write(json.stringify({ ok = false, error = "镜像前缀须以 http:// 或 https:// 开头" }))
+        return
+    end
+    sys.exec(string.format("uci set iptv-auth.main.update_mirror=%q", val))
+    sys.call("uci commit iptv-auth")
+    http.write(json.stringify({ ok = true, update_mirror = val }))
 end
