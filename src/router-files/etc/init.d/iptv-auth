@@ -126,10 +126,10 @@ start_service() {
         -l "$port" \
         -w "$workers" \
         -v "$verbose" \
-        -s /st \
+        -s /status \
         -B "$rcvbuf" \
         -b "$bufpool" \
-        -M file:///www/IPTV.m3u \
+        -M file:///www/Lan.m3u \
         -I 0 \
         --noconfig $extra
     procd_set_param respawn 3600 5 0

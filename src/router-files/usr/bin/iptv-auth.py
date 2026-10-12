@@ -15,7 +15,7 @@ from urllib.parse import quote
 from datetime import timedelta
 
 # ===================== 路径常量 =====================
-M3U_PATH = '/www/IPTV.m3u'
+M3U_PATH = '/www/Lan.m3u'
 REPLAY_M3U_PATH = '/www/LanReplay.m3u'     # 回看专用播放列表
 WAN_M3U_PATH = '/www/WanPlay.m3u'          # 外网融合版（直播+回看）
 WAN_REPLAY_M3U_PATH = '/www/WanReplay.m3u' # 外网纯回看版
@@ -508,7 +508,7 @@ def generate_m3u(channels):
     live_port = config['LivePort']
     replay_host = lan if lan != '127.0.0.1' else '127.0.0.1'
 
-    # ---- 内网融合版 IPTV.m3u ----
+    # ---- 内网直播版 Lan.m3u ----
     with open(M3U_PATH, 'w', encoding='utf-8') as f:
         f.write(f'#EXTM3U x-tvg-url="http://{lan}/PL.xml.gz"\n')
         for idx, code, name, group, rtspurl, igmpurl, fccip, fccport in channels:
@@ -526,6 +526,10 @@ def generate_m3u(channels):
                 f.write(f'#EXTINF:-1 tvg-id="{idx}" tvg-name="{name}" tvg-logo="{logo}" group-title="{group}", {name}\n')
             f.write(f'{rtpurl}\n')
     log(f"M3U 已生成: {M3U_PATH} ({len(channels)} 频道)")
+    try:
+        os.remove('/www/IPTV.m3u')
+    except OSError:
+        pass
 
     # ---- 内网回看版 LanReplay.m3u ----
     with open(REPLAY_M3U_PATH, 'w', encoding='utf-8') as f:

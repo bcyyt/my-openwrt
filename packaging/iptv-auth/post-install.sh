@@ -28,6 +28,10 @@ chmod 755 /etc/init.d/iptv-auth /usr/bin/iptv-auth.py \
 	/usr/bin/rtp2httpd-ota-check.sh /usr/bin/rtp2httpd-update.sh 2>/dev/null || true
 
 mkdir -p /etc/sysctl.d
+
+if [ -f /www/IPTV.m3u ] && [ ! -f /www/Lan.m3u ]; then
+	cp /www/IPTV.m3u /www/Lan.m3u
+fi
 cat > /etc/sysctl.d/15-iptv-auth.conf <<'EOF'
 net.core.rmem_max=33554432
 EOF

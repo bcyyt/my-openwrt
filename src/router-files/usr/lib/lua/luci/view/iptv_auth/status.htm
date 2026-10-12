@@ -1047,7 +1047,7 @@ document.addEventListener('visibilitychange', function() {
         <span class="iptv-sec-note">播放列表与状态直链 · 点击在新窗口打开</span>
     </div>
     <div class="iptv-link-grid">
-        <a class="iptv-link-card" href="http://<%=host%>:<%=live_port%>/st" target="_blank">
+        <a class="iptv-link-card" href="http://<%=host%>:<%=live_port%>/status" target="_blank">
             <span class="iptv-link-icon">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 6-6"/>
@@ -1055,7 +1055,7 @@ document.addEventListener('visibilitychange', function() {
             </span>
             <div>
                 <div class="iptv-link-title">rtp2httpd 状态</div>
-                <div class="iptv-link-url">http://<%=host%>:<%=live_port%>/st</div>
+                <div class="iptv-link-url">http://<%=host%>:<%=live_port%>/status</div>
             </div>
         </a>
         <a class="iptv-link-card" href="http://<%=host%>:<%=live_port%>/playlist.m3u" target="_blank">
@@ -1065,8 +1065,19 @@ document.addEventListener('visibilitychange', function() {
                 </svg>
             </span>
             <div>
-                <div class="iptv-link-title">直播播放列表</div>
+                <div class="iptv-link-title">rtp2httpd播放列表</div>
                 <div class="iptv-link-url">http://<%=host%>:<%=live_port%>/playlist.m3u</div>
+            </div>
+        </a>
+        <a class="iptv-link-card" href="http://<%=host%>:2000/Lan.m3u" target="_blank">
+            <span class="iptv-link-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h10M7 12h10M7 16h6"/>
+                </svg>
+            </span>
+            <div>
+                <div class="iptv-link-title">内网直播列表</div>
+                <div class="iptv-link-url">http://<%=host%>:2000/Lan.m3u</div>
             </div>
         </a>
         <a class="iptv-link-card" href="http://<%=host%>:2000/LanReplay.m3u" target="_blank">
@@ -1185,4 +1196,3 @@ document.addEventListener('visibilitychange', function() {
 </div>
 
 <%+footer%>
-

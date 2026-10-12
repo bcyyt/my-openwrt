@@ -12,9 +12,9 @@ APK="${APK:-/tmp/apk-tools/build/src/apk}"
 SIGN_KEY="$KEYS/my-openwrt.rsa"
 PUB_KEY="$KEYS/my-openwrt.rsa.pub"
 
-IPTV_VER="${IPTV_VER:-2.3.21-r0}"
+IPTV_VER="${IPTV_VER:-2.3.22-r0}"
 MEDIA_VER="${MEDIA_VER:-1.5.7-r0}"
-STATUS_VER="${STATUS_VER:-4.28}"
+STATUS_VER="${STATUS_VER:-4.29}"
 NETQ_VER="${NETQ_VER:-1.0.16-r0}"
 SYSKEEP_VER="${SYSKEEP_VER:-1.0.13-r0}"
 DATE_STR="$(date +%Y-%m-%d)"
@@ -147,7 +147,7 @@ cat > "$OUT/iptv-auth/version.json" <<EOF
 {
   "version": "${IPTV_VER}",
   "date": "${DATE_STR}",
-  "changelog": "默认 UDP 缓冲 16MB、缓冲池上限 1048576；安装/启动时将 net.core.rmem_max 设为 33554432。",
+  "changelog": "状态页：rtp2httpd播放列表；内网直播列表改为 Lan.m3u；状态页路径 /status。",
   "url": "${OTA_URL_BASE}/iptv-auth/iptv-auth-${IPTV_VER}.apk",
   "ipk_url": "${OTA_URL_BASE}/iptv-auth/iptv-auth_${IPTV_VER}_${IPK_ARCH}.ipk"
 }
