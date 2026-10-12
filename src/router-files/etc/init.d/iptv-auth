@@ -14,41 +14,42 @@ boot() {
 
 # 首次启动自检：rtp2httpd 缺失时自动下载，uhttpd 2000 端口自动配置
 ensure_runtime() {
-    # 1. rtp2httpd 自检
+    # 1. rtp2httpd 自检：缺失时拉本仓库自编译包（BUFFER_POOL 1024）
     if [ ! -x /usr/bin/rtp2httpd ]; then
-        logger -t iptv-auth "rtp2httpd 缺失，开始自动下载..."
-        local arch ver mirror base api bin
+        logger -t iptv-auth "rtp2httpd 缺失，开始从本仓库下载自编译包..."
+        local arch ver mirror mf url bin tmp
         arch=$(grep DISTRIB_ARCH /etc/openwrt_release 2>/dev/null | cut -d"'" -f2)
+        [ -n "$arch" ] || arch=x86_64
         mirror=$(uci -q get iptv-auth.main.update_mirror 2>/dev/null)
         [ -z "$mirror" ] && mirror="https://gh-proxy.com/"
-        api="https://api.github.com/repos/stackia/rtp2httpd/releases/latest"
-        api="$mirror$api"
-        ver=$(uclient-fetch -q -O - "$api" 2>/dev/null | grep "tag_name" | head -1 | sed 's/.*"v\([^"]*\)".*/\1/')
-        [ -z "$ver" ] && ver="3.17.1"
-        base="${mirror}https://github.com/stackia/rtp2httpd/releases/download/v$ver"
+        mf="${mirror}https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/rtp2httpd/version.json"
+        ver=$(uclient-fetch -q -O - "$mf" 2>/dev/null | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+        [ -z "$ver" ] && ver="3.17.2"
         case "$arch" in
-            x86_64)      bin="rtp2httpd-$ver-x86_64" ;;
-            aarch64*)    bin="rtp2httpd-$ver-aarch64" ;;
-            arm_cortex-a7*|arm_cortex-a9*|arm_cortex-a15*)
-                         bin="rtp2httpd-$ver-armv7-eabihf" ;;
-            arm*)        bin="rtp2httpd-$ver-arm-eabi" ;;
-            *)           bin="rtp2httpd-$ver-$arch" ;;
+            x86_64)   bin="rtp2httpd-$ver-x86_64" ;;
+            aarch64*) bin="rtp2httpd-$ver-aarch64" ;;
+            *)
+                logger -t iptv-auth "不支持的架构 $arch，本仓库仅托管 x86_64 / aarch64 自编译包"
+                return 1
+                ;;
         esac
-        uclient-fetch -q -O /tmp/rtp2httpd "$base/$bin" 2>/dev/null
-        if [ ! -s /tmp/rtp2httpd ] && echo "$bin" | grep -q "armv7-eabihf"; then
-            bin="rtp2httpd-$ver-armv7-eabi"
-            uclient-fetch -q -O /tmp/rtp2httpd "$base/$bin" 2>/dev/null
-        fi
-        if [ -s /tmp/rtp2httpd ]; then
-            cp /tmp/rtp2httpd /usr/bin/rtp2httpd
-            chmod 755 /usr/bin/rtp2httpd
-            rm -f /tmp/rtp2httpd
-            logger -t iptv-auth "rtp2httpd v$ver 下载安装成功"
-        else
-            logger -t iptv-auth "rtp2httpd 下载失败，请手动安装"
-            rm -f /tmp/rtp2httpd
+        url="${mirror}https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/rtp2httpd/$bin"
+        tmp=/tmp/rtp2httpd.$$
+        uclient-fetch -q -O "$tmp" "$url" 2>/dev/null
+        if [ ! -s "$tmp" ]; then
+            logger -t iptv-auth "rtp2httpd 下载失败: $url"
+            rm -f "$tmp"
             return 1
         fi
+        chmod 755 "$tmp"
+        if ! "$tmp" --help 2>&1 | grep -qE '[0-9]+\.[0-9]+\.[0-9]+'; then
+            logger -t iptv-auth "下载的 rtp2httpd 无法执行（架构不符或已损坏）"
+            rm -f "$tmp"
+            return 1
+        fi
+        mv -f "$tmp" /usr/bin/rtp2httpd
+        chmod 755 /usr/bin/rtp2httpd
+        logger -t iptv-auth "rtp2httpd v$ver 自编译包安装成功"
     fi
 
     # 2. uhttpd 2000 端口自检
