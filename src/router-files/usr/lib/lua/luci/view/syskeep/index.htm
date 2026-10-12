@@ -58,7 +58,7 @@
 <div class="sk-wrap">
   <div class="sk-page-header">
     <h2>保留升级</h2>
-    <span class="sk-ver-badge">v1.0.11</span>
+    <span class="sk-ver-badge">v1.0.12</span>
   </div>
   <div class="sk-hero">
     <div class="sk-hero-cell">
@@ -119,7 +119,7 @@
     </div>
   </div>
   <div class="sk-section">
-    <div class="sk-section-title-bar">日志</div>
+    <div class="sk-section-title-bar">日志<button type="button" class="sk-btn sk-btn-ghost" style="margin-left:auto" onclick="skClearLog()">清除</button></div>
     <div class="sk-section-body">
     <div id="sk-log" class="sk-log">加载中…</div>
     </div>
@@ -133,7 +133,9 @@ function skBytes(n){
   if (n < 1048576) return (n/1024).toFixed(1) + ' KB';
   return (n/1048576).toFixed(1) + ' MB';
 }
+var skPollMs = 3000, skPollTimer = null;
 function skRefresh(){
+  if (skPollTimer) { clearTimeout(skPollTimer); skPollTimer = null; }
   fetch(skApi('info'), {credentials:'same-origin'}).then(function(r){ return r.json(); }).then(function(d){
     document.getElementById('sk-rel').textContent = d.release || '-';
     var dm = document.getElementById('sk-data');
@@ -148,7 +150,12 @@ function skRefresh(){
     document.getElementById('sk-fw').textContent = skBytes(d.firmware_bytes);
     var st = d.status || {};
     document.getElementById('sk-phase').textContent = (st.phase || 'idle') + (st.message ? ' · ' + st.message : '');
-  }).catch(function(){});
+    skPollMs = (st.phase && st.phase !== 'idle') ? 800 : 3000;
+  }).catch(function(){
+    skPollMs = 3000;
+  }).then(function(){
+    skPollTimer = setTimeout(skRefresh, skPollMs);
+  });
   fetch(skApi('log'), {credentials:'same-origin'}).then(function(r){ return r.text(); }).then(function(t){
     var el = document.getElementById('sk-log');
     el.textContent = t || '暂无日志';
@@ -156,13 +163,21 @@ function skRefresh(){
   }).catch(function(){});
 }
 function skPost(name){
-  fetch(skApi(name), {method:'POST', credentials:'same-origin'}).then(function(){ skRefresh(); });
+  skPollMs = 800;
+  fetch(skApi(name), {method:'POST', credentials:'same-origin'}).then(function(){
+    if (skPollTimer) { clearTimeout(skPollTimer); skPollTimer = null; }
+    skRefresh();
+  });
 }
 function skDownload(){
   var url = document.getElementById('sk-url').value.trim();
   if (!url) { alert('填写固件 URL'); return; }
   var body = 'url=' + encodeURIComponent(url);
-  fetch(skApi('download'), {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:body}).then(function(){ skRefresh(); });
+  skPollMs = 800;
+  fetch(skApi('download'), {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:body}).then(function(){
+    if (skPollTimer) { clearTimeout(skPollTimer); skPollTimer = null; }
+    skRefresh();
+  });
 }
 function skUpload(){
   var f = document.getElementById('sk-file').files[0];
@@ -175,7 +190,11 @@ function skFlash(){
   if (!confirm('将只写入 boot 与 rootfs，保留数据盘和现有分区表。确定开始？')) return;
   skPost('flash');
 }
+function skClearLog(){
+  fetch(skApi('clearlog'), {method:'POST', credentials:'same-origin'}).then(function(){
+    document.getElementById('sk-log').textContent = '暂无日志';
+  });
+}
 skRefresh();
-setInterval(skRefresh, 3000);
 </script>
 <%+footer%>

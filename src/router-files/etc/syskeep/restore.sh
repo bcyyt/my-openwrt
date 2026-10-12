@@ -7,7 +7,8 @@ WORLD="$ETC/world"
 CUSTOM="$ETC/custom-apks.txt"
 
 log() {
-	echo "$(date '+%F %T') $*" | tee -a "$LOG"
+	[ -n "$LOG" ] || return 0
+	echo "$(date '+%F %T') $*" >> "$LOG"
 }
 
 write_status() {
@@ -40,6 +41,7 @@ STATUS="$DATA/status.json"
 LOG="$DATA/restore.log"
 [ -f "$WORLD" ] || WORLD="$DATA/world"
 mkdir -p "$DATA"
+log "======== 恢复开始 ========"
 
 write_status restore "等待网络"
 ok=0

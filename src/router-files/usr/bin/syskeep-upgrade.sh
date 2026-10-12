@@ -11,7 +11,8 @@ LOG=""
 FW=""
 
 log() {
-	echo "$(date '+%F %T') $*" | tee -a "$LOG"
+	[ -n "$LOG" ] || return 0
+	echo "$(date '+%F %T') $*" >> "$LOG"
 }
 
 write_status() {
@@ -223,6 +224,7 @@ cmd_status() {
 cmd_backup() {
 	need_data || return 1
 	write_status backup "备份配置和已装插件"
+	log "======== 备份开始 ========"
 	cp /etc/apk/world "$ETC/world"
 	cp /etc/apk/world "$DATA/world"
 	awk '{gsub(/[=<>].*/,""); print}' /rom/etc/apk/world 2>/dev/null | sort -u > "$ETC/rom-world"
@@ -235,13 +237,16 @@ cmd_backup() {
 	syskeep_backup_uci "$DATA/uci"
 	date '+%F %T' > "$ETC/saved_at"
 	chmod 755 "$ETC/restore.sh" 2>/dev/null || true
+	log "配置已保存，开始备份自装插件"
 	backup_overlay_apks
-	if sysupgrade -c -k -u -b "$DATA/sysupgrade.tgz"; then
-		write_status backup "备份完成"
-		log "backup $DATA/sysupgrade.tgz"
+	log "正在打包 sysupgrade.tgz"
+	if sysupgrade -c -k -u -b "$DATA/sysupgrade.tgz" >>"$LOG" 2>&1; then
+		log "备份完成 $DATA/sysupgrade.tgz"
+		write_status idle "备份完成"
 		return 0
 	fi
 	write_status error "备份失败"
+	log "备份失败"
 	return 1
 }
 
@@ -250,14 +255,18 @@ cmd_download() {
 	url="$1"
 	[ -n "$url" ] || { echo "usage: $0 download <url>" >&2; return 1; }
 	write_status backup "下载固件"
+	log "======== 下载固件 ========"
+	log "url $url"
 	if curl -fL --connect-timeout 15 --max-time 600 -o "$FW.part" "$url"; then
 		mv "$FW.part" "$FW"
 		write_status idle "固件已下载"
+		log "固件已下载 $FW"
 		ls -l "$FW"
 		return 0
 	fi
 	rm -f "$FW.part"
 	write_status error "固件下载失败"
+	log "固件下载失败"
 	return 1
 }
 
@@ -266,11 +275,14 @@ cmd_test() {
 	img="${1:-$FW}"
 	[ -f "$img" ] || { echo "没有固件文件" >&2; return 1; }
 	write_status backup "校验固件"
-	if sysupgrade -T -c -k "$img"; then
+	log "校验固件 $img"
+	if sysupgrade -T -c -k "$img" >>"$LOG" 2>&1; then
 		write_status idle "校验通过"
+		log "校验通过"
 		return 0
 	fi
 	write_status error "固件校验失败"
+	log "固件校验失败"
 	return 1
 }
 
@@ -282,11 +294,12 @@ cmd_flash() {
 		echo "缺少 /lib/upgrade/syskeep-hook.sh" >&2
 		return 1
 	}
+	log "======== 升级开始 ========"
 	cmd_backup || return 1
 	cmd_test "$img" || return 1
 	touch "$ETC/pending"
 	write_status flash "开始刷写 boot 与 rootfs，数据盘不改"
-	log "flash $img"
+	log "开始刷写 $img"
 	# SAVE_PARTITIONS stays 1. Do not pass -p.
 	sysupgrade -c -k "$img"
 }

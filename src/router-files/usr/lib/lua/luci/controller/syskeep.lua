@@ -18,6 +18,7 @@ function index()
 	entry({"admin", "system", "syskeep", "flash"}, call("action_flash")).leaf = true
 	entry({"admin", "system", "syskeep", "restore"}, call("action_restore")).leaf = true
 	entry({"admin", "system", "syskeep", "log"}, call("action_log")).leaf = true
+	entry({"admin", "system", "syskeep", "clearlog"}, call("action_clearlog")).leaf = true
 end
 
 local function json_ok(extra)
@@ -72,8 +73,17 @@ function quote(s)
 	return '"' .. s .. '"'
 end
 
+local function bg_run(cmd)
+	local sys = require "luci.sys"
+	if type(sys.fork_exec) == "function" then
+		sys.fork_exec(cmd)
+		return
+	end
+	os.execute("start-stop-daemon -S -b -x /bin/sh -- -c " .. string.format("%q", cmd))
+end
+
 function action_backup()
-	require("luci.sys").call("/usr/bin/syskeep-upgrade.sh backup >/dev/null 2>&1 &")
+	bg_run("/usr/bin/syskeep-upgrade.sh backup")
 	json_ok()
 end
 
@@ -85,7 +95,7 @@ function action_download()
 		json_ok('{"ok":false,"error":"缺少 URL"}')
 		return
 	end
-	require("luci.sys").call(string.format("/usr/bin/syskeep-upgrade.sh download %q >/dev/null 2>&1 &", url))
+	bg_run(string.format("/usr/bin/syskeep-upgrade.sh download %q", url))
 	json_ok()
 end
 
@@ -111,17 +121,17 @@ function action_upload()
 end
 
 function action_test()
-	require("luci.sys").call("/usr/bin/syskeep-upgrade.sh test >/dev/null 2>&1")
+	bg_run("/usr/bin/syskeep-upgrade.sh test")
 	json_ok()
 end
 
 function action_flash()
-	require("luci.sys").call("/usr/bin/syskeep-upgrade.sh flash >/dev/null 2>&1 &")
+	bg_run("/usr/bin/syskeep-upgrade.sh flash")
 	json_ok()
 end
 
 function action_restore()
-	require("luci.sys").call("touch /etc/syskeep/pending; /etc/syskeep/restore.sh >/dev/null 2>&1 &")
+	bg_run("touch /etc/syskeep/pending; /etc/syskeep/restore.sh")
 	json_ok()
 end
 
@@ -140,4 +150,14 @@ function action_log()
 		http.write("\n---- restore ----\n")
 		http.write(b)
 	end
+end
+
+function action_clearlog()
+	local fs = require "nixio.fs"
+	local home = data_home()
+	if home then
+		fs.writefile(home .. "/upgrade.log", "")
+		fs.writefile(home .. "/restore.log", "")
+	end
+	json_ok()
 end
