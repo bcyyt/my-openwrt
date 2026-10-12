@@ -89,22 +89,19 @@ if [ -f "$OVERLAY" ]; then
 		n=$((n + 1))
 		write_status restore "安装 $pkg ($n/$total)"
 		ok=0
-		for f in "$DATA/apks"/*.apk; do
-			[ -f "$f" ] || continue
-			base=$(basename "$f")
-			syskeep_apk_for_pkg "$(basename "$f" .apk)" "$pkg" || continue
-			if apk add --allow-untrusted "$f" >>"$LOG" 2>&1; then
-				log "ok $base"
-				ok=1
-				break
+		url=$(custom_url "$pkg")
+		if [ -n "$url" ]; then
+			ubase=$(basename "$url")
+			out="$DATA/apks/$ubase"
+			if [ -f "$out" ]; then
+				if apk add --allow-untrusted "$out" >>"$LOG" 2>&1; then
+					log "ok $ubase"
+					ok=1
+				else
+					log "fail local $ubase"
+				fi
 			fi
-			log "fail local $base"
-		done
-		if [ "$ok" != 1 ]; then
-			url=$(custom_url "$pkg")
-			if [ -n "$url" ]; then
-				ubase=$(basename "$url")
-				out="$DATA/apks/$ubase"
+			if [ "$ok" != 1 ]; then
 				write_status restore "下载 $pkg"
 				if curl -fL --connect-timeout 15 --max-time 120 -o "$out.part" "$url" && mv "$out.part" "$out"; then
 					if apk add --allow-untrusted "$out" >>"$LOG" 2>&1; then
@@ -119,6 +116,18 @@ if [ -f "$OVERLAY" ]; then
 				fi
 			fi
 		fi
+		for f in "$DATA/apks"/*.apk; do
+			[ "$ok" = 1 ] && break
+			[ -f "$f" ] || continue
+			base=$(basename "$f")
+			syskeep_apk_for_pkg "$(basename "$f" .apk)" "$pkg" || continue
+			if apk add --allow-untrusted "$f" >>"$LOG" 2>&1; then
+				log "ok $base"
+				ok=1
+				break
+			fi
+			log "fail local $base"
+		done
 		if [ "$ok" != 1 ]; then
 			log "miss apk $pkg"
 			add_fail "$pkg"
