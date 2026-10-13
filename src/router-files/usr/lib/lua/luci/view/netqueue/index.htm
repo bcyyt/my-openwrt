@@ -120,7 +120,7 @@ end
 <div class="nq-wrap">
   <div class="nq-page-header">
     <h2>网络优化</h2>
-    <span class="nq-ver-badge">v1.0.16</span>
+    <span class="nq-ver-badge">v1.0.17</span>
   </div>
   <div class="nq-hero">
     <div class="nq-hero-cell">
@@ -149,12 +149,16 @@ end
       <div class="nq-metric-num" id="nq-leases">-</div>
       <div class="nq-metric-label">当前租约</div>
     </div>
+    <div class="nq-metric">
+      <div class="nq-metric-num" id="nq-nat">-</div>
+      <div class="nq-metric-label">NAT 模式</div>
+    </div>
   </div>
 
   <div class="nq-section">
     <div class="nq-section-title-bar">转发</div>
     <div class="nq-section-body">
-    <p class="nq-lead">关总开关会把网卡队列、CPU、PPPoE 队列、GRO、积压和分载恢复默认。保存后立即生效，不断 PPPoE，不改 wan2 / IPTV。</p>
+    <p class="nq-lead">关总开关会把网卡队列、CPU、PPPoE 队列、GRO、积压和分载恢复默认。NAT 模式单独生效。保存后立即生效，不断 PPPoE，不改 wan2 / IPTV。</p>
     <div class="nq-item">
       <div><b>启用转发优化</b><p>总开关。关掉后下面几项不再套用。</p></div>
       <button type="button" class="nq-sw" data-k="enabled" aria-pressed="false"></button>
@@ -167,6 +171,16 @@ end
       <div class="nq-item"><div><b>UDP GRO 转发</b><p>打开 rx-udp-gro-forwarding，降低 QUIC / IPTV UDP 转发 CPU。</p></div><button type="button" class="nq-sw" data-k="udp_gro"></button></div>
       <div class="nq-item"><div><b>加大接收积压</b><p>netdev_max_backlog 从 1000 提到 4096，小包突发少丢。</p></div><button type="button" class="nq-sw" data-k="rx_backlog"></button></div>
     </div>
+    <div class="nq-fields">
+      <label>NAT 模式
+        <select id="nat_mode">
+          <option value="nat1">NAT1 完全锥形</option>
+          <option value="nat3">NAT3 端口限制锥形</option>
+          <option value="nat4">NAT4 对称</option>
+        </select>
+      </label>
+    </div>
+    <p class="nq-lead">NAT1 同一内网端口对所有目标用同一公网端口，适合游戏联机，需要 nft_fullcone。NAT3 是默认 masquerade。NAT4 按目标换端口，入站更严。与总开关无关。软件分载可能让锥形 NAT 不准。</p>
     <div class="nq-bar">
       <button type="button" class="nq-btn nq-btn-pri" id="nq-save-fwd">保存并应用</button>
       <span class="nq-msg" id="nq-fwd-msg"></span>
@@ -384,6 +398,7 @@ function nqFill(d){
   nqSet('pppoe_qlen', nqFlag(f.pppoe_qlen));
   nqSet('udp_gro', nqFlag(f.udp_gro));
   nqSet('rx_backlog', nqFlag(f.rx_backlog));
+  nqPut('nat_mode', f.nat_mode || f.nat_live || 'nat3');
   nqSet('dhcp_enable', nqFlag(h.enable));
   nqSet('sequential', nqFlag(h.sequential));
   nqSet('neigh_auto', h.neigh_auto !== 0 && h.neigh_auto !== '0');
@@ -399,6 +414,7 @@ function nqFill(d){
   nqBadge('nq-dnsst', (n.mode === 'custom') ? '自定义' : '运营商', true);
   nqBadge('nq-fwdst', nqFlag(f.enabled) ? '开启' : '关闭', nqFlag(f.enabled));
   nqBadge('nq-flowst', nqFlag(f.flow_offload) ? '开启' : '关闭', nqFlag(f.flow_offload));
+  document.getElementById('nq-nat').textContent = ({nat1:'NAT1', nat3:'NAT3', nat4:'NAT4'})[f.nat_live || f.nat_mode || 'nat3'] || 'NAT3';
   document.getElementById('nq-log').textContent = d.status || '暂无';
   nqFwd(); nqDnsUi();
   } catch (e) {
@@ -416,7 +432,8 @@ function nqLoad(){
 function nqFwdBody(){
   return {
     enabled: nqOn('enabled'), nic_queues: nqOn('nic_queues'), cpu_performance: nqOn('cpu_performance'),
-    flow_offload: nqOn('flow_offload'), pppoe_qlen: nqOn('pppoe_qlen'), udp_gro: nqOn('udp_gro'), rx_backlog: nqOn('rx_backlog')
+    flow_offload: nqOn('flow_offload'), pppoe_qlen: nqOn('pppoe_qlen'), udp_gro: nqOn('udp_gro'), rx_backlog: nqOn('rx_backlog'),
+    nat_mode: nqVal('nat_mode') || 'nat3'
   };
 }
 function nqDhcpBody(){

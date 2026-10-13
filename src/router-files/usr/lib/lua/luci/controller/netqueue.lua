@@ -292,12 +292,36 @@ local function wan_dns()
 	return sys_exec("awk '/^nameserver/{print $2}' /tmp/resolv.conf.d/resolv.conf.auto 2>/dev/null | awk 'NF && !a[$0]++' | tr '\\n' ' '"):gsub("%s+$", "")
 end
 
+local function nft_nat_live()
+	local rules = sys_exec("nft list chain inet fw4 srcnat_wan 2>/dev/null")
+	if rules:find("fullcone", 1, true) then
+		return "nat1"
+	end
+	if rules:find("fully-random", 1, true) then
+		return "nat4"
+	end
+	return "nat3"
+end
+
+local function norm_nat_mode(v)
+	v = first_str(v)
+	if v == "nat1" or v == "nat3" or v == "nat4" then
+		return v
+	end
+	return ""
+end
+
 function collect_info()
 	local uci = uci_cur()
 	local dns = dns_names(uci)[1]
 	local server = dns and uci:get("dhcp", dns, "server") or nil
 	local noresolv = dns and uci:get("dhcp", dns, "noresolv") or "0"
 	local opt6 = option6(uci)
+	local nat_live = nft_nat_live()
+	local nat_mode = norm_nat_mode(uci:get("netqueue", "main", "nat_mode"))
+	if nat_mode == "" then
+		nat_mode = nat_live
+	end
 	local data = {
 		fwd = {
 			enabled = bit(uci:get("netqueue", "main", "enabled")),
@@ -306,7 +330,9 @@ function collect_info()
 			flow_offload = bit(uci:get("netqueue", "main", "flow_offload")),
 			pppoe_qlen = bit(uci:get("netqueue", "main", "pppoe_qlen")),
 			udp_gro = bit(uci:get("netqueue", "main", "udp_gro")),
-			rx_backlog = bit(uci:get("netqueue", "main", "rx_backlog"))
+			rx_backlog = bit(uci:get("netqueue", "main", "rx_backlog")),
+			nat_mode = nat_mode,
+			nat_live = nat_live
 		},
 		dhcp = {
 			enable = (uci:get("dhcp", "lan", "ignore") == "1") and 0 or 1,
@@ -406,6 +432,11 @@ function action_save()
 		uci:set("netqueue", "main", "pppoe_qlen", flag(fwd.pppoe_qlen) and "1" or "0")
 		uci:set("netqueue", "main", "udp_gro", flag(fwd.udp_gro) and "1" or "0")
 		uci:set("netqueue", "main", "rx_backlog", flag(fwd.rx_backlog) and "1" or "0")
+		local nm = norm_nat_mode(fwd.nat_mode)
+		if nm == "" then
+			nm = "nat3"
+		end
+		uci:set("netqueue", "main", "nat_mode", nm)
 		touch_nq = true
 	end
 

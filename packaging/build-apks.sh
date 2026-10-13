@@ -15,7 +15,7 @@ PUB_KEY="$KEYS/my-openwrt.rsa.pub"
 IPTV_VER="${IPTV_VER:-2.3.32-r0}"
 MEDIA_VER="${MEDIA_VER:-1.5.7-r0}"
 STATUS_VER="${STATUS_VER:-4.29}"
-NETQ_VER="${NETQ_VER:-1.0.16-r0}"
+NETQ_VER="${NETQ_VER:-1.0.17-r0}"
 SYSKEEP_VER="${SYSKEEP_VER:-1.0.18-r0}"
 DATE_STR="$(date +%Y-%m-%d)"
 ATKMON_VER="${ATKMON_VER:-1.0.4-r0}"
@@ -276,7 +276,7 @@ install -m 644 "$SRC/usr/lib/lua/luci/view/netqueue/index.htm" "$NETQ_ROOT/usr/l
 NETQ_APK="$OUT/luci-app-netqueue/luci-app-netqueue-${NETQ_VER}.apk"
 mkpkg \
 	luci-app-netqueue "$NETQ_VER" noarch \
-	"LuCI 网络优化：转发、DHCP、DNS" \
+	"LuCI 网络优化：转发、NAT、DHCP、DNS" \
 	luci-app-netqueue GPL-2.0 "https://github.com/bcyyt/my-openwrt" \
 	"$NETQ_ROOT" "$NETQ_APK" \
 	-I "depends:libc luci-base" \
@@ -286,7 +286,7 @@ mkpkg \
 NETQ_IPK="$OUT/luci-app-netqueue/luci-app-netqueue_${NETQ_VER}_${IPK_ARCH}.ipk"
 mkipk \
 	luci-app-netqueue "$NETQ_VER" "$IPK_ARCH" \
-	"LuCI 网络优化：转发、DHCP、DNS" \
+	"LuCI 网络优化：转发、NAT、DHCP、DNS" \
 	luci "libc, luci-base" \
 	"$NETQ_ROOT" "$NETQ_IPK" \
 	"$PACK/luci-app-netqueue/post-install.sh" \

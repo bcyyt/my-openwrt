@@ -146,6 +146,72 @@ fw_defaults() {
 	uci -q show firewall | sed -n 's/^\(firewall\.[^=]*\)=defaults$/\1/p' | head -n 1
 }
 
+fw_wan_zone() {
+	local z name
+	for z in $(uci -q show firewall | sed -n 's/^\(firewall\.[^=]*\)=zone$/\1/p'); do
+		name=$(uci -q get "$z.name")
+		[ "$name" = "wan" ] && echo "$z" && return 0
+	done
+	return 1
+}
+
+fw_reload() {
+	if command -v fw4 >/dev/null 2>&1; then
+		fw4 reload >/dev/null 2>&1 || true
+	else
+		/etc/init.d/firewall reload >/dev/null 2>&1 || true
+	fi
+}
+
+nat_nft_kind() {
+	local r
+	r=$(nft list chain inet fw4 srcnat_wan 2>/dev/null || true)
+	echo "$r" | grep -q 'fullcone' && { echo fullcone; return 0; }
+	echo "$r" | grep -q 'fully-random' && { echo fully-random; return 0; }
+	echo "$r" | grep -q 'masquerade' && { echo masquerade; return 0; }
+	echo none
+}
+
+patch_nat4() {
+	nft flush chain inet fw4 srcnat_wan 2>/dev/null || return 0
+	nft add rule inet fw4 srcnat_wan meta nfproto ipv4 masquerade fully-random comment netqueue-nat4 2>/dev/null && return 0
+	nft add rule inet fw4 srcnat_wan masquerade fully-random comment netqueue-nat4 2>/dev/null && return 0
+	nft add rule inet fw4 srcnat_wan meta nfproto ipv4 masquerade 2>/dev/null || true
+}
+
+apply_nat_mode() {
+	local mode def z want cur changed=0
+	mode=$(uci_get netqueue.main.nat_mode)
+	case "$mode" in
+		nat1|nat3|nat4) ;;
+		*) return 0 ;;
+	esac
+	def=$(fw_defaults)
+	[ -n "$def" ] || return 0
+	z=$(fw_wan_zone)
+	if [ "$mode" = "nat1" ]; then
+		want=1
+	else
+		want=0
+	fi
+	cur=$(uci -q get "$def.fullcone")
+	[ "$cur" = "$want" ] || { uci -q set "$def.fullcone=$want"; changed=1; }
+	if [ -n "$z" ]; then
+		cur=$(uci -q get "$z.fullcone")
+		[ "$cur" = "$want" ] || { uci -q set "$z.fullcone=$want"; changed=1; }
+		cur=$(uci -q get "$z.masq")
+		[ "$cur" = "1" ] || { uci -q set "$z.masq=1"; changed=1; }
+	fi
+	if [ "$changed" = "1" ]; then
+		uci -q commit firewall
+		fw_reload
+	fi
+	# fw4 has no symmetric NAT; replace masquerade after reload.
+	if [ "$mode" = "nat4" ]; then
+		patch_nat4
+	fi
+}
+
 apply_flow() {
 	local def
 	def=$(fw_defaults)
@@ -158,11 +224,7 @@ apply_flow() {
 		uci -q set "$def.flow_offloading_hw=0"
 	fi
 	uci -q commit firewall
-	if command -v fw4 >/dev/null 2>&1; then
-		fw4 reload >/dev/null 2>&1 || true
-	else
-		/etc/init.d/firewall reload >/dev/null 2>&1 || true
-	fi
+	fw_reload
 }
 
 apply_pppoe_qlen() {
@@ -353,6 +415,8 @@ print_status() {
 		echo "flow_offloading=$(uci -q get "$def.flow_offloading")"
 		echo "flow_offloading_hw=$(uci -q get "$def.flow_offloading_hw")"
 	fi
+	echo "NAT模式: $(uci -q get netqueue.main.nat_mode)"
+	echo "NAT实际: $(nat_nft_kind)"
 	echo
 	lan=$(uci -q get network.lan.ipaddr)
 	mask=$(uci -q get network.lan.netmask)
@@ -395,6 +459,7 @@ case "$cmd" in
 		apply_nic
 		apply_cpu
 		apply_flow
+		apply_nat_mode
 		apply_pppoe_qlen
 		apply_udp_gro
 		apply_backlog
@@ -407,6 +472,7 @@ case "$cmd" in
 		fi
 		apply_pppoe_qlen
 		apply_udp_gro
+		apply_nat_mode
 		;;
 	status)
 		print_status
