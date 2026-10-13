@@ -81,6 +81,21 @@ custom_url() {
 	fi
 }
 
+restore_files_tgz() {
+	local pkg="$1" tgz="$DATA/files/$pkg.files.tgz" s name n
+	[ -f "$tgz" ] || return 1
+	n=$(tar -tzf "$tgz" 2>/dev/null | grep -cve '^$' || true)
+	[ "${n:-0}" -gt 0 ] 2>/dev/null || return 1
+	tar -xzf "$tgz" -C / >/dev/null 2>&1 || return 1
+	tar -tzf "$tgz" 2>/dev/null | grep '^etc/init.d/[^/]*$' | while read -r s; do
+		name=$(basename "$s")
+		[ -x "/etc/init.d/$name" ] || continue
+		/etc/init.d/"$name" enable >/dev/null 2>&1 || true
+		/etc/init.d/"$name" restart >/dev/null 2>&1 || /etc/init.d/"$name" start >/dev/null 2>&1 || true
+	done
+	return 0
+}
+
 if [ -f "$OVERLAY" ]; then
 	total=$(grep -cve '^$' "$OVERLAY" 2>/dev/null || echo 0)
 	n=0
@@ -89,47 +104,44 @@ if [ -f "$OVERLAY" ]; then
 		n=$((n + 1))
 		write_status restore "安装 $pkg ($n/$total)"
 		ok=0
-		url=$(custom_url "$pkg")
-		if [ -n "$url" ]; then
-			ubase=$(basename "$url")
-			out="$DATA/apks/$ubase"
-			if [ -f "$out" ]; then
-				if apk add --allow-untrusted "$out" >>"$LOG" 2>&1; then
-					log "ok $ubase"
-					ok=1
-				else
-					log "fail local $ubase"
-				fi
-			fi
-			if [ "$ok" != 1 ]; then
-				write_status restore "下载 $pkg"
-				if curl -fL --connect-timeout 15 --max-time 120 -o "$out.part" "$url" && mv "$out.part" "$out"; then
-					if apk add --allow-untrusted "$out" >>"$LOG" 2>&1; then
-						log "ok $ubase"
-						ok=1
-					else
-						log "fail $ubase"
-					fi
-				else
-					rm -f "$out.part"
-					log "fetch fail $pkg"
-				fi
-			fi
-		fi
 		for f in "$DATA/apks"/*.apk; do
-			[ "$ok" = 1 ] && break
 			[ -f "$f" ] || continue
 			base=$(basename "$f")
 			syskeep_apk_for_pkg "$(basename "$f" .apk)" "$pkg" || continue
 			if apk add --allow-untrusted "$f" >>"$LOG" 2>&1; then
-				log "ok $base"
+				log "恢复 $pkg 安装 $base"
 				ok=1
 				break
 			fi
-			log "fail local $base"
 		done
+		if [ "$ok" != 1 ] && restore_files_tgz "$pkg"; then
+			log "恢复 $pkg 解开安装文件"
+			ok=1
+		fi
 		if [ "$ok" != 1 ]; then
-			log "miss apk $pkg"
+			url=$(custom_url "$pkg")
+			if [ -n "$url" ]; then
+				ubase=$(basename "$url")
+				out="$DATA/apks/$ubase"
+				write_status restore "下载 $pkg"
+				if curl -fL --connect-timeout 15 --max-time 120 -o "$out.part" "$url" && mv "$out.part" "$out"; then
+					if apk add --allow-untrusted "$out" >>"$LOG" 2>&1; then
+						log "恢复 $pkg 安装 $ubase"
+						ok=1
+					fi
+				else
+					rm -f "$out.part"
+				fi
+			fi
+		fi
+		if [ "$ok" != 1 ]; then
+			if apk add "$pkg" >>"$LOG" 2>&1; then
+				log "恢复 $pkg 已从软件源安装"
+				ok=1
+			fi
+		fi
+		if [ "$ok" != 1 ]; then
+			log "恢复 $pkg 失败"
 			add_fail "$pkg"
 		fi
 	done < "$OVERLAY"
@@ -152,19 +164,17 @@ if [ -d "$DATA/files" ]; then
 	for f in "$DATA/files"/*.files.tgz; do
 		[ -f "$f" ] || continue
 		base=$(basename "$f" .files.tgz)
-		if [ -f "$OVERLAY" ] && ! overlay_has "$base"; then
-			log "skip files $base"
+		if overlay_has "$base"; then
 			continue
 		fi
 		if apk info -e "$base" >/dev/null 2>&1; then
 			continue
 		fi
 		write_status restore "解开 $base"
-		if tar -xzf "$f" -C / >>"$LOG" 2>&1; then
-			log "ok files $base"
+		if restore_files_tgz "$base"; then
+			log "恢复 $base 解开安装文件"
 		else
-			log "fail files $base"
-			add_fail "$base.files"
+			log "恢复 $base 解开失败"
 		fi
 	done
 fi

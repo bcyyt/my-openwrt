@@ -64,6 +64,24 @@ rm_pkg_apks() {
 	done
 }
 
+apk_matches_id() {
+	local base="$1" id="$2"
+	[ -n "$id" ] || return 1
+	[ "$base" = "$id" ] && return 0
+	case "$base" in
+		"$id"-*) return 0 ;;
+	esac
+	return 1
+}
+
+apk_arch_suffix() {
+	case "$1" in
+		*-x86_64) echo "-x86_64" ;;
+		*-aarch64) echo "-aarch64" ;;
+		*) echo "" ;;
+	esac
+}
+
 find_pkg_apk() {
 	local pkg="$1" id="$2" f base
 	for f in "$DATA/apks"/*.apk; do
@@ -83,26 +101,97 @@ find_pkg_apk() {
 	return 1
 }
 
-fetch_custom_apk() {
-	local pkg="$1" id="$2" url ubase out
+find_local_apk() {
+	local pkg="$1" id="$2" dir f base
+	[ -n "$id" ] || return 1
+	for dir in "$DATA/apks" /tmp /var/cache/apk /root; do
+		[ -d "$dir" ] || continue
+		for f in "$dir"/*.apk; do
+			[ -f "$f" ] || continue
+			base=$(basename "$f" .apk)
+			syskeep_apk_for_pkg "$base" "$pkg" || continue
+			apk_matches_id "$base" "$id" || continue
+			echo "$f"
+			return 0
+		done
+	done
+	return 1
+}
+
+copy_to_data_apk() {
+	local src="$1" dest
+	dest="$DATA/apks/$(basename "$src")"
+	if [ "$src" = "$dest" ]; then
+		echo "$dest"
+		return 0
+	fi
+	cp -a "$src" "$dest" || return 1
+	echo "$dest"
+}
+
+rewrite_custom_url() {
+	local pkg="$1" id="$2" url ubase extra dir newbase
 	url=$(custom_url "$pkg")
 	[ -n "$url" ] || return 1
 	ubase=$(basename "$url" .apk)
-	if [ "$ubase" != "$id" ] && [ "$ubase" != "$pkg" ]; then
-		syskeep_apk_for_pkg "$ubase" "$pkg" || {
-			log "custom url $pkg is $ubase, installed $id, skip"
-			return 1
-		}
+	[ -n "$id" ] || { echo "$url"; return 0; }
+	if apk_matches_id "$ubase" "$id"; then
+		echo "$url"
+		return 0
 	fi
+	extra=$(apk_arch_suffix "$ubase")
+	newbase="${id}${extra}"
+	dir=$(dirname "$url")
+	echo "${dir}/${newbase}.apk"
+}
+
+fetch_custom_apk() {
+	local pkg="$1" id="$2" url ubase out
+	url=$(rewrite_custom_url "$pkg" "$id") || return 1
+	[ -n "$url" ] || return 1
+	ubase=$(basename "$url" .apk)
 	out="$DATA/apks/${ubase}.apk"
-	log "fetch $pkg"
+	log "备份 $pkg 按当前版本从仓库下载 ${ubase}.apk"
 	if curl -fsSL --connect-timeout 15 --max-time 120 -o "$out.part" "$url"; then
 		mv "$out.part" "$out"
 		return 0
 	fi
 	rm -f "$out.part"
-	log "fetch fail $pkg"
+	log "备份 $pkg 仓库下载失败"
 	return 1
+}
+
+fetch_repo_apk() {
+	local pkg="$1" id="$2" tmpd f base dest have
+	tmpd="/tmp/syskeep.fetch.$$"
+	mkdir -p "$tmpd"
+	apk update >/dev/null 2>&1 || true
+	if [ -n "$id" ]; then
+		apk fetch -o "$tmpd" "$id" >/dev/null 2>&1 || true
+	fi
+	have=""
+	for f in "$tmpd"/*.apk; do
+		[ -f "$f" ] || continue
+		have=1
+		break
+	done
+	if [ -z "$have" ]; then
+		apk fetch -o "$tmpd" "$pkg" >/dev/null 2>&1 || true
+	fi
+	dest=""
+	for f in "$tmpd"/*.apk; do
+		[ -f "$f" ] || continue
+		base=$(basename "$f" .apk)
+		syskeep_apk_for_pkg "$base" "$pkg" || continue
+		if [ -n "$id" ]; then
+			apk_matches_id "$base" "$id" || continue
+		fi
+		cp -a "$f" "$DATA/apks/${base}.apk" || continue
+		dest="$DATA/apks/${base}.apk"
+		break
+	done
+	rm -rf "$tmpd"
+	[ -n "$dest" ]
 }
 
 list_overlay_pkgs() {
@@ -112,64 +201,85 @@ list_overlay_pkgs() {
 }
 
 pack_installed() {
-	local pkg="$1" list="/tmp/syskeep.$pkg.list"
-	apk info -L "$pkg" 2>/dev/null | awk 'NR>1 && $0 !~ /contains:/ && $0 !~ /^etc\/config(\/|$)/ {print}' | while read -r f; do
+	local pkg="$1" list="/tmp/syskeep.$pkg.list" n
+	apk info -L "$pkg" 2>/dev/null | awk 'NR>1 && NF && $0 !~ /contains:/ && $0 !~ /^etc\/config(\/|$)/ {print}' | while read -r f; do
+		[ -n "$f" ] || continue
+		case "$f" in
+			/|lib/apk/packages/*) continue ;;
+		esac
 		[ -e "/$f" ] && echo "$f"
 	done > "$list"
 	[ -s "$list" ] || return 1
 	mkdir -p "$DATA/files"
-	if tar -czf "$DATA/files/$pkg.files.tgz" -C / -T "$list" 2>>"$LOG"; then
-		log "packed files $pkg"
-		return 0
+	if tar -czf "$DATA/files/$pkg.files.tgz" -C / -T "$list" >/dev/null 2>&1; then
+		n=$(tar -tzf "$DATA/files/$pkg.files.tgz" 2>/dev/null | grep -cve '^$' || true)
+		[ "${n:-0}" -gt 0 ] 2>/dev/null && return 0
 	fi
 	rm -f "$DATA/files/$pkg.files.tgz"
-	log "pack fail $pkg"
 	return 1
 }
 
 backup_overlay_apks() {
-	local pkg n total id want
+	local pkg n total id src dest want ok_apk ok_files fail
 	mkdir -p "$DATA/apks" "$DATA/files"
 	list_overlay_pkgs > "$ETC/overlay-pkgs"
 	cp "$ETC/overlay-pkgs" "$DATA/overlay-pkgs"
 	[ -f "$CUSTOM" ] && cp "$CUSTOM" "$DATA/custom-apks.txt"
 	total=$(wc -l < "$ETC/overlay-pkgs" | tr -d ' ')
 	[ "$total" -gt 0 ] || { log "no overlay packages"; return 0; }
-	apk update >>"$LOG" 2>&1 || true
+	log "自装插件 $total 个：$(tr '\n' ' ' < "$ETC/overlay-pkgs" | sed 's/[[:space:]]*$//')"
+	log "优先从路由器复制当前安装包"
 	n=0
+	ok_apk=0
+	ok_files=0
+	fail=0
 	while read -r pkg; do
 		[ -n "$pkg" ] || continue
 		n=$((n + 1))
 		write_status backup "备份插件 $pkg ($n/$total)"
 		id=$(pkg_installed_id "$pkg")
-		want=$(find_pkg_apk "$pkg" "$id") || want=""
-		if [ -n "$want" ]; then
-			log "have apk $(basename "$want")"
-			rm_pkg_apks "$pkg" "$want"
-			rm -f "$DATA/files/$pkg.files.tgz"
-			continue
-		fi
-		rm_pkg_apks "$pkg" ""
-		if fetch_custom_apk "$pkg" "$id"; then
-			rm -f "$DATA/files/$pkg.files.tgz"
-			continue
-		fi
-		if apk fetch -o "$DATA/apks" "$pkg" >>"$LOG" 2>&1; then
-			want=$(find_pkg_apk "$pkg" "$id") || want=$(find_pkg_apk "$pkg") || want=""
-			if [ -n "$want" ]; then
-				log "fetched $(basename "$want")"
-				rm_pkg_apks "$pkg" "$want"
+		src=$(find_local_apk "$pkg" "$id") || src=""
+		if [ -n "$src" ]; then
+			dest=$(copy_to_data_apk "$src") || dest=""
+			if [ -n "$dest" ]; then
+				if [ "$src" = "$dest" ]; then
+					log "备份 $pkg ($n/$total) 数据盘已有 $(basename "$dest")"
+				else
+					log "备份 $pkg ($n/$total) 从路由器复制 $(basename "$dest")"
+				fi
+				rm_pkg_apks "$pkg" "$dest"
 				rm -f "$DATA/files/$pkg.files.tgz"
+				ok_apk=$((ok_apk + 1))
 				continue
 			fi
-			log "repo apk for $pkg is not $id, keep installed files"
-			rm_pkg_apks "$pkg" ""
 		fi
 		if pack_installed "$pkg"; then
+			log "备份 $pkg ($n/$total) 从路由器打包当前安装文件"
+			rm_pkg_apks "$pkg" ""
+			ok_files=$((ok_files + 1))
 			continue
 		fi
-		log "backup miss $pkg"
+		if fetch_custom_apk "$pkg" "$id"; then
+			want=$(find_pkg_apk "$pkg" "$id") || want=$(find_pkg_apk "$pkg") || want=""
+			[ -n "$want" ] && rm_pkg_apks "$pkg" "$want"
+			rm -f "$DATA/files/$pkg.files.tgz"
+			ok_apk=$((ok_apk + 1))
+			continue
+		fi
+		if fetch_repo_apk "$pkg" "$id"; then
+			want=$(find_pkg_apk "$pkg" "$id") || want=""
+			if [ -n "$want" ]; then
+				log "备份 $pkg ($n/$total) 已从软件源下载当前版本 $(basename "$want")"
+				rm_pkg_apks "$pkg" "$want"
+				rm -f "$DATA/files/$pkg.files.tgz"
+				ok_apk=$((ok_apk + 1))
+				continue
+			fi
+		fi
+		log "备份 $pkg ($n/$total) 失败${id:+，当前 $id}"
+		fail=$((fail + 1))
 	done < "$ETC/overlay-pkgs"
+	log "自装插件备份结束：安装包 $ok_apk 个，文件包 $ok_files 个，失败 $fail 个"
 	purge_unlisted_cache
 }
 
@@ -240,8 +350,8 @@ cmd_backup() {
 	log "配置已保存，开始备份自装插件"
 	backup_overlay_apks
 	log "正在打包 sysupgrade.tgz"
-	if sysupgrade -c -k -u -b "$DATA/sysupgrade.tgz" >>"$LOG" 2>&1; then
-		log "备份完成 $DATA/sysupgrade.tgz"
+	if sysupgrade -c -k -u -b "$DATA/sysupgrade.tgz" >/dev/null 2>&1; then
+		log "系统配置已打包 sysupgrade.tgz"
 		write_status idle "备份完成"
 		return 0
 	fi
