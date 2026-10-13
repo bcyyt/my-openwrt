@@ -32,12 +32,13 @@ Entries discovered by the Agent during task execution should follow this format:
 ## Entries
 
 [Router SSH and package install]
-- Date: 2026-10-11
-- Context: Discovered by Agent while deploying APKs and diagnosing IPTV after firmware flash
-- Category: Operations & Deployment
-- Instructions:
-  - Unified SSH is `root@ak.bcyyt.top` port `23232`. There is no SFTP; copy APKs with `ssh cat > /tmp/*.apk` then `apk add /tmp/*.apk`.
-  - Direct SSH follows the PPPoE WAN IP on port `2323`. Hostname `cs.bcyyt.top` is the NATFRP tunnel and can lag across a redial.
+- Date: 2026-10-13
+  - Context: User instructed to use cs.bcyyt.top port 22 over IPv6
+  - Category: Operations & Deployment
+  - Instructions:
+  - SSH is `root@cs.bcyyt.top` port `22` over IPv6. The host is IPv6-only; do not force `-4`.
+  - Fallback: NATFRP `root@ak.bcyyt.top` port `23232`, or PPPoE WAN IPv4 on dropbear port `22`. WAN port `2323` is closed.
+  - There is no SFTP; copy APKs with `ssh cat > /tmp/*.apk` then `apk add /tmp/*.apk`.
   - Keep overlay plugin APKs on the data disk for syskeep restore. `/etc/syskeep/custom-apks.txt` often lands as `.apk-new` after flash and must be copied over the live file.
 
 [IPTV auth path after flash]

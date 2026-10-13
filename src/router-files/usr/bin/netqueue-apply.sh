@@ -179,6 +179,25 @@ patch_nat4() {
 	nft add rule inet fw4 srcnat_wan meta nfproto ipv4 masquerade 2>/dev/null || true
 }
 
+ensure_nat_include() {
+	local path=/usr/share/netqueue/fw4.include
+	[ -f "$path" ] || return 0
+	[ "$(uci -q get firewall.netqueue_nat)" = "include" ] && \
+	[ "$(uci -q get firewall.netqueue_nat.path)" = "$path" ] && \
+	[ "$(uci -q get firewall.netqueue_nat.fw4_compatible)" = "1" ] && return 0
+	uci -q set firewall.netqueue_nat=include
+	uci -q set firewall.netqueue_nat.type='script'
+	uci -q set firewall.netqueue_nat.path="$path"
+	uci -q set firewall.netqueue_nat.fw4_compatible='1'
+	uci -q set firewall.netqueue_nat.enabled='1'
+	uci -q commit firewall
+}
+
+apply_nat_hook() {
+	[ "$(uci_get netqueue.main.nat_mode)" = "nat4" ] || return 0
+	patch_nat4
+}
+
 apply_nat_mode() {
 	local mode def z want cur changed=0
 	mode=$(uci_get netqueue.main.nat_mode)
@@ -186,6 +205,7 @@ apply_nat_mode() {
 		nat1|nat3|nat4) ;;
 		*) return 0 ;;
 	esac
+	ensure_nat_include
 	def=$(fw_defaults)
 	[ -n "$def" ] || return 0
 	z=$(fw_wan_zone)
@@ -483,8 +503,11 @@ case "$cmd" in
 	neigh-clean)
 		neigh_clean
 		;;
+	nat-hook)
+		apply_nat_hook
+		;;
 	*)
-		echo "usage: $0 apply|apply-nic|status|dhcp-kick|neigh-clean" >&2
+		echo "usage: $0 apply|apply-nic|status|dhcp-kick|neigh-clean|nat-hook" >&2
 		exit 1
 		;;
 esac

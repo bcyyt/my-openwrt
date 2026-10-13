@@ -21,6 +21,15 @@ uci -q commit netqueue
 chmod 755 /etc/init.d/netqueue /usr/bin/netqueue-apply.sh 2>/dev/null || true
 [ -x /etc/init.d/netqueue ] && /etc/init.d/netqueue enable 2>/dev/null || true
 
+if [ -f /usr/share/netqueue/fw4.include ]; then
+	uci -q set firewall.netqueue_nat=include
+	uci -q set firewall.netqueue_nat.type='script'
+	uci -q set firewall.netqueue_nat.path='/usr/share/netqueue/fw4.include'
+	uci -q set firewall.netqueue_nat.fw4_compatible='1'
+	uci -q set firewall.netqueue_nat.enabled='1'
+	uci -q commit firewall
+fi
+
 if [ -x /etc/init.d/igc-queues ]; then
 	/etc/init.d/igc-queues disable 2>/dev/null || true
 	/etc/init.d/igc-queues stop 2>/dev/null || true

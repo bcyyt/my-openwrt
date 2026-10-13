@@ -1,0 +1,2 @@
+# Re-apply NAT4 after fw4 rewrites srcnat_wan.
+[ -x /usr/bin/netqueue-apply.sh ] && /usr/bin/netqueue-apply.sh nat-hook >/dev/null 2>&1 || true

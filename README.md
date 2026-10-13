@@ -9,7 +9,7 @@ ImmortalWrt / OpenWrt 插件：IPTV 代理、影视中心、状态监控、网�
 | `iptv-auth` | 2.3.32-r0 | noarch | 鉴权、M3U/EPG、RTSP 回看；缓冲池 24MB、UDP 接收 4MB |
 | `luci-app-mediahub` | 1.5.7-r0 | x86_64 | 影视中心（CMS + AList + ffmpeg） |
 | `luci-app-statusmon` | 4.29 | noarch | 状态监控；客户端分页；PPPoE 流量跨重拨累计；rtp2httpd 快捷入口新开页；显示固件与内核 |
-| `luci-app-netqueue` | 1.0.17-r0 | noarch | 网络优化：转发、NAT 模式、DHCP、DNS、静态 IP、过期 ARP 清理 |
+| `luci-app-netqueue` | 1.0.19-r0 | noarch | 网络优化：转发、NAT 模式、DHCP、DNS、静态 IP、过期 ARP 清理 |
 | `luci-app-syskeep` | 1.0.18-r0 | noarch | 保留升级：刷机还原网络/接口/防火墙；备份优先拷贝路由器本地安装包；日志逐条写出自装插件 |
 | `luci-app-atkmon` | 1.0.4-r0 | noarch | 安全监测：爆破目标/来源端口、手机卡片；PPPoE、DNS、IPTV、DHCP；手动拉黑 |
 
@@ -33,7 +33,7 @@ apk add luci-app-mediahub-1.5.7-r0.apk
 apk add luci-app-statusmon-4.29.apk
 
 # 网络优化
-apk add luci-app-netqueue-1.0.17-r0.apk
+apk add luci-app-netqueue-1.0.19-r0.apk
 
 # 保留升级
 apk add luci-app-syskeep-1.0.18-r0.apk
@@ -59,7 +59,7 @@ opkg install iptv-auth_2.3.32-r0_x86_64.ipk
 opkg install luci-app-statusmon_4.29_x86_64.ipk
 
 # 网络优化
-opkg install luci-app-netqueue_1.0.17-r0_x86_64.ipk
+opkg install luci-app-netqueue_1.0.19-r0_x86_64.ipk
 
 # 保留升级
 opkg install luci-app-syskeep_1.0.18-r0_x86_64.ipk
