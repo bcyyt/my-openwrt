@@ -144,7 +144,3 @@ LuCI 菜单：**系统 → 保留升级**。只写 boot/rootfs，GPT 和数据�
 export APK=/path/to/apk
 bash packaging/build-apks.sh
 ```
-| `iptv-auth` | 2.3.31-r0 | noarch | 鉴权、M3U/EPG、RTSP 回看；握手后双线程直通转发 |
-apk add iptv-auth-2.3.31-r0.apk
-| `iptv-auth` | 2.3.31-r0 | noarch | 鉴权、M3U/EPG、RTSP 回看；握手后双线程直通转发 |
-ImmortalWrt / OpenWrt 插件：IPTV 代理、影视中心、状态监控、网络优化、保留升级、安全监测。APK（apk）与 x86_64 IPK（opkg）均在 `packages/`。
