@@ -6,7 +6,7 @@ ImmortalWrt / OpenWrt 插件：IPTV 代理、影视中心、状态监控、网�
 
 | 包名 | 版本 | 架构 | 说明 |
 |------|------|------|------|
-| `iptv-auth` | 2.3.31-r0 | noarch | 鉴权、M3U/EPG、RTSP 回看；握手后双线程直通转发 |
+| `iptv-auth` | 2.3.32-r0 | noarch | 鉴权、M3U/EPG、RTSP 回看；缓冲池 24MB、UDP 接收 4MB |
 | `luci-app-mediahub` | 1.5.7-r0 | x86_64 | 影视中心（CMS + AList + ffmpeg） |
 | `luci-app-statusmon` | 4.29 | noarch | 状态监控；客户端分页；PPPoE 流量跨重拨累计；rtp2httpd 快捷入口新开页；显示固件与内核 |
 | `luci-app-netqueue` | 1.0.16-r0 | noarch | 网络优化：转发、DHCP、DNS、静态 IP、过期 ARP 清理 |
@@ -24,7 +24,7 @@ cp my-openwrt.rsa.pub /etc/apk/keys/
 chmod 644 /etc/apk/keys/my-openwrt.rsa.pub
 
 # IPTV 代理
-apk add iptv-auth-2.3.31-r0.apk
+apk add iptv-auth-2.3.32-r0.apk
 
 # 影视中心
 apk add luci-app-mediahub-1.5.7-r0.apk
@@ -53,7 +53,7 @@ apk add --allow-untrusted xxx.apk
 
 ```bash
 # IPTV 代理
-opkg install iptv-auth_2.3.31-r0_x86_64.ipk
+opkg install iptv-auth_2.3.32-r0_x86_64.ipk
 
 # 状态监控
 opkg install luci-app-statusmon_4.29_x86_64.ipk
@@ -87,6 +87,7 @@ bash packaging/rtp2httpd/build.sh 3.17.2
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| 2.3.32 | 2026-10-13 | 缓冲池改为 16384 块（约 24MB），UDP 接收缓冲改为 4MB |
 | 2.3.31 | 2026-10-13 | 回看代理改为双线程阻塞直通转发（S→C / C→S） |
 | 2.3.30 | 2026-10-12 | 回看上游 S→C 静默 10s 发 OPTIONS keepalive，无效则重建会话 |
 | 2.3.29 | 2026-10-12 | 不再请求 `/status/sse`；从 rtp2httpd 日志识别直播/回看频道 |

@@ -33,9 +33,18 @@ if [ -f /www/IPTV.m3u ] && [ ! -f /www/Lan.m3u ]; then
 	cp /www/IPTV.m3u /www/Lan.m3u
 fi
 cat > /etc/sysctl.d/15-iptv-auth.conf <<'EOF'
-net.core.rmem_max=33554432
+net.core.rmem_max=8388608
 EOF
-sysctl -w net.core.rmem_max=33554432 >/dev/null 2>&1 || true
+sysctl -w net.core.rmem_max=8388608 >/dev/null 2>&1 || true
+
+# 旧默认把缓冲池 1048576 当成字节（实际约 1.5GB），升级时改为官方 16384
+old_pool=$(uci -q get iptv-auth.main.rtp2h_bufpool)
+old_rcv=$(uci -q get iptv-auth.main.rtp2h_rcvbuf)
+if [ "$old_pool" = "1048576" ]; then
+	uci -q set iptv-auth.main.rtp2h_bufpool='16384'
+	[ "$old_rcv" = "16777216" ] && uci -q set iptv-auth.main.rtp2h_rcvbuf='4194304'
+	uci -q commit iptv-auth
+fi
 
 ensure_pkg() {
 	apk info -e "$1" >/dev/null 2>&1 && return 0

@@ -551,12 +551,12 @@ if (document.readyState === 'loading') {
             <div class="iptv-field-input"><input type="number" id="cfg-rtp2h_workers" placeholder="4" min="1" max="16" /></div>
         </div>
         <div class="iptv-field">
-            <div class="iptv-field-label">UDP 接收缓冲<small>字节</small></div>
-            <div class="iptv-field-input"><input type="number" id="cfg-rtp2h_rcvbuf" placeholder="16777216" /></div>
+            <div class="iptv-field-label">UDP 接收缓冲<small>字节，4K 建议 4MB</small></div>
+            <div class="iptv-field-input"><input type="number" id="cfg-rtp2h_rcvbuf" placeholder="4194304" /></div>
         </div>
         <div class="iptv-field">
-            <div class="iptv-field-label">缓冲池最大容量</div>
-            <div class="iptv-field-input"><input type="number" id="cfg-rtp2h_bufpool" placeholder="1048576" /></div>
+            <div class="iptv-field-label">缓冲池最大容量<small>块数，每块 1536 字节，16384≈24MB</small></div>
+            <div class="iptv-field-input"><input type="number" id="cfg-rtp2h_bufpool" placeholder="16384" /></div>
         </div>
         <div class="iptv-field">
             <div class="iptv-field-label">日志级别<small>0致命 1错误 2警告 3信息 4调试</small></div>

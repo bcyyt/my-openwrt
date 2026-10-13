@@ -1,7 +1,7 @@
 {
-  "version": "2.3.31-r0",
+  "version": "2.3.32-r0",
   "date": "2026-10-13",
-  "changelog": "回看代理改为双线程阻塞直通转发（S→C / C→S）。",
-  "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth-2.3.31-r0.apk",
-  "ipk_url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth_2.3.31-r0_x86_64.ipk"
+  "changelog": "缓冲池改为 16384 块（约 24MB），UDP 接收缓冲改为 4MB。",
+  "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth-2.3.32-r0.apk",
+  "ipk_url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth_2.3.32-r0_x86_64.ipk"
 }

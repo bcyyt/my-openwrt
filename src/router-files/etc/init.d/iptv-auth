@@ -12,7 +12,7 @@ boot() {
     ( sleep 30 && start ) &
 }
 
-# 首次启动自检：rtp2httpd 缺失时自动下载，uhttpd 2000 端口，rmem_max 33554432
+# 首次启动自检：rtp2httpd 缺失时自动下载，uhttpd 2000 端口，rmem_max
 ensure_runtime() {
     # 1. rtp2httpd 自检：缺失时拉本仓库自编译包（BUFFER_POOL 1024）
     if [ ! -x /usr/bin/rtp2httpd ]; then
@@ -64,12 +64,27 @@ ensure_runtime() {
     # 3. 目录自检
     mkdir -p /www /var/log/iptv-auth /mnt/data/iptv-auth/logs
 
-    # 4. UDP 套接字缓冲：rtp2httpd -B 16777216 对应 rmem_max=33554432
+    # 4. 旧默认把缓冲池 1048576 当成字节，实际是块数约 1.5GB；改为官方 16384（24MB）
+    old_pool=$(uci -q get iptv-auth.main.rtp2h_bufpool)
+    old_rcv=$(uci -q get iptv-auth.main.rtp2h_rcvbuf)
+    if [ "$old_pool" = "1048576" ]; then
+        uci -q set iptv-auth.main.rtp2h_bufpool='16384'
+        [ "$old_rcv" = "16777216" ] && uci -q set iptv-auth.main.rtp2h_rcvbuf='4194304'
+        uci -q commit iptv-auth
+        logger -t iptv-auth "缓冲池已从 1048576 块调整为 16384（约 24MB）"
+    fi
+
+    # 5. UDP 套接字缓冲：内核把 SO_RCVBUF 加倍，rmem_max 至少 2 * rcvbuf
+    rcvbuf_sys=$(uci -q get iptv-auth.main.rtp2h_rcvbuf)
+    rcvbuf_sys=${rcvbuf_sys:-4194304}
+    case "$rcvbuf_sys" in
+        ''|*[!0-9]*) rcvbuf_sys=4194304 ;;
+    esac
+    rmem_need=$((rcvbuf_sys * 2))
+    [ "$rmem_need" -lt 8388608 ] && rmem_need=8388608
     mkdir -p /etc/sysctl.d
-    cat > /etc/sysctl.d/15-iptv-auth.conf <<'EOF'
-net.core.rmem_max=33554432
-EOF
-    sysctl -w net.core.rmem_max=33554432 >/dev/null 2>&1 || true
+    echo "net.core.rmem_max=$rmem_need" > /etc/sysctl.d/15-iptv-auth.conf
+    sysctl -w net.core.rmem_max="$rmem_need" >/dev/null 2>&1 || true
     logger -t iptv-auth "net.core.rmem_max=$(sysctl -n net.core.rmem_max 2>/dev/null)"
 
     return 0
@@ -95,8 +110,8 @@ start_service() {
     port=$(uci -q get iptv-auth.main.live_port); port=${port:-23234}
     iface=$(uci -q get iptv-auth.main.upstream_interface)
     workers=$(uci -q get iptv-auth.main.rtp2h_workers); workers=${workers:-4}
-    rcvbuf=$(uci -q get iptv-auth.main.rtp2h_rcvbuf); rcvbuf=${rcvbuf:-16777216}
-    bufpool=$(uci -q get iptv-auth.main.rtp2h_bufpool); bufpool=${bufpool:-1048576}
+    rcvbuf=$(uci -q get iptv-auth.main.rtp2h_rcvbuf); rcvbuf=${rcvbuf:-4194304}
+    bufpool=$(uci -q get iptv-auth.main.rtp2h_bufpool); bufpool=${bufpool:-16384}
     verbose=$(uci -q get iptv-auth.main.rtp2h_verbose); verbose=${verbose:-3}
 
     # 上游接口（与原版 rtp2httpd 参数语义一致）：
