@@ -1,97 +1,125 @@
-<%# atkmon/status.htm — 安全监测：攻击/PPPoE/DNS/IPTV/DHCP %>
+<%# atkmon/status.htm — 安全监测 %>
 <%+header%>
 <style>
 :root{
-  --am-ink:#1c1410;--am-paper:#f6f0e6;--am-card:#fffaf3;--am-line:#e4d5c3;
-  --am-mute:#8a7460;--am-copper:#b4532a;--am-rust:#9a3412;--am-ok:#3f6b3a;
-  --am-warn:#b45309;--am-bad:#b91c1c;--am-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --iptv-primary:#4a90d9;--iptv-primary-dark:#357abd;--iptv-primary-bg:#e3f2fd;
+  --iptv-success:#2e7d32;--iptv-success-bg:#e8f5e9;--iptv-success-border:#c8e6c9;
+  --iptv-error:#c62828;--iptv-error-bg:#ffebee;--iptv-error-border:#ffcdd2;
+  --iptv-warn:#b45309;--iptv-warn-bg:#fff7ed;--iptv-warn-border:#fed7aa;
+  --iptv-card-bg:#fff;--iptv-border:#e2e8f0;--iptv-text:#334155;--iptv-muted:#64748b;
+  --iptv-terminal-bg:#1a1a2e;--iptv-terminal-border:#2d2d44;
 }
-.am-wrap{max-width:1180px;margin:0 auto 28px;color:var(--am-ink);font-family:Georgia,"Iowan Old Style","Songti SC",serif}
-.am-head{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin:4px 0 16px;border-bottom:2px solid var(--am-ink);padding-bottom:10px}
-.am-head h2{margin:0;font-size:26px;letter-spacing:.04em}
-.am-head .am-sub{font-size:12px;color:var(--am-mute);font-family:var(--am-mono);letter-spacing:.08em}
-.am-tog{margin-left:auto;display:flex;gap:6px}
-.am-tog button{border:1px solid var(--am-ink);background:transparent;color:var(--am-ink);padding:4px 12px;font-size:12px;cursor:pointer;font-family:var(--am-mono)}
-.am-tog button.on{background:var(--am-ink);color:var(--am-paper)}
-.am-hero{display:grid;grid-template-columns:repeat(5,1fr);gap:1px;background:var(--am-line);border:1px solid var(--am-line);margin-bottom:16px}
-.am-hero>div{background:var(--am-card);padding:14px 16px}
-.am-k{font-size:11px;color:var(--am-mute);letter-spacing:.12em;font-family:var(--am-mono)}
-.am-n{font-size:28px;font-weight:700;line-height:1.15;font-variant-numeric:tabular-nums;margin-top:4px;font-family:var(--am-mono)}
-.am-n.bad{color:var(--am-bad)}.am-n.warn{color:var(--am-warn)}.am-n.ok{color:var(--am-ok)}
-.am-s{font-size:11px;color:var(--am-mute);margin-top:4px}
-.am-grid{display:grid;grid-template-columns:1.6fr 1fr;gap:14px;margin-bottom:14px}
-.am-card{background:var(--am-card);border:1px solid var(--am-line);padding:14px 16px}
-.am-h{font-size:14px;font-weight:700;margin:0 0 10px;display:flex;justify-content:space-between;align-items:center;gap:8px}
-.am-note{font-size:11px;color:var(--am-mute);font-family:var(--am-mono)}
-.am-svg{width:100%;height:140px;display:block}
-.am-bars{display:flex;flex-direction:column;gap:7px}
-.am-bar{display:grid;grid-template-columns:110px 1fr 42px;gap:8px;align-items:center;font-size:12px;font-family:var(--am-mono)}
-.am-bar .lab{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.am-track{height:8px;background:#efe4d4;overflow:hidden}
-.am-fill{height:100%;background:var(--am-copper)}
-.am-table{width:100%;border-collapse:collapse;font-size:12.5px}
-.am-table th{text-align:left;font-size:11px;color:var(--am-mute);font-weight:600;padding:6px 8px;border-bottom:1px solid var(--am-line);font-family:var(--am-mono)}
-.am-table td{padding:8px;border-bottom:1px solid #f0e6d8;font-family:var(--am-mono);vertical-align:middle}
-.am-tag{display:inline-block;padding:1px 7px;border:1px solid currentColor;font-size:10px;letter-spacing:.06em}
-.am-tag.auth{color:var(--am-bad)}.am-tag.scan{color:var(--am-copper)}.am-tag.probe{color:var(--am-warn)}
-.am-btn{border:1px solid var(--am-ink);background:#fff;font-size:11px;padding:3px 8px;cursor:pointer;font-family:var(--am-mono)}
-.am-btn.bad{border-color:var(--am-bad);color:var(--am-bad)}
-.am-btn.ok{border-color:var(--am-ok);color:var(--am-ok)}
-.am-cols{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
-.am-list{margin:0;padding:0;list-style:none;font-size:12.5px;font-family:var(--am-mono)}
-.am-list li{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px dashed var(--am-line)}
-.am-log{max-height:220px;overflow:auto;background:#1c1410;color:#f3e6d4;padding:12px;font:12px/1.55 var(--am-mono);white-space:pre-wrap}
-.am-empty{color:var(--am-mute);padding:18px 0;text-align:center;font-size:13px}
-.am-warnbox{background:#fff4e5;border:1px solid #f0d3a8;color:#9a3412;padding:8px 10px;font-size:12px;margin-bottom:8px;font-family:var(--am-mono)}
-@media(max-width:980px){.am-hero{grid-template-columns:repeat(2,1fr)}.am-grid,.am-cols{grid-template-columns:1fr}}
-@media(max-width:640px){.am-hero{grid-template-columns:1fr}.am-head h2{font-size:22px}}
+.am-wrap{max-width:1240px;margin:0 auto 36px;color:var(--iptv-text)}
+.am-head{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+.am-head h2{margin:0}
+.am-ver{display:inline-block;background:linear-gradient(135deg,var(--iptv-primary),var(--iptv-primary-dark));color:#fff;font-size:12px;font-weight:600;padding:3px 12px;border-radius:12px;box-shadow:0 2px 6px rgba(74,144,217,.25);line-height:1.6}
+.am-sub{font-size:12px;color:var(--iptv-muted);margin-left:4px}
+.am-tog{margin-left:auto;display:flex;gap:8px}
+.am-tog button{border:1px solid var(--iptv-border);background:#fff;color:var(--iptv-text);padding:6px 14px;font-size:12px;cursor:pointer;border-radius:8px}
+.am-tog button.on{background:var(--iptv-primary);color:#fff;border-color:var(--iptv-primary)}
+.am-hero{display:grid;grid-template-columns:repeat(5,1fr);gap:1px;background:var(--iptv-border);border:1px solid var(--iptv-border);border-radius:12px;overflow:hidden;margin-bottom:16px}
+.am-hero>div{background:var(--iptv-card-bg);padding:14px 18px;min-width:0}
+.am-k{font-size:12px;color:var(--iptv-muted);letter-spacing:.3px}
+.am-n{font-size:22px;font-weight:700;line-height:1.3;margin-top:6px;color:var(--iptv-primary);word-break:break-all}
+.am-n.bad{color:var(--iptv-error)}.am-n.warn{color:var(--iptv-warn)}.am-n.ok{color:var(--iptv-success)}
+.am-s{font-size:12px;color:var(--iptv-muted);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.am-grid{display:grid;grid-template-columns:1.6fr 1fr;gap:12px;margin-bottom:16px}
+.am-card{background:var(--iptv-card-bg);border:1px solid var(--iptv-border);border-radius:12px;padding:16px 18px}
+.am-h{font-size:15px;font-weight:600;margin:0 0 12px;display:flex;justify-content:space-between;align-items:center;gap:8px;color:#475569}
+.am-note{font-size:12px;color:#94a3b8;font-weight:400}
+.am-svg{width:100%;height:148px;display:block}
+.am-bars{display:flex;flex-direction:column;gap:8px}
+.am-bar{display:grid;grid-template-columns:118px 1fr 40px;gap:8px;align-items:center;font-size:12px}
+.am-bar .lab{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:Consolas,Monaco,monospace}
+.am-track{height:7px;background:#e2e8f0;border-radius:99px;overflow:hidden}
+.am-fill{height:100%;background:var(--iptv-primary);border-radius:99px}
+.am-table{width:100%;border-collapse:collapse;font-size:13px;background:var(--iptv-card-bg);border:1px solid var(--iptv-border);border-radius:10px;overflow:hidden}
+.am-table th{text-align:left;font-size:12px;color:var(--iptv-muted);font-weight:600;padding:8px 12px;background:#f1f5f9}
+.am-table td{padding:9px 12px;border-top:1px solid var(--iptv-border);color:var(--iptv-text);vertical-align:middle}
+.am-tag{display:inline-block;padding:1px 8px;border-radius:10px;font-size:11px;font-weight:600}
+.am-tag.auth{background:var(--iptv-error-bg);color:var(--iptv-error);border:1px solid var(--iptv-error-border)}
+.am-tag.ok{background:var(--iptv-success-bg);color:var(--iptv-success);border:1px solid var(--iptv-success-border)}
+.am-tag.off{background:#f1f5f9;color:var(--iptv-muted);border:1px solid var(--iptv-border)}
+.am-btn{border:1px solid var(--iptv-border);background:#fff;font-size:12px;padding:4px 10px;cursor:pointer;border-radius:8px;color:var(--iptv-text)}
+.am-btn.bad{background:var(--iptv-error-bg);color:var(--iptv-error);border-color:var(--iptv-error-border)}
+.am-btn.ok{background:var(--iptv-success-bg);color:var(--iptv-success);border-color:var(--iptv-success-border)}
+.am-btn.pri{background:var(--iptv-primary);color:#fff;border-color:var(--iptv-primary)}
+.am-btn:hover{opacity:.9}
+.am-cols{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}
+.am-list{margin:0;padding:0;list-style:none;font-size:13px}
+.am-list li{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px dashed var(--iptv-border)}
+.am-log{max-height:280px;overflow:auto;background:var(--iptv-terminal-bg);color:#a5f3fc;padding:14px;font:13px/1.6 Consolas,Monaco,monospace;white-space:pre-wrap;border-radius:10px;border:1px solid var(--iptv-terminal-border)}
+.am-empty{color:var(--iptv-muted);padding:18px 0;text-align:center;font-size:13px}
+.am-okbox{background:var(--iptv-success-bg);border:1px solid var(--iptv-success-border);color:var(--iptv-success);padding:8px 10px;font-size:12px;margin-bottom:8px;border-radius:8px}
+.am-badbox{background:var(--iptv-error-bg);border:1px solid var(--iptv-error-border);color:var(--iptv-error);padding:8px 10px;font-size:12px;margin-bottom:8px;border-radius:8px}
+.am-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle}
+.am-dot.on{background:#4caf50;box-shadow:0 0 0 3px rgba(46,125,50,.15)}
+.am-dot.off{background:#cbd5e1}
+.am-big{font-size:20px;font-weight:700;margin:2px 0 8px}
+.am-meta{font-size:12px;color:var(--iptv-muted);margin-bottom:10px;line-height:1.55}
+.am-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 12px}
+.am-in{border:1px solid var(--iptv-border);background:#fff;font:12px Consolas,Monaco,monospace;padding:6px 10px;min-width:180px;flex:1;border-radius:8px}
+.am-host{font-weight:600}
+.am-mac{color:var(--iptv-muted);font-size:12px;font-family:Consolas,Monaco,monospace}
+.am-pager{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:10px;font-size:12px;color:var(--iptv-muted)}
+.am-pager button{border:1px solid var(--iptv-border);background:#fff;border-radius:8px;padding:4px 10px;cursor:pointer}
+.am-pager button:disabled{opacity:.4;cursor:default}
+@media(max-width:1100px){.am-hero{grid-template-columns:repeat(3,1fr)}.am-grid,.am-cols{grid-template-columns:1fr}}
+@media(max-width:720px){.am-hero{grid-template-columns:1fr}}
 </style>
 <div class="am-wrap">
   <div class="am-head">
     <h2>安全监测</h2>
+    <span class="am-ver">1.0.2</span>
     <span class="am-sub" id="am-ts">采集中</span>
     <div class="am-tog">
       <button type="button" class="on" data-r="24" onclick="amRange(24,this)">24h</button>
       <button type="button" data-r="168" onclick="amRange(168,this)">7d</button>
     </div>
   </div>
+  <div id="am-msg"></div>
   <div class="am-hero">
-    <div><div class="am-k">攻击</div><div class="am-n" id="c-atk">0</div><div class="am-s" id="c-atk-s">来源 0</div></div>
     <div><div class="am-k">爆破</div><div class="am-n" id="c-auth">0</div><div class="am-s">SSH / LuCI</div></div>
-    <div><div class="am-k">探测</div><div class="am-n" id="c-probe">0</div><div class="am-s" id="c-probe-s">nft 日志</div></div>
-    <div><div class="am-k">PPPoE 重拨</div><div class="am-n" id="c-ppp">0</div><div class="am-s" id="c-ppp-s">链路</div></div>
-    <div><div class="am-k">新终端</div><div class="am-n" id="c-dhcp">0</div><div class="am-s" id="c-dns">DNS / IPTV</div></div>
+    <div><div class="am-k">PPPoE</div><div class="am-n" id="c-ppp">0</div><div class="am-s" id="c-ppp-s">拨号地址</div></div>
+    <div><div class="am-k">DHCP</div><div class="am-n" id="c-dhcp">0</div><div class="am-s" id="c-dhcp-s">已连接</div></div>
+    <div><div class="am-k">IPTV</div><div class="am-n" id="c-iptv">-</div><div class="am-s" id="c-iptv-s">鉴权</div></div>
+    <div><div class="am-k">来源</div><div class="am-n" id="c-src">0</div><div class="am-s" id="c-src-s">爆破地址</div></div>
   </div>
   <div class="am-grid">
     <div class="am-card">
-      <div class="am-h">攻击趋势<span class="am-note">爆破 + 探测</span></div>
-      <svg class="am-svg" id="am-line" viewBox="0 0 640 140" preserveAspectRatio="none"></svg>
+      <div class="am-h">爆破趋势<span class="am-note">仅真实攻击</span></div>
+      <svg class="am-svg" id="am-line" viewBox="0 0 640 148" preserveAspectRatio="none"></svg>
     </div>
     <div class="am-card">
-      <div class="am-h">来源 Top 10<span class="am-note">按次数</span></div>
+      <div class="am-h">来源 Top<span class="am-note">按爆破次数</span></div>
       <div class="am-bars" id="am-top"></div>
     </div>
   </div>
-  <div class="am-card" style="margin-bottom:14px">
-    <div class="am-h">来源摘要<span class="am-note">仅手动拉黑，拒绝 WAN 访问本机</span></div>
-    <div id="am-probe-tip"></div>
+  <div class="am-card" style="margin-bottom:16px">
+    <div class="am-h">爆破来源<span class="am-note">只显示登录爆破，可手动拉黑</span></div>
+    <div class="am-row">
+      <input class="am-in" id="am-ip" placeholder="手动输入要拉黑的外网地址" spellcheck="false">
+      <button type="button" class="am-btn bad" onclick="amBlock(document.getElementById('am-ip').value)">拉黑</button>
+    </div>
     <div style="overflow-x:auto">
       <table class="am-table">
-        <thead><tr><th>地址</th><th>标记</th><th>次数</th><th>爆破</th><th>探测</th><th>端口</th><th>最近</th><th></th></tr></thead>
+        <thead><tr><th>地址</th><th>标记</th><th>次数</th><th>爆破</th><th>端口</th><th>最近</th><th></th></tr></thead>
         <tbody id="am-atk-body"></tbody>
       </table>
     </div>
+    <div class="am-pager" id="am-atk-pager"></div>
   </div>
   <div class="am-cols">
     <div class="am-card">
       <div class="am-h">PPPoE<span class="am-note" id="ppp-flag"></span></div>
-      <div class="am-s" id="ppp-meta" style="margin-bottom:8px"></div>
+      <div class="am-meta" id="ppp-meta"></div>
       <ul class="am-list" id="ppp-ev"></ul>
+      <div class="am-pager" id="ppp-pager"></div>
     </div>
     <div class="am-card">
       <div class="am-h">DNS<span class="am-note" id="dns-flag"></span></div>
-      <div class="am-s" id="dns-meta" style="margin-bottom:8px"></div>
-      <div class="am-cols" style="grid-template-columns:1fr 1fr;gap:8px">
+      <div class="am-meta" id="dns-meta"></div>
+      <div class="am-cols" style="grid-template-columns:1fr 1fr;gap:8px;margin:0">
         <div><div class="am-k">高频域名</div><ul class="am-list" id="dns-top"></ul></div>
         <div><div class="am-k">NXDOMAIN</div><ul class="am-list" id="dns-nx"></ul></div>
       </div>
@@ -100,18 +128,28 @@
   <div class="am-cols">
     <div class="am-card">
       <div class="am-h">IPTV<span class="am-note" id="iptv-flag"></span></div>
-      <div class="am-s" id="iptv-meta" style="margin-bottom:8px"></div>
+      <div class="am-big" id="iptv-big">-</div>
+      <div class="am-meta" id="iptv-meta"></div>
+      <div class="am-k" style="margin-bottom:6px">播放来源</div>
       <ul class="am-list" id="iptv-ev"></ul>
+      <div class="am-pager" id="iptv-pager"></div>
     </div>
     <div class="am-card">
-      <div class="am-h">DHCP<span class="am-note" id="dhcp-flag"></span></div>
-      <div class="am-s" id="dhcp-meta" style="margin-bottom:8px"></div>
-      <ul class="am-list" id="dhcp-ev"></ul>
+      <div class="am-h">DHCP 终端<span class="am-note" id="dhcp-flag"></span></div>
+      <div class="am-meta" id="dhcp-meta"></div>
+      <div style="overflow-x:auto">
+        <table class="am-table">
+          <thead><tr><th>状态</th><th>主机</th><th>地址</th><th>MAC</th><th>剩余</th></tr></thead>
+          <tbody id="dhcp-body"></tbody>
+        </table>
+      </div>
+      <div class="am-pager" id="dhcp-pager"></div>
     </div>
   </div>
   <div class="am-card">
-    <div class="am-h">最近事件<span class="am-note">原始日志聚合</span></div>
+    <div class="am-h">最近事件<span class="am-note">不含端口探测</span></div>
     <div class="am-log" id="am-log">加载中</div>
+    <div class="am-pager" id="am-log-pager"></div>
   </div>
 </div>
 <script>
@@ -119,113 +157,201 @@ var AM_DATA="<%=luci.dispatcher.build_url('admin/atkmon/data')%>";
 var AM_BLOCK="<%=luci.dispatcher.build_url('admin/atkmon/block')%>";
 var AM_UNBLOCK="<%=luci.dispatcher.build_url('admin/atkmon/unblock')%>";
 var AM_EV="<%=luci.dispatcher.build_url('admin/atkmon/events')%>";
-var RANGE=24, SNAP=null;
+var AM_TOKEN="<%=token%>";
+var RANGE=24, SNAP=null, EVENTS=[], PAGE={atk:1,dhcp:1,log:1,ppp:1,iptv:1}, PS=8;
 function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]})}
 function fmtTs(ts){if(!ts)return "-";var d=new Date(ts*1000);function p(n){return n<10?"0"+n:n}return (d.getMonth()+1)+"/"+p(d.getDate())+" "+p(d.getHours())+":"+p(d.getMinutes())}
-function dur(s){s=parseInt(s||0,10);if(s<60)return s+"s";if(s<3600)return Math.floor(s/60)+"m";return Math.floor(s/3600)+"h"+Math.floor((s%3600)/60)+"m"}
-function amRange(n,btn){RANGE=n;document.querySelectorAll(".am-tog button").forEach(function(b){b.className=b===btn?"on":""});if(SNAP)render(SNAP)}
+function dur(s){s=parseInt(s||0,10);if(s<0)s=0;if(s<60)return s+"s";if(s<3600)return Math.floor(s/60)+"m";if(s<86400)return Math.floor(s/3600)+"h"+Math.floor((s%3600)/60)+"m";return Math.floor(s/86400)+"d"+Math.floor((s%86400)/3600)+"h"}
+function amRange(n,btn){RANGE=n;PAGE.atk=1;document.querySelectorAll(".am-tog button").forEach(function(b){b.className=b===btn?"on":""});if(SNAP)render(SNAP)}
 function sliceSeries(series){var n=RANGE;if(!series||!series.length)return [];return series.slice(Math.max(0,series.length-n))}
 function sumField(rows,k){var t=0;for(var i=0;i<rows.length;i++)t+=parseInt(rows[i][k]||0,10);return t}
+function onlyAuth(rows){return (rows||[]).filter(function(r){return (r.auth_count||0)>0 || r.tag==="auth"})}
+function pageOf(rows,key,size){
+  size=size||PS;
+  if(!PAGE[key]) PAGE[key]=1;
+  var total=rows.length, pages=Math.max(1,Math.ceil(total/size));
+  if(PAGE[key]>pages) PAGE[key]=pages;
+  if(PAGE[key]<1) PAGE[key]=1;
+  var a=(PAGE[key]-1)*size;
+  return {rows:rows.slice(a,a+size), page:PAGE[key], pages:pages, total:total};
+}
+function drawPager(id,key,info){
+  var el=document.getElementById(id);
+  if(!el) return;
+  if(!info.total){el.innerHTML="";return}
+  el.innerHTML='<button type="button" '+(info.page<=1?"disabled":"")+' onclick="amPage(\''+key+'\',-1)">上一页</button>'+
+    "<span>"+info.page+" / "+info.pages+" · "+info.total+" 条</span>"+
+    '<button type="button" '+(info.page>=info.pages?"disabled":"")+' onclick="amPage(\''+key+'\',1)">下一页</button>';
+}
+function amPage(key,d){PAGE[key]+=d;if(key==="log"){renderLog();return}if(SNAP)render(SNAP)}
+function showMsg(ok,text){
+  var el=document.getElementById("am-msg");
+  if(!text){el.innerHTML="";return}
+  el.innerHTML='<div class="'+(ok?"am-okbox":"am-badbox")+'">'+esc(text)+"</div>";
+  setTimeout(function(){if(el.textContent===text)el.innerHTML=""},8000);
+}
 function drawLine(series){
-  var svg=document.getElementById("am-line"), w=640,h=140,p=8;
+  var svg=document.getElementById("am-line"), w=640,h=148,p=10;
   if(!series.length){svg.innerHTML="";return}
-  var vals=series.map(function(r){return (r.auth||0)+(r.probe||0)});
+  var vals=series.map(function(r){return r.auth||0});
   var mx=Math.max.apply(null,vals.concat([1]));
   function x(i){return p+i*(w-2*p)/Math.max(series.length-1,1)}
   function y(v){return h-p-(v/mx)*(h-2*p)}
   var d="";
   for(var i=0;i<vals.length;i++)d+=(i?" L":"M")+x(i).toFixed(1)+" "+y(vals[i]).toFixed(1);
   var area=d+" L"+x(vals.length-1).toFixed(1)+" "+(h-p)+" L"+x(0).toFixed(1)+" "+(h-p)+" Z";
-  svg.innerHTML='<path d="'+area+'" fill="rgba(180,83,42,.18)"/><path d="'+d+'" fill="none" stroke="#b4532a" stroke-width="2"/>';
+  svg.innerHTML='<path d="'+area+'" fill="rgba(74,144,217,.16)"/><path d="'+d+'" fill="none" stroke="#4a90d9" stroke-width="2"/>';
 }
 function renderTop(rows){
   var el=document.getElementById("am-top");
-  if(!rows||!rows.length){el.innerHTML='<div class="am-empty">暂无外网攻击</div>';return}
-  var mx=Math.max.apply(null,rows.map(function(r){return r.count||0}).concat([1]));
-  el.innerHTML=rows.map(function(r){
-    return '<div class="am-bar"><span class="lab" title="'+esc(r.ip)+'">'+esc(r.ip)+'</span><div class="am-track"><div class="am-fill" style="width:'+(100*(r.count||0)/mx)+'%"></div></div><span>'+(r.count||0)+'</span></div>';
+  rows=onlyAuth(rows);
+  if(!rows.length){el.innerHTML='<div class="am-empty">暂无爆破来源</div>';return}
+  var mx=Math.max.apply(null,rows.map(function(r){return r.auth_count||r.count||0}).concat([1]));
+  el.innerHTML=rows.slice(0,8).map(function(r){
+    var n=r.auth_count||r.count||0;
+    return '<div class="am-bar"><span class="lab" title="'+esc(r.ip)+'">'+esc(r.ip)+'</span><div class="am-track"><div class="am-fill" style="width:'+(100*n/mx)+'%"></div></div><span>'+n+'</span></div>';
   }).join("");
 }
-function tagHtml(t){t=t||"probe";var lab={auth:"爆破",scan:"扫描",probe:"探测"}[t]||t;return '<span class="am-tag '+t+'">'+lab+'</span>'}
 function renderAtk(rows,blocked){
   var body=document.getElementById("am-atk-body");
   var cut=Date.now()/1000-(RANGE===24?86400:7*86400);
-  rows=(rows||[]).filter(function(r){return (r.last_ts||0)>=cut});
-  if(!rows.length){body.innerHTML='<tr><td colspan="8" class="am-empty">这段时间没有外网攻击</td></tr>';return}
+  rows=onlyAuth(rows).filter(function(r){return (r.last_ts||0)>=cut});
+  if(!rows.length){body.innerHTML='<tr><td colspan="7" class="am-empty">这段时间没有登录爆破</td></tr>';drawPager("am-atk-pager","atk",{total:0,page:1,pages:1});return}
   var blk={};(blocked||[]).forEach(function(ip){blk[ip]=1});
-  body.innerHTML=rows.slice(0,40).map(function(r){
+  var pg=pageOf(rows,"atk");
+  body.innerHTML=pg.rows.map(function(r){
     var ip=r.ip, on=blk[ip];
     var btn=on
       ? '<button class="am-btn ok" onclick="amUnblock(\''+esc(ip)+'\')">解除</button>'
       : '<button class="am-btn bad" onclick="amBlock(\''+esc(ip)+'\')">拉黑</button>';
-    return '<tr><td>'+esc(ip)+'</td><td>'+tagHtml(r.tag)+'</td><td>'+(r.count||0)+'</td><td>'+(r.auth_count||0)+'</td><td>'+(r.probe_count||0)+'</td><td>'+esc((r.ports||[]).join(","))+'</td><td>'+fmtTs(r.last_ts)+'</td><td>'+btn+'</td></tr>';
+    return '<tr><td>'+esc(ip)+'</td><td><span class="am-tag auth">爆破</span></td><td>'+(r.count||0)+'</td><td>'+(r.auth_count||0)+'</td><td>'+esc((r.ports||[]).join(","))+'</td><td>'+fmtTs(r.last_ts)+'</td><td>'+btn+'</td></tr>';
   }).join("");
+  drawPager("am-atk-pager","atk",pg);
 }
-function listEv(id, rows, fn){
+function listEv(id, rows, fn, key, pagerId){
   var el=document.getElementById(id);
-  if(!rows||!rows.length){el.innerHTML='<li class="am-empty" style="border:0">暂无事件</li>';return}
-  el.innerHTML=rows.slice().reverse().slice(0,12).map(fn).join("");
+  if(!rows||!rows.length){el.innerHTML='<li class="am-empty" style="border:0">暂无事件</li>';if(pagerId)drawPager(pagerId,key,{total:0,page:1,pages:1});return}
+  var src=rows.slice().reverse();
+  var pg=pageOf(src,key,8);
+  el.innerHTML=pg.rows.map(fn).join("");
+  if(pagerId) drawPager(pagerId,key,pg);
+}
+function renderDhcp(d){
+  var dhcp=d.dhcp||{};
+  var list=dhcp.list||[];
+  var on=dhcp.online||0;
+  document.getElementById("dhcp-flag").textContent="在线 "+on+" / 租约 "+(dhcp.leases||list.length||0);
+  document.getElementById("dhcp-meta").textContent="24h 新终端 "+(dhcp.new_24h||0);
+  var body=document.getElementById("dhcp-body");
+  if(!list.length){body.innerHTML='<tr><td colspan="5" class="am-empty">没有 DHCP 租约</td></tr>';drawPager("dhcp-pager","dhcp",{total:0,page:1,pages:1});return}
+  var pg=pageOf(list,"dhcp",8);
+  body.innerHTML=pg.rows.map(function(r){
+    var live=!!r.online;
+    return '<tr><td><span class="am-dot '+(live?"on":"off")+'"></span>'+(live?"在线":"离线")+"</td>"+
+      '<td><span class="am-host">'+esc(r.name||"*")+"</span></td>"+
+      "<td>"+esc(r.ip||"-")+"</td>"+
+      '<td class="am-mac">'+esc(r.mac||"-")+"</td>"+
+      "<td>"+dur(r.remain||0)+"</td></tr>";
+  }).join("");
+  drawPager("dhcp-pager","dhcp",pg);
+}
+function renderIptv(d){
+  var iptv=d.iptv||{};
+  var online=!!iptv.online;
+  document.getElementById("iptv-flag").textContent=online?"在线":"下线";
+  document.getElementById("iptv-big").innerHTML='<span class="am-dot '+(online?"on":"off")+'"></span>'+(online?"在线":"下线");
+  document.getElementById("iptv-big").style.color=online?"var(--iptv-success)":"var(--iptv-error)";
+  var bits=[];
+  bits.push(iptv.auth_running?(iptv.auth_ok?"鉴权正常":"鉴权异常"):"鉴权进程未运行");
+  bits.push(iptv.rtp2httpd?"rtp2httpd 运行":"rtp2httpd 未运行");
+  if(iptv.channels) bits.push("频道 "+iptv.channels);
+  bits.push("直播 "+(iptv.live||0)+" · 回看 "+(iptv.catchup||0));
+  if(iptv.last_run) bits.push("上次 "+iptv.last_run);
+  document.getElementById("iptv-meta").textContent=bits.join(" · ");
+  var clients=iptv.clients||[];
+  var el=document.getElementById("iptv-ev");
+  if(!clients.length && !(iptv.events||[]).length){el.innerHTML='<li class="am-empty" style="border:0">暂无播放</li>';drawPager("iptv-pager","iptv",{total:0,page:1,pages:1});return}
+  if(clients.length){
+    var pg=pageOf(clients,"iptv",8);
+    el.innerHTML=pg.rows.map(function(e){
+      var mark=e.watching?'<span class="am-tag ok">播放中</span>':'<span class="am-tag off">历史</span>';
+      return "<li><span>"+mark+" "+esc(e.ip||"")+" "+esc(e.channel||e.kind||"")+"</span><span>"+fmtTs(e.last)+"</span></li>";
+    }).join("");
+    drawPager("iptv-pager","iptv",pg);
+  }else{
+    listEv("iptv-ev", iptv.events||[], function(e){return "<li><span>"+esc(e.type)+" "+esc(e.channel||e.msg||"")+"</span><span>"+fmtTs(e.ts)+"</span></li>"},"iptv","iptv-pager");
+  }
 }
 function render(d){
   SNAP=d;
   var series=sliceSeries(d.series||[]);
-  var atk=sumField(series,"auth")+sumField(series,"probe");
-  var auth=sumField(series,"auth"), probe=sumField(series,"probe");
+  var auth=sumField(series,"auth");
   var cards=d.cards||{};
-  document.getElementById("c-atk").textContent=RANGE===24?(cards.attack_24h||0):atk;
-  document.getElementById("c-atk").className="am-n"+(atk||cards.attack_24h?" bad":"");
-  document.getElementById("c-atk-s").textContent="来源 "+(cards.sources_24h||0);
-  document.getElementById("c-auth").textContent=RANGE===24?(cards.auth_24h||0):auth;
-  document.getElementById("c-probe").textContent=RANGE===24?(cards.probe_24h||0):probe;
-  document.getElementById("c-probe-s").textContent=d.probe_available?"nft 已记录":"探测日志尚未出现";
-  document.getElementById("c-ppp").textContent=cards.pppoe_redial_24h||0;
-  document.getElementById("c-ppp").className="am-n"+((d.pppoe&&d.pppoe.frequent)?" warn":"");
-  document.getElementById("c-ppp-s").textContent=(d.pppoe&&d.pppoe.up)?"在线 "+dur(d.pppoe.uptime):"离线";
-  document.getElementById("c-dhcp").textContent=cards.dhcp_new_24h||0;
-  document.getElementById("c-dns").textContent="NX "+(cards.dns_nx_24h||0)+" · 直播 "+(cards.iptv_live||0)+" · 回看 "+(cards.iptv_catchup||0);
+  var dhcp=d.dhcp||{}, iptv=d.iptv||{}, p=d.pppoe||{};
+  var authN=RANGE===24?(cards.auth_24h||0):auth;
+  document.getElementById("c-auth").textContent=authN;
+  document.getElementById("c-auth").className="am-n"+(authN?" bad":"");
+  var pppOn=p.up?1:(cards.pppoe_online||0);
+  document.getElementById("c-ppp").textContent=pppOn;
+  document.getElementById("c-ppp").className="am-n"+(p.up?" ok":" bad");
+  var ip=p.ipv4||"";
+  document.getElementById("c-ppp-s").textContent=p.up?((ip||"无地址")+" · 在线 "+dur(p.uptime)+(p.redials_24h?" · 重拨 "+p.redials_24h:"")):"离线"+(p.redials_24h?" · 重拨 "+p.redials_24h:"");
+  document.getElementById("c-dhcp").textContent=dhcp.online||cards.dhcp_online||0;
+  document.getElementById("c-dhcp").className="am-n ok";
+  document.getElementById("c-dhcp-s").textContent="租约 "+(dhcp.leases||0)+" · 新 "+(cards.dhcp_new_24h||0);
+  document.getElementById("c-iptv").textContent=iptv.online?"在线":"下线";
+  document.getElementById("c-iptv").className="am-n"+(iptv.online?" ok":" bad");
+  document.getElementById("c-iptv-s").textContent="直播 "+(iptv.live||0)+" · 回看 "+(iptv.catchup||0);
+  document.getElementById("c-src").textContent=cards.sources_24h||0;
+  document.getElementById("c-src-s").textContent="近 24h";
   document.getElementById("am-ts").textContent=d.ts?("更新 "+fmtTs(d.ts)):"采集中";
-  if(!d.probe_available) document.getElementById("am-probe-tip").innerHTML='<div class="am-warnbox">WAN 探测日志尚未出现，爆破与其它分区仍可用</div>';
-  else document.getElementById("am-probe-tip").innerHTML="";
   drawLine(series);
   renderTop(d.top_ip||[]);
   renderAtk(d.attack_summary||[], d.blocked||[]);
-  var p=d.pppoe||{};
   document.getElementById("ppp-flag").textContent=p.frequent?"频繁重拨":(p.up?"UP":"DOWN");
-  document.getElementById("ppp-meta").textContent=(p.ipv4||"-")+" / "+(p.ipv6||"-")+" · "+(p.device||"");
-  listEv("ppp-ev", p.events||[], function(e){return "<li><span>"+esc(e.type)+" "+esc((e.msg||"").slice(-80))+"</span><span>"+fmtTs(e.ts)+"</span></li>"});
+  document.getElementById("ppp-meta").textContent=(p.ipv4||"-")+(p.ipv6?" / "+p.ipv6:"")+" · "+(p.device||"")+" · 24h 重拨 "+(p.redials_24h||0);
+  listEv("ppp-ev", p.events||[], function(e){return "<li><span>"+esc(e.type)+" "+esc((e.msg||"").slice(-80))+"</span><span>"+fmtTs(e.ts)+"</span></li>"},"ppp","ppp-pager");
   var dns=d.dns||{};
   document.getElementById("dns-flag").textContent=dns.available?"查询日志开":"明细不可用";
   document.getElementById("dns-meta").textContent="查询 "+(dns.queries||0)+" · NXDOMAIN "+(dns.nxdomain||0)+((dns.hot_clients&&dns.hot_clients.length)?" · 高频客户端 "+dns.hot_clients.length:"");
   if(!dns.available) document.getElementById("dns-top").innerHTML='<li class="am-empty" style="border:0">未开 dnsmasq logqueries</li>';
-  else listEv("dns-top", dns.top||[], function(e){return "<li><span>"+esc(e.name)+"</span><span>"+e.count+"</span></li>"});
-  listEv("dns-nx", dns.nx_top||[], function(e){return "<li><span>"+esc(e.name)+"</span><span>"+e.count+"</span></li>"});
-  var iptv=d.iptv||{};
-  document.getElementById("iptv-flag").textContent=iptv.running?(iptv.auth_ok?"鉴权正常":"鉴权异常"):"未运行";
-  document.getElementById("iptv-meta").textContent="直播 "+(iptv.live||0)+" · 回看 "+(iptv.catchup||0);
-  listEv("iptv-ev", iptv.events||[], function(e){return "<li><span>"+esc(e.type)+" "+esc(e.channel||e.msg||"")+"</span><span>"+fmtTs(e.ts)+"</span></li>"});
-  var dhcp=d.dhcp||{};
-  document.getElementById("dhcp-flag").textContent="租约 "+(dhcp.leases||0);
-  document.getElementById("dhcp-meta").textContent="24h 新终端 "+(dhcp.new_24h||0);
-  listEv("dhcp-ev", dhcp.events||[], function(e){return "<li><span>"+esc(e.type)+" "+esc(e.name||"")+" "+esc(e.ip||"")+"</span><span>"+fmtTs(e.ts)+"</span></li>"});
+  else listEv("dns-top", dns.top||[], function(e){return "<li><span>"+esc(e.name)+"</span><span>"+e.count+"</span></li>"},"dnstop");
+  listEv("dns-nx", dns.nx_top||[], function(e){return "<li><span>"+esc(e.name)+"</span><span>"+e.count+"</span></li>"},"dnsnx");
+  renderIptv(d);
+  renderDhcp(d);
 }
-function amBlock(ip){
-  if(!confirm("拉黑 "+ip+"？仅拒绝它访问本机，不影响局域网转发。")) return;
-  fetch(AM_BLOCK,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:"ip="+encodeURIComponent(ip)})
-    .then(function(r){return r.json()}).then(function(){amLoad()}).catch(function(){alert("拉黑失败")});
+function renderLog(){
+  var rows=(EVENTS||[]).filter(function(e){return e.type!=="probe" && e.type!=="scan"});
+  var el=document.getElementById("am-log");
+  if(!rows.length){el.textContent="暂无事件";drawPager("am-log-pager","log",{total:0,page:1,pages:1});return}
+  var src=rows.slice().reverse();
+  var pg=pageOf(src,"log",12);
+  el.textContent=pg.rows.map(function(e){
+    return fmtTs(e.ts)+"  "+(e.cat||"")+"/"+(e.type||"")+"  "+(e.ip||"")+"  "+(e.channel||e.user||e.msg||"")+"  "+(e.port||"");
+  }).join("\n");
+  drawPager("am-log-pager","log",pg);
 }
-function amUnblock(ip){
-  fetch(AM_UNBLOCK,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:"ip="+encodeURIComponent(ip)})
-    .then(function(r){return r.json()}).then(function(){amLoad()}).catch(function(){alert("解除失败")});
+function amCall(url, ip, okText, failText){
+  ip=String(ip||"").trim();
+  if(!ip){showMsg(false,"请填写地址");return}
+  var q="?ip="+encodeURIComponent(ip)+"&token="+encodeURIComponent(AM_TOKEN||"");
+  fetch(url+q,{credentials:"same-origin",cache:"no-store"})
+    .then(function(r){return r.json()})
+    .then(function(d){
+      if(!d||!d.ok){showMsg(false,(d&&d.error)||failText);return}
+      if(SNAP){SNAP.blocked=d.blocked||[];render(SNAP)}
+      showMsg(true,okText);
+      amLoad();
+    })
+    .catch(function(){showMsg(false,failText)});
 }
+function amBlock(ip){ip=String(ip||"").trim();if(!ip){showMsg(false,"请填写地址");return}if(!confirm("拉黑 "+ip+"？仅拒绝它访问本机，不影响局域网转发。"))return;amCall(AM_BLOCK,ip,"已拉黑 "+ip,"拉黑失败")}
+function amUnblock(ip){amCall(AM_UNBLOCK,ip,"已解除 "+ip,"解除失败")}
 function amLoad(){
   fetch(AM_DATA,{credentials:"same-origin",cache:"no-store"}).then(function(r){return r.json()}).then(render).catch(function(){document.getElementById("am-ts").textContent="采集失败"});
   fetch(AM_EV,{credentials:"same-origin",cache:"no-store"}).then(function(r){return r.json()}).then(function(d){
-    var rows=(d.events||[]);
-    var el=document.getElementById("am-log");
-    if(!rows.length){el.textContent="暂无事件";return}
-    el.textContent=rows.slice(-40).map(function(e){
-      return fmtTs(e.ts)+"  "+(e.cat||"")+"/"+(e.type||"")+"  "+(e.ip||"")+"  "+(e.channel||e.user||e.msg||"")+"  "+(e.port||"");
-    }).join("\n");
+    EVENTS=d.events||[];
+    renderLog();
   }).catch(function(){});
 }
 amLoad();

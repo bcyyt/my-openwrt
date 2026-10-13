@@ -17,6 +17,12 @@ EVENTS = DIR + "/events.jsonl"
 IPTV_STATUS = "/var/log/iptv-auth/status.json"
 IPTV_CLIENTS = "/var/log/iptv-auth/clients.json"
 LEASES = "/tmp/dhcp.leases"
+WATCH_SEC = 300
+NEIGH_UP = {"REACHABLE", "DELAY", "PROBE", "STALE"}
+PROBE_WINDOW = 600
+PROBE_HIT_MIN = 8
+PROBE_PORT_MIN = 5
+PROBE_UDP_MIN = 20
 
 MAX_EVENTS = 20000
 EVENT_TTL = 86400
@@ -30,8 +36,8 @@ RE_LUCI = re.compile(r"luci: failed login(?: on \S+)?(?: for \S+)? from ([0-9a-f
 RE_ATKMON = re.compile(r"atkmon:.*SRC=(\S+).*PROTO=(\S+).*DPT=(\d+)")
 RE_PPPOE_UP = re.compile(r"(pppoe-|Interface 'wan' is now up|CHAP authentication succeeded|PPP session is )")
 RE_PPPOE_DOWN = re.compile(r"(Modem hangup|Connection terminated|Interface 'wan' is now down|Timeout waiting for PADO)")
-RE_DNS_Q = re.compile(r"dnsmasq\[\d+\]: query\[(\w+)\] (\S+) from (\S+)")
-RE_DNS_NX = re.compile(r"dnsmasq\[\d+\]: \S+ (\S+) is NXDOMAIN")
+RE_DNS_Q = re.compile(r"dnsmasq\[\d+\]: (?:\d+ \S+ )?query\[(\w+)\] (\S+) from (\S+)")
+RE_DNS_NX = re.compile(r"dnsmasq\[\d+\]: .*\s(\S+) is NXDOMAIN")
 RE_DHCPACK = re.compile(r"dnsmasq-dhcp\[\d+\]: DHCPACK\(\S+\) (\S+) (\S+)(?: (\S+))?")
 RE_DHCPNAK = re.compile(r"dnsmasq-dhcp\[\d+\]: DHCPNAK")
 RE_DHCPDIS = re.compile(r"dnsmasq-dhcp\[\d+\]: DHCPDISCOVER\(\S+\) (\S+)")
@@ -158,16 +164,67 @@ def wan_status():
     }
 
 
+def neigh_index():
+    by_ip = {}
+    by_mac = {}
+    raw = sh(["ip", "neigh", "show"])
+    for line in raw.splitlines():
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        ip = parts[0]
+        mac = ""
+        if "lladdr" in parts:
+            i = parts.index("lladdr")
+            if i + 1 < len(parts):
+                mac = parts[i + 1].lower()
+        st = parts[-1]
+        rec = {"ip": ip, "mac": mac, "state": st, "online": st in NEIGH_UP}
+        by_ip[ip] = rec
+        if mac:
+            prev = by_mac.get(mac)
+            if not prev or (not prev.get("online") and rec["online"]):
+                by_mac[mac] = rec
+    return by_ip, by_mac
+
+
+def proc_alive(needle):
+    needle = (needle or "").lower()
+    if not needle:
+        return False
+    raw = sh(["ps", "w"]) or sh(["ps"])
+    for line in raw.splitlines():
+        if needle in line.lower():
+            return True
+    return False
+
+
 def dhcp_leases():
     rows = []
+    by_ip, by_mac = neigh_index()
+    now = int(time.time())
     try:
         with open(LEASES, "r") as f:
             for line in f:
                 p = line.split()
                 if len(p) >= 4:
-                    rows.append({"mac": p[1].lower(), "ip": p[2], "name": p[3], "exp": int(p[0]) if p[0].isdigit() else 0})
+                    mac = p[1].lower()
+                    ip = p[2]
+                    name = p[3] if p[3] != "*" else ""
+                    exp = int(p[0]) if p[0].isdigit() else 0
+                    rec = by_ip.get(ip) or by_mac.get(mac) or {}
+                    rows.append({
+                        "mac": mac,
+                        "ip": ip,
+                        "name": name or "*",
+                        "exp": exp,
+                        "remain": max(0, exp - now) if exp else 0,
+                        "online": bool(rec.get("online")),
+                        "neigh": rec.get("state") or "",
+                    })
     except OSError:
         pass
+    rows.sort(key=lambda r: (not r.get("online"), (r.get("name") or "").lower(), r.get("ip") or ""))
     return rows
 
 
@@ -177,24 +234,82 @@ def iptv_snap():
     live = 0
     catchup = 0
     recent = []
+    now = time.time()
+    auth_running = proc_alive("iptv-auth.py")
+    r2h = proc_alive("rtp2httpd")
+    auth_ok = bool(st.get("auth_ok") if "auth_ok" in st else st.get("ok"))
     if isinstance(clients, dict):
-        for ip, c in list(clients.items())[:40]:
+        items = []
+        for ip, c in clients.items():
             if not isinstance(c, dict):
                 continue
+            try:
+                last = float(c.get("last") or 0)
+            except (TypeError, ValueError):
+                last = 0
+            items.append((ip, c, last))
+        items.sort(key=lambda x: -x[2])
+        for ip, c, last in items[:40]:
             ch = str(c.get("channel") or c.get("ch") or "")
             kind = "catchup" if "catchup" in ch.lower() or "playseek" in ch.lower() else "live"
-            if kind == "catchup":
-                catchup += 1
-            else:
-                live += 1
-            recent.append({"ip": ip, "channel": ch, "kind": kind, "ua": str(c.get("ua") or "")[:80]})
+            watching = last > 0 and (now - last) <= WATCH_SEC
+            if watching:
+                if kind == "catchup":
+                    catchup += 1
+                else:
+                    live += 1
+            recent.append({
+                "ip": ip,
+                "channel": ch,
+                "kind": kind,
+                "ua": str(c.get("ua") or "")[:80],
+                "last": int(last),
+                "watching": watching,
+            })
     return {
-        "auth_ok": bool(st.get("auth_ok") if "auth_ok" in st else st.get("ok")),
+        "auth_ok": auth_ok,
+        "online": bool(auth_running and auth_ok),
+        "auth_running": auth_running,
+        "rtp2httpd": r2h,
+        "last_run": str(st.get("last_run") or ""),
+        "next_run": str(st.get("next_run") or ""),
+        "channels": int(st.get("channels") or 0),
         "status": st,
         "live": live,
         "catchup": catchup,
         "clients": recent[:20],
     }
+
+
+def is_real_attack(row, now=None):
+    if int(row.get("auth_count") or 0) > 0:
+        return True
+    now = int(now or time.time())
+    recent = [(int(t), p) for t, p in (row.get("probe_ports") or []) if now - int(t) <= PROBE_WINDOW]
+    nports = len({p for t, p in recent if p})
+    return nports >= PROBE_PORT_MIN or len(recent) >= PROBE_HIT_MIN
+
+
+def note_probe(st, ip, dpt, proto, now):
+    pending = st.setdefault("probe_pending", {})
+    rec = pending.get(ip) or {"hits": [], "promoted": False}
+    already = bool(rec.get("promoted"))
+    rec["hits"] = [h for h in (rec.get("hits") or []) if now - h[0] <= PROBE_WINDOW]
+    rec["hits"].append((now, dpt, proto))
+    rec["hits"] = rec["hits"][-80:]
+    hits = rec["hits"]
+    nports = len({h[1] for h in hits if h[1]})
+    tcp_n = sum(1 for h in hits if h[2] == "tcp")
+    udp_n = sum(1 for h in hits if h[2] == "udp")
+    should = nports >= PROBE_PORT_MIN or tcp_n >= PROBE_HIT_MIN or udp_n >= PROBE_UDP_MIN
+    rec["promoted"] = already or should
+    rec["last"] = now
+    pending[ip] = rec
+    if not rec["promoted"]:
+        return None
+    if already:
+        return [(now, dpt, proto)]
+    return list(hits)
 
 
 def attack_tag(summary, ip, now):
@@ -267,17 +382,21 @@ def parse_line(line, st, now, nets, ports):
             dpt = 0
         proto = (m.group(2) or "TCP").split()[0].lower()
         if ip and not is_lan(ip, nets) and dpt not in ports:
-            ev = {"ts": now, "cat": "attack", "type": "probe", "svc": "fw", "ip": ip, "port": dpt, "proto": proto}
-            append_event(events, ev, now)
-            bump(hourly, now, "probe")
+            flushed = note_probe(st, ip, dpt, proto, now)
+            if not flushed:
+                return
             row = summary.setdefault(ip, {"ip": ip, "count": 0, "auth_count": 0, "probe_count": 0,
                                           "ports": [], "first_ts": now, "last_ts": now, "auth_ts": [], "probe_ports": []})
-            row["count"] += 1
-            row["probe_count"] += 1
-            row["last_ts"] = now
-            if dpt and dpt not in row["ports"]:
-                row["ports"].append(dpt)
-            row["probe_ports"].append((now, dpt))
+            for ts, port, pr in flushed:
+                ev = {"ts": ts, "cat": "attack", "type": "probe", "svc": "fw", "ip": ip, "port": port, "proto": pr}
+                append_event(events, ev, now)
+                bump(hourly, ts, "probe")
+                row["count"] += 1
+                row["probe_count"] += 1
+                row["last_ts"] = ts
+                if port and port not in row["ports"]:
+                    row["ports"].append(port)
+                row["probe_ports"].append((ts, port))
             attack_tag(summary, ip, now)
         return
 
@@ -396,6 +515,7 @@ def default_state():
         "dhcp_new_ts": [],
         "iptv_events": [],
         "dns_reset": 0,
+        "probe_pending": {},
     }
 
 
@@ -431,9 +551,29 @@ def build_snapshot(st, now):
             "iptv": int(row.get("iptv") or 0),
         })
 
+    pending = st.get("probe_pending") or {}
+    keep_p = {}
+    for ip, rec in pending.items():
+        hits = [h for h in (rec.get("hits") or []) if now - h[0] <= PROBE_WINDOW]
+        last = int(rec.get("last") or (hits[-1][0] if hits else 0))
+        if rec.get("promoted") and now - last <= 86400:
+            rec["hits"] = hits
+            keep_p[ip] = rec
+        elif hits:
+            rec["hits"] = hits
+            keep_p[ip] = rec
+    st["probe_pending"] = keep_p
+    st["attack"] = {ip: row for ip, row in st["attack"].items() if is_real_attack(row, now)}
+    real_ips = set(st["attack"])
+    st["events"] = [e for e in st["events"] if e.get("type") != "probe" or e.get("ip") in real_ips]
+
     attack_rows = []
     for ip, row in st["attack"].items():
         if now - int(row.get("last_ts") or 0) > 7 * 86400:
+            continue
+        if not is_real_attack(row, now):
+            continue
+        if int(row.get("auth_count") or 0) <= 0:
             continue
         attack_rows.append({
             "ip": ip,
@@ -451,7 +591,7 @@ def build_snapshot(st, now):
     last24 = now - 86400
     auth24 = sum(1 for e in st["events"] if e.get("type") == "auth" and e.get("ts", 0) >= last24)
     probe24 = sum(1 for e in st["events"] if e.get("type") == "probe" and e.get("ts", 0) >= last24)
-    src24 = {e.get("ip") for e in st["events"] if e.get("cat") == "attack" and e.get("ts", 0) >= last24 and e.get("ip")}
+    src24 = {e.get("ip") for e in st["events"] if e.get("type") == "auth" and e.get("ts", 0) >= last24 and e.get("ip")}
 
     dns = st["dns"]
     hot = [{"ip": k, "ts": v} for k, v in dns.get("hot", {}).items()]
@@ -461,16 +601,19 @@ def build_snapshot(st, now):
         "probe_available": bool(st.get("probe_seen")),
         "dns_available": bool(st.get("dns_available")),
         "cards": {
-            "attack_24h": auth24 + probe24,
+            "attack_24h": auth24,
             "auth_24h": auth24,
             "probe_24h": probe24,
             "sources_24h": len(src24),
             "pppoe_redial_24h": len(redials),
+            "pppoe_online": 1 if wan["up"] else 0,
             "dns_nx_24h": int(dns.get("nx") or 0),
             "dns_q_24h": int(dns.get("q") or 0),
             "dhcp_new_24h": len(new_dev),
+            "dhcp_online": sum(1 for x in leases if x.get("online")),
             "iptv_live": iptv.get("live") or 0,
             "iptv_catchup": iptv.get("catchup") or 0,
+            "iptv_online": 1 if iptv.get("online") else 0,
         },
         "series": series,
         "attack_summary": attack_rows[:80],
@@ -495,16 +638,23 @@ def build_snapshot(st, now):
         },
         "iptv": {
             "auth_ok": iptv.get("auth_ok"),
+            "online": bool(iptv.get("online")),
+            "auth_running": bool(iptv.get("auth_running")),
+            "rtp2httpd": bool(iptv.get("rtp2httpd")),
+            "last_run": iptv.get("last_run") or "",
+            "next_run": iptv.get("next_run") or "",
+            "channels": int(iptv.get("channels") or 0),
             "live": iptv.get("live") or 0,
             "catchup": iptv.get("catchup") or 0,
             "clients": iptv.get("clients") or [],
             "events": st["iptv_events"][-20:],
-            "running": os.path.exists("/usr/bin/iptv-auth.py"),
+            "running": bool(iptv.get("auth_running")),
         },
         "dhcp": {
             "leases": len(leases),
+            "online": sum(1 for x in leases if x.get("online")),
             "new_24h": len(new_dev),
-            "list": leases[:40],
+            "list": leases[:200],
             "events": st["dhcp_events"][-20:],
         },
         "blocked": blocked,
@@ -512,7 +662,7 @@ def build_snapshot(st, now):
 
 
 def pull_lines(cursor):
-    raw = sh(["logread", "-l", "500"])
+    raw = sh(["logread", "-l", "2000"])
     lines = raw.splitlines()
     if not lines:
         return [], cursor
@@ -565,17 +715,36 @@ def selftest():
     parse_line("luci: failed login on /cgi-bin/luci from 1.2.3.4", st, now, nets, ports)
     assert st["attack"]["1.2.3.4"]["auth_count"] == 1
     parse_line("atkmon: IN=pppoe-wan OUT= SRC=9.9.9.9 DST=10.0.0.1 PROTO=TCP SPT=1 DPT=3333", st, now, nets, ports)
-    assert st["attack"]["9.9.9.9"]["probe_count"] == 1
+    assert "9.9.9.9" not in st["attack"]
     parse_line("atkmon: IN=pppoe-wan OUT= SRC=9.9.9.9 DST=10.0.0.1 PROTO=TCP SPT=1 DPT=22", st, now, nets, ports)
-    assert st["attack"]["9.9.9.9"]["probe_count"] == 1
+    assert "9.9.9.9" not in st["attack"]
+    for port in (2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008):
+        parse_line("atkmon: IN=pppoe-wan OUT= SRC=9.9.9.9 DST=10.0.0.1 PROTO=TCP SPT=1 DPT=%d" % port, st, now, nets, ports)
+    assert st["attack"]["9.9.9.9"]["probe_count"] >= 8
+    assert len(st["attack"]["9.9.9.9"]["ports"]) >= 5
     parse_line("dnsmasq[1]: query[A] example.com from 192.168.10.20", st, now, nets, ports)
     assert st["dns"]["q"] == 1 and st["dns_available"]
+    parse_line("dnsmasq[1]: 11 192.168.10.124/3316 query[A] hicloud.com from 192.168.10.124", st, now, nets, ports)
+    assert st["dns"]["q"] == 2
     parse_line("dnsmasq[1]: config example.invalid is NXDOMAIN", st, now, nets, ports)
     assert st["dns"]["nx"] == 1
+    parse_line("dnsmasq[1]: 8 192.168.10.100/65358 reply nosuch.invalid is NXDOMAIN", st, now, nets, ports)
+    assert st["dns"]["nx"] == 2
     parse_line("dnsmasq-dhcp[1]: DHCPACK(br-lan) 192.168.10.50 aa:bb:cc:dd:ee:ff phone", st, now, nets, ports)
     assert st["dhcp_events"][-1]["type"] == "new"
     parse_line("rtp2httpd requested URL: /湖南卫视/catchup?playseek=1", st, now, nets, ports)
     assert st["iptv_events"][-1]["type"] == "catchup"
+    snap = iptv_snap()
+    assert "online" in snap and "auth_running" in snap
+    assert "channels" in snap
+    drows = dhcp_leases()
+    assert isinstance(drows, list)
+    full = build_snapshot(st, now)
+    shown = {r["ip"] for r in full["attack_summary"]}
+    assert "8.8.8.8" in shown
+    assert "1.2.3.4" in shown
+    assert "9.9.9.9" not in shown
+    assert full["cards"]["pppoe_online"] in (0, 1)
     print("atkmon selftest ok")
 
 

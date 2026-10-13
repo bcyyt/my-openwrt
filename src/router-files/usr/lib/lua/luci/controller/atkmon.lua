@@ -11,8 +11,10 @@ function index()
 	if not require("nixio.fs").access("/usr/bin/atkmon-collect.py") then
 		return
 	end
-	entry({"admin", "atkmon"}, firstchild(), _("安全监测"), 4).dependent = false
-	entry({"admin", "atkmon", "overview"}, template("atkmon/status"), _("总览"), 1)
+	-- First-level leaf, same pattern as 状态监控 (admin/statusmon).
+	-- Parent aliases to the page so APIs under admin/atkmon/* still dispatch.
+	entry({"admin", "atkmon"}, alias("admin", "atkmon", "overview"), _("安全监测"), 4).dependent = false
+	entry({"admin", "atkmon", "overview"}, template("atkmon/status")).leaf = true
 	entry({"admin", "atkmon", "data"}, call("action_data")).leaf = true
 	entry({"admin", "atkmon", "events"}, call("action_events")).leaf = true
 	entry({"admin", "atkmon", "block"}, call("action_block")).leaf = true
@@ -79,7 +81,7 @@ function action_events()
 	local raw = fs.readfile("/var/lib/atkmon/events.jsonl") or ""
 	for line in raw:gmatch("[^\n]+") do
 		local ev = jsonc.parse(line)
-		if ev and (ip == "" or ev.ip == ip) then
+		if ev and ev.type ~= "probe" and ev.type ~= "scan" and (ip == "" or ev.ip == ip) then
 			out[#out + 1] = ev
 		end
 	end
@@ -108,6 +110,28 @@ local function block_list()
 		end
 	end
 	return out, uci
+end
+
+local function save_block(uci, list)
+	uci:delete("atkmon", "main", "block")
+	if #list > 0 then
+		if uci.set_list then
+			uci:set_list("atkmon", "main", "block", list)
+		else
+			for _, x in ipairs(list) do
+				uci:add_list("atkmon", "main", "block", x)
+			end
+		end
+	end
+	uci:commit("atkmon")
+end
+
+local function apply_nft()
+	local out = sys_exec("/usr/bin/atkmon-nft.sh; echo EXIT:$?")
+	if out:match("EXIT:[1-9]") then
+		return false, out
+	end
+	return true, out
 end
 
 local function read_ip()
@@ -143,12 +167,12 @@ function action_block()
 	if not found then
 		list[#list + 1] = ip
 	end
-	uci:delete("atkmon", "main", "block")
-	for _, x in ipairs(list) do
-		uci:add_list("atkmon", "main", "block", x)
+	save_block(uci, list)
+	local ok, detail = apply_nft()
+	if not ok then
+		json_write({ ok = false, error = "防火墙写入失败", blocked = list, detail = detail })
+		return
 	end
-	uci:commit("atkmon")
-	sys_exec("/usr/bin/atkmon-nft.sh")
 	json_write({ ok = true, blocked = list })
 end
 
@@ -159,11 +183,11 @@ function action_unblock()
 	for _, x in ipairs(list) do
 		if x ~= ip then keep[#keep + 1] = x end
 	end
-	uci:delete("atkmon", "main", "block")
-	for _, x in ipairs(keep) do
-		uci:add_list("atkmon", "main", "block", x)
+	save_block(uci, keep)
+	local ok, detail = apply_nft()
+	if not ok then
+		json_write({ ok = false, error = "防火墙写入失败", blocked = keep, detail = detail })
+		return
 	end
-	uci:commit("atkmon")
-	sys_exec("/usr/bin/atkmon-nft.sh")
 	json_write({ ok = true, blocked = keep })
 end

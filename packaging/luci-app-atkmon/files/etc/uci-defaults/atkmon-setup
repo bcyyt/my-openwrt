@@ -1,6 +1,12 @@
 #!/bin/sh
 chmod 755 /etc/init.d/atkmon /usr/bin/atkmon-collect.py /usr/bin/atkmon-nft.sh 2>/dev/null || true
 
+# Duplicate log-facility (UCI DAEMON + conf /dev/null) crashes dnsmasq.
+if [ -f /etc/dnsmasq.conf ] && grep -qE '^[[:space:]]*log-facility=/dev/null' /etc/dnsmasq.conf; then
+	sed -i 's|^[[:space:]]*log-facility=/dev/null|# log-facility=/dev/null|' /etc/dnsmasq.conf
+	/etc/init.d/dnsmasq restart >/dev/null 2>&1 || true
+fi
+
 if [ "$(uci -q get atkmon.main.dns_log)" != "0" ]; then
 	sec=$(uci -q show dhcp 2>/dev/null | sed -n 's/^\(dhcp\.[^=]*\)=dnsmasq$/\1/p' | head -n 1)
 	if [ -n "$sec" ]; then
