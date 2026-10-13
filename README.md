@@ -11,7 +11,7 @@ ImmortalWrt / OpenWrt 插件：IPTV 代理、影视中心、状态监控、网�
 | `luci-app-statusmon` | 4.29 | noarch | 状态监控；客户端分页；PPPoE 流量跨重拨累计；rtp2httpd 快捷入口新开页；显示固件与内核 |
 | `luci-app-netqueue` | 1.0.16-r0 | noarch | 网络优化：转发、DHCP、DNS、静态 IP、过期 ARP 清理 |
 | `luci-app-syskeep` | 1.0.18-r0 | noarch | 保留升级：刷机还原网络/接口/防火墙；备份优先拷贝路由器本地安装包；日志逐条写出自装插件 |
-| `luci-app-atkmon` | 1.0.2-r0 | noarch | 安全监测：真实爆破、PPPoE 在线/IP、DNS、IPTV、DHCP；手动拉黑 |
+| `luci-app-atkmon` | 1.0.4-r0 | noarch | 安全监测：爆破目标/来源端口、手机卡片；PPPoE、DNS、IPTV、DHCP；手动拉黑 |
 
 APK 在 `packages/`，用 `keys/my-openwrt.rsa` 签名。
 影视中心只有 APK。其余插件另有 x86_64 IPK，供传统 opkg 使用。
@@ -39,7 +39,7 @@ apk add luci-app-netqueue-1.0.16-r0.apk
 apk add luci-app-syskeep-1.0.18-r0.apk
 
 # 安全监测
-apk add luci-app-atkmon-1.0.2-r0.apk
+apk add luci-app-atkmon-1.0.4-r0.apk
 ```
 
 签名未信任时：
@@ -65,7 +65,7 @@ opkg install luci-app-netqueue_1.0.16-r0_x86_64.ipk
 opkg install luci-app-syskeep_1.0.18-r0_x86_64.ipk
 
 # 安全监测
-opkg install luci-app-atkmon_1.0.2-r0_x86_64.ipk
+opkg install luci-app-atkmon_1.0.4-r0_x86_64.ipk
 ```
 
 ## IPTV

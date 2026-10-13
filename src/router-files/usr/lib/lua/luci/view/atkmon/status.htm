@@ -9,23 +9,25 @@
   --iptv-card-bg:#fff;--iptv-border:#e2e8f0;--iptv-text:#334155;--iptv-muted:#64748b;
   --iptv-terminal-bg:#1a1a2e;--iptv-terminal-border:#2d2d44;
 }
-.am-wrap{max-width:1240px;margin:0 auto 36px;color:var(--iptv-text)}
+.am-wrap,.am-wrap *{box-sizing:border-box}
+.am-wrap{min-width:0;max-width:1240px;width:100%;margin:0 auto 36px;padding:0 2px;color:var(--iptv-text);overflow-x:hidden}
+.cbi-map,#maincontent{max-width:100%}
 .am-head{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:16px}
-.am-head h2{margin:0}
+.am-head h2{margin:0;font-size:22px;line-height:1.2}
 .am-ver{display:inline-block;background:linear-gradient(135deg,var(--iptv-primary),var(--iptv-primary-dark));color:#fff;font-size:12px;font-weight:600;padding:3px 12px;border-radius:12px;box-shadow:0 2px 6px rgba(74,144,217,.25);line-height:1.6}
-.am-sub{font-size:12px;color:var(--iptv-muted);margin-left:4px}
+.am-sub{font-size:12px;color:var(--iptv-muted);margin-left:4px;flex:1 1 auto;min-width:0}
 .am-tog{margin-left:auto;display:flex;gap:8px}
 .am-tog button{border:1px solid var(--iptv-border);background:#fff;color:var(--iptv-text);padding:6px 14px;font-size:12px;cursor:pointer;border-radius:8px}
 .am-tog button.on{background:var(--iptv-primary);color:#fff;border-color:var(--iptv-primary)}
-.am-hero{display:grid;grid-template-columns:repeat(5,1fr);gap:1px;background:var(--iptv-border);border:1px solid var(--iptv-border);border-radius:12px;overflow:hidden;margin-bottom:16px}
-.am-hero>div{background:var(--iptv-card-bg);padding:14px 18px;min-width:0}
+.am-hero{display:grid;grid-template-columns:repeat(5,1fr);gap:1px;background:var(--iptv-border);border:1px solid var(--iptv-border);border-radius:12px;overflow:hidden;margin-bottom:16px;min-width:0}
+.am-hero>div{background:var(--iptv-card-bg);padding:14px 18px;min-width:0;overflow:hidden}
 .am-k{font-size:12px;color:var(--iptv-muted);letter-spacing:.3px}
 .am-n{font-size:22px;font-weight:700;line-height:1.3;margin-top:6px;color:var(--iptv-primary);word-break:break-all}
 .am-n.bad{color:var(--iptv-error)}.am-n.warn{color:var(--iptv-warn)}.am-n.ok{color:var(--iptv-success)}
 .am-s{font-size:12px;color:var(--iptv-muted);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.am-grid{display:grid;grid-template-columns:1.6fr 1fr;gap:12px;margin-bottom:16px}
-.am-card{background:var(--iptv-card-bg);border:1px solid var(--iptv-border);border-radius:12px;padding:16px 18px}
-.am-h{font-size:15px;font-weight:600;margin:0 0 12px;display:flex;justify-content:space-between;align-items:center;gap:8px;color:#475569}
+.am-grid{display:grid;grid-template-columns:1.6fr 1fr;gap:12px;margin-bottom:16px;min-width:0}
+.am-card{background:var(--iptv-card-bg);border:1px solid var(--iptv-border);border-radius:12px;padding:16px 18px;min-width:0;overflow:hidden}
+.am-h{font-size:15px;font-weight:600;margin:0 0 12px;display:flex;justify-content:space-between;align-items:center;gap:8px;color:#475569;flex-wrap:wrap}
 .am-note{font-size:12px;color:#94a3b8;font-weight:400}
 .am-svg{width:100%;height:148px;display:block}
 .am-bars{display:flex;flex-direction:column;gap:8px}
@@ -33,7 +35,9 @@
 .am-bar .lab{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:Consolas,Monaco,monospace}
 .am-track{height:7px;background:#e2e8f0;border-radius:99px;overflow:hidden}
 .am-fill{height:100%;background:var(--iptv-primary);border-radius:99px}
-.am-table{width:100%;border-collapse:collapse;font-size:13px;background:var(--iptv-card-bg);border:1px solid var(--iptv-border);border-radius:10px;overflow:hidden}
+.am-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%}
+.am-table{width:100%;border-collapse:collapse;font-size:13px;background:var(--iptv-card-bg);border:1px solid var(--iptv-border);border-radius:10px}
+.am-table td::before{display:none}
 .am-table th{text-align:left;font-size:12px;color:var(--iptv-muted);font-weight:600;padding:8px 12px;background:#f1f5f9}
 .am-table td{padding:9px 12px;border-top:1px solid var(--iptv-border);color:var(--iptv-text);vertical-align:middle}
 .am-tag{display:inline-block;padding:1px 8px;border-radius:10px;font-size:11px;font-weight:600}
@@ -45,9 +49,11 @@
 .am-btn.ok{background:var(--iptv-success-bg);color:var(--iptv-success);border-color:var(--iptv-success-border)}
 .am-btn.pri{background:var(--iptv-primary);color:#fff;border-color:var(--iptv-primary)}
 .am-btn:hover{opacity:.9}
-.am-cols{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}
+.am-cols{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;min-width:0}
+.am-split{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0;min-width:0}
 .am-list{margin:0;padding:0;list-style:none;font-size:13px}
-.am-list li{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px dashed var(--iptv-border)}
+.am-list li{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px dashed var(--iptv-border);flex-wrap:wrap}
+.am-list li span{min-width:0;word-break:break-all}
 .am-log{max-height:280px;overflow:auto;background:var(--iptv-terminal-bg);color:#a5f3fc;padding:14px;font:13px/1.6 Consolas,Monaco,monospace;white-space:pre-wrap;border-radius:10px;border:1px solid var(--iptv-terminal-border)}
 .am-empty{color:var(--iptv-muted);padding:18px 0;text-align:center;font-size:13px}
 .am-okbox{background:var(--iptv-success-bg);border:1px solid var(--iptv-success-border);color:var(--iptv-success);padding:8px 10px;font-size:12px;margin-bottom:8px;border-radius:8px}
@@ -56,21 +62,55 @@
 .am-dot.on{background:#4caf50;box-shadow:0 0 0 3px rgba(46,125,50,.15)}
 .am-dot.off{background:#cbd5e1}
 .am-big{font-size:20px;font-weight:700;margin:2px 0 8px}
-.am-meta{font-size:12px;color:var(--iptv-muted);margin-bottom:10px;line-height:1.55}
+.am-meta{font-size:12px;color:var(--iptv-muted);margin-bottom:10px;line-height:1.55;word-break:break-word}
 .am-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 12px}
-.am-in{border:1px solid var(--iptv-border);background:#fff;font:12px Consolas,Monaco,monospace;padding:6px 10px;min-width:180px;flex:1;border-radius:8px}
+.am-in{border:1px solid var(--iptv-border);background:#fff;font:12px Consolas,Monaco,monospace;padding:6px 10px;min-width:0;flex:1 1 160px;border-radius:8px}
 .am-host{font-weight:600}
 .am-mac{color:var(--iptv-muted);font-size:12px;font-family:Consolas,Monaco,monospace}
-.am-pager{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:10px;font-size:12px;color:var(--iptv-muted)}
+.am-pager{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:10px;font-size:12px;color:var(--iptv-muted);flex-wrap:wrap}
 .am-pager button{border:1px solid var(--iptv-border);background:#fff;border-radius:8px;padding:4px 10px;cursor:pointer}
 .am-pager button:disabled{opacity:.4;cursor:default}
-@media(max-width:1100px){.am-hero{grid-template-columns:repeat(3,1fr)}.am-grid,.am-cols{grid-template-columns:1fr}}
-@media(max-width:720px){.am-hero{grid-template-columns:1fr}}
+@media(max-width:1100px){
+  .am-hero{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .am-grid,.am-cols{grid-template-columns:1fr}
+}
+@media(max-width:720px){
+  .am-wrap{padding:0;margin-bottom:20px}
+  .am-head{gap:6px 8px;margin-bottom:12px}
+  .am-head h2{font-size:18px}
+  .am-tog{margin-left:0}
+  .am-tog button{min-height:36px;padding:6px 16px}
+  .am-hero{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .am-hero>div{padding:12px}
+  .am-n{font-size:18px}
+  .am-card{padding:12px}
+  .am-h{font-size:14px}
+  .am-bar{grid-template-columns:1fr 36px;gap:6px}
+  .am-bar .lab{grid-column:1/-1}
+  .am-split{grid-template-columns:1fr}
+  .am-in{flex:1 1 100%}
+  .am-btn{min-height:36px;padding:6px 12px}
+  .am-pager{justify-content:space-between}
+  .am-pager button{min-height:36px;padding:6px 14px}
+  .am-log{font-size:12px;padding:10px;word-break:break-all}
+  .am-table thead{display:none}
+  .am-table,.am-table tbody,.am-table tr,.am-table td{display:block;width:100%}
+  .am-table{border:0;background:transparent}
+  .am-table tr{border:1px solid var(--iptv-border);border-radius:10px;margin-bottom:8px;background:var(--iptv-card-bg);overflow:hidden}
+  .am-table td{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 12px;border-top:1px solid var(--iptv-border);word-break:break-all}
+  .am-table tr td:first-child{border-top:0;font-weight:600}
+  .am-table td::before{display:inline;content:attr(data-k);flex:0 0 72px;color:var(--iptv-muted);font-size:12px;font-weight:400}
+  .am-table td[data-k=""]::before,.am-table td:not([data-k])::before{content:none;flex:0}
+}
+@media(max-width:480px){
+  .am-hero{grid-template-columns:minmax(0,1fr)}
+  .am-hero>div{padding:10px 12px}
+}
 </style>
 <div class="am-wrap">
   <div class="am-head">
     <h2>安全监测</h2>
-    <span class="am-ver">1.0.2</span>
+    <span class="am-ver">1.0.4</span>
     <span class="am-sub" id="am-ts">采集中</span>
     <div class="am-tog">
       <button type="button" class="on" data-r="24" onclick="amRange(24,this)">24h</button>
@@ -103,7 +143,7 @@
     </div>
     <div style="overflow-x:auto">
       <table class="am-table">
-        <thead><tr><th>地址</th><th>标记</th><th>次数</th><th>爆破</th><th>端口</th><th>最近</th><th></th></tr></thead>
+        <thead><tr><th>地址</th><th>标记</th><th>次数</th><th>爆破</th><th>端口</th><th>来源端口</th><th>最近</th><th></th></tr></thead>
         <tbody id="am-atk-body"></tbody>
       </table>
     </div>
@@ -119,7 +159,7 @@
     <div class="am-card">
       <div class="am-h">DNS<span class="am-note" id="dns-flag"></span></div>
       <div class="am-meta" id="dns-meta"></div>
-      <div class="am-cols" style="grid-template-columns:1fr 1fr;gap:8px;margin:0">
+      <div class="am-split">
         <div><div class="am-k">高频域名</div><ul class="am-list" id="dns-top"></ul></div>
         <div><div class="am-k">NXDOMAIN</div><ul class="am-list" id="dns-nx"></ul></div>
       </div>
@@ -137,7 +177,7 @@
     <div class="am-card">
       <div class="am-h">DHCP 终端<span class="am-note" id="dhcp-flag"></span></div>
       <div class="am-meta" id="dhcp-meta"></div>
-      <div style="overflow-x:auto">
+      <div class="am-scroll">
         <table class="am-table">
           <thead><tr><th>状态</th><th>主机</th><th>地址</th><th>MAC</th><th>剩余</th></tr></thead>
           <tbody id="dhcp-body"></tbody>
@@ -216,7 +256,7 @@ function renderAtk(rows,blocked){
   var body=document.getElementById("am-atk-body");
   var cut=Date.now()/1000-(RANGE===24?86400:7*86400);
   rows=onlyAuth(rows).filter(function(r){return (r.last_ts||0)>=cut});
-  if(!rows.length){body.innerHTML='<tr><td colspan="7" class="am-empty">这段时间没有登录爆破</td></tr>';drawPager("am-atk-pager","atk",{total:0,page:1,pages:1});return}
+  if(!rows.length){body.innerHTML='<tr><td colspan="8" class="am-empty">这段时间没有登录爆破</td></tr>';drawPager("am-atk-pager","atk",{total:0,page:1,pages:1});return}
   var blk={};(blocked||[]).forEach(function(ip){blk[ip]=1});
   var pg=pageOf(rows,"atk");
   body.innerHTML=pg.rows.map(function(r){
@@ -224,7 +264,7 @@ function renderAtk(rows,blocked){
     var btn=on
       ? '<button class="am-btn ok" onclick="amUnblock(\''+esc(ip)+'\')">解除</button>'
       : '<button class="am-btn bad" onclick="amBlock(\''+esc(ip)+'\')">拉黑</button>';
-    return '<tr><td>'+esc(ip)+'</td><td><span class="am-tag auth">爆破</span></td><td>'+(r.count||0)+'</td><td>'+(r.auth_count||0)+'</td><td>'+esc((r.ports||[]).join(","))+'</td><td>'+fmtTs(r.last_ts)+'</td><td>'+btn+'</td></tr>';
+    return '<tr><td data-k="地址">'+esc(ip)+'</td><td data-k="标记"><span class="am-tag auth">爆破</span></td><td data-k="次数">'+(r.count||0)+'</td><td data-k="爆破">'+(r.auth_count||0)+'</td><td data-k="端口">'+esc((r.ports||[]).join(",")||"-")+'</td><td data-k="来源端口">'+esc((r.sports||[]).join(",")||"-")+'</td><td data-k="最近">'+fmtTs(r.last_ts)+'</td><td data-k="操作">'+btn+'</td></tr>';
   }).join("");
   drawPager("am-atk-pager","atk",pg);
 }
@@ -247,11 +287,11 @@ function renderDhcp(d){
   var pg=pageOf(list,"dhcp",8);
   body.innerHTML=pg.rows.map(function(r){
     var live=!!r.online;
-    return '<tr><td><span class="am-dot '+(live?"on":"off")+'"></span>'+(live?"在线":"离线")+"</td>"+
-      '<td><span class="am-host">'+esc(r.name||"*")+"</span></td>"+
-      "<td>"+esc(r.ip||"-")+"</td>"+
-      '<td class="am-mac">'+esc(r.mac||"-")+"</td>"+
-      "<td>"+dur(r.remain||0)+"</td></tr>";
+    return '<tr><td data-k="状态"><span class="am-dot '+(live?"on":"off")+'"></span>'+(live?"在线":"离线")+"</td>"+
+      '<td data-k="主机"><span class="am-host">'+esc(r.name||"*")+"</span></td>"+
+      '<td data-k="地址">'+esc(r.ip||"-")+"</td>"+
+      '<td data-k="MAC" class="am-mac">'+esc(r.mac||"-")+"</td>"+
+      '<td data-k="剩余">'+dur(r.remain||0)+"</td></tr>";
   }).join("");
   drawPager("dhcp-pager","dhcp",pg);
 }
@@ -327,7 +367,9 @@ function renderLog(){
   var src=rows.slice().reverse();
   var pg=pageOf(src,"log",12);
   el.textContent=pg.rows.map(function(e){
-    return fmtTs(e.ts)+"  "+(e.cat||"")+"/"+(e.type||"")+"  "+(e.ip||"")+"  "+(e.channel||e.user||e.msg||"")+"  "+(e.port||"");
+    var host=e.ip||"";
+    if(e.sport) host+=":"+e.sport;
+    return fmtTs(e.ts)+"  "+(e.cat||"")+"/"+(e.type||"")+"  "+host+"  "+(e.channel||e.user||e.msg||"")+"  "+(e.port||"");
   }).join("\n");
   drawPager("am-log-pager","log",pg);
 }

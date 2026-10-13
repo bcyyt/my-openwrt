@@ -120,8 +120,82 @@ def is_lan(ip, nets):
     return any(addr in n for n in nets)
 
 
+def parse_sport(s):
+    s = (s or "").strip().strip("[]")
+    if s.count(":") == 1 and "." in s:
+        rest = s.rsplit(":", 1)[1]
+        try:
+            n = int(rest)
+            if 1 <= n <= 65535:
+                return n
+        except ValueError:
+            pass
+    return 0
+
+
+def ssh_listen_port():
+    raw = uci_get("dropbear.@dropbear[0].Port") or "22"
+    try:
+        n = int(raw)
+        if 1 <= n <= 65535:
+            return n
+    except ValueError:
+        pass
+    return 22
+
+
+def add_port(row, port):
+    try:
+        port = int(port)
+    except (TypeError, ValueError):
+        return
+    if port <= 0:
+        return
+    lst = row.setdefault("ports", [])
+    if port not in lst:
+        lst.append(port)
+
+
+def add_sport(row, sport):
+    try:
+        sport = int(sport)
+    except (TypeError, ValueError):
+        return
+    if sport <= 0:
+        return
+    lst = row.setdefault("sports", [])
+    if sport not in lst:
+        lst.append(sport)
+    if len(lst) > 12:
+        del lst[:-12]
+
+
 def hour_key(ts):
     return str(int(ts) // 3600 * 3600)
+
+
+def auth_ports_from_events(events):
+    dports = {}
+    sports = {}
+    for e in events or []:
+        if e.get("type") != "auth":
+            continue
+        ip = e.get("ip")
+        if not ip:
+            continue
+        p = e.get("port")
+        if p == 2323:
+            p = 22
+        if p:
+            lst = dports.setdefault(ip, [])
+            if p not in lst:
+                lst.append(p)
+        sp = e.get("sport")
+        if sp:
+            sl = sports.setdefault(ip, [])
+            if sp not in sl:
+                sl.append(sp)
+    return dports, sports
 
 
 def prune_hourly(hourly, now):
@@ -344,7 +418,9 @@ def parse_line(line, st, now, nets, ports):
         ip = parse_ip(m.group(2))
         if ip and not is_lan(ip, nets):
             user = m.group(1) or ""
-            ev = {"ts": now, "cat": "attack", "type": "auth", "svc": "ssh", "ip": ip, "user": user, "port": 2323}
+            dport = ssh_listen_port()
+            sport = parse_sport(m.group(2))
+            ev = {"ts": now, "cat": "attack", "type": "auth", "svc": "ssh", "ip": ip, "user": user, "port": dport, "sport": sport}
             append_event(events, ev, now)
             bump(hourly, now, "auth")
             row = summary.setdefault(ip, {"ip": ip, "count": 0, "auth_count": 0, "probe_count": 0,
@@ -353,6 +429,8 @@ def parse_line(line, st, now, nets, ports):
             row["auth_count"] += 1
             row["last_ts"] = now
             row["auth_ts"].append(now)
+            add_port(row, dport)
+            add_sport(row, sport)
             attack_tag(summary, ip, now)
         return
 
@@ -360,7 +438,8 @@ def parse_line(line, st, now, nets, ports):
     if m:
         ip = parse_ip(m.group(1))
         if ip and not is_lan(ip, nets):
-            ev = {"ts": now, "cat": "attack", "type": "auth", "svc": "luci", "ip": ip, "port": 80}
+            dport = 443 if "https" in line.lower() else 80
+            ev = {"ts": now, "cat": "attack", "type": "auth", "svc": "luci", "ip": ip, "port": dport}
             append_event(events, ev, now)
             bump(hourly, now, "auth")
             row = summary.setdefault(ip, {"ip": ip, "count": 0, "auth_count": 0, "probe_count": 0,
@@ -369,6 +448,7 @@ def parse_line(line, st, now, nets, ports):
             row["auth_count"] += 1
             row["last_ts"] = now
             row["auth_ts"].append(now)
+            add_port(row, dport)
             attack_tag(summary, ip, now)
         return
 
@@ -568,6 +648,7 @@ def build_snapshot(st, now):
     st["events"] = [e for e in st["events"] if e.get("type") != "probe" or e.get("ip") in real_ips]
 
     attack_rows = []
+    auth_dports, auth_sports = auth_ports_from_events(st["events"])
     for ip, row in st["attack"].items():
         if now - int(row.get("last_ts") or 0) > 7 * 86400:
             continue
@@ -575,13 +656,22 @@ def build_snapshot(st, now):
             continue
         if int(row.get("auth_count") or 0) <= 0:
             continue
+        ports = list(row.get("ports") or [])
+        for p in (auth_dports.get(ip) or []):
+            if p not in ports:
+                ports.append(p)
+        sports = list(row.get("sports") or [])
+        for s in (auth_sports.get(ip) or []):
+            if s not in sports:
+                sports.append(s)
         attack_rows.append({
             "ip": ip,
             "tag": row.get("tag") or "probe",
             "count": row.get("count") or 0,
             "auth_count": row.get("auth_count") or 0,
             "probe_count": row.get("probe_count") or 0,
-            "ports": (row.get("ports") or [])[:12],
+            "ports": ports[:12],
+            "sports": sports[:12],
             "first_ts": row.get("first_ts") or 0,
             "last_ts": row.get("last_ts") or 0,
             "blocked": ip in blocked,
@@ -710,10 +800,15 @@ def selftest():
     st = default_state()
     parse_line("dropbear[1]: Bad password attempt for 'root' from 8.8.8.8:4242", st, now, nets, ports)
     assert st["attack"]["8.8.8.8"]["auth_count"] == 1, st["attack"]
+    assert st["attack"]["8.8.8.8"]["ports"] == [22], st["attack"]["8.8.8.8"]
+    assert st["events"][-1]["port"] == 22
+    assert st["events"][-1]["sport"] == 4242
+    assert st["attack"]["8.8.8.8"]["sports"] == [4242]
     parse_line("dropbear[1]: Bad password attempt for 'root' from 192.168.10.2:4242", st, now, nets, ports)
     assert "192.168.10.2" not in st["attack"]
     parse_line("luci: failed login on /cgi-bin/luci from 1.2.3.4", st, now, nets, ports)
     assert st["attack"]["1.2.3.4"]["auth_count"] == 1
+    assert st["attack"]["1.2.3.4"]["ports"] == [80]
     parse_line("atkmon: IN=pppoe-wan OUT= SRC=9.9.9.9 DST=10.0.0.1 PROTO=TCP SPT=1 DPT=3333", st, now, nets, ports)
     assert "9.9.9.9" not in st["attack"]
     parse_line("atkmon: IN=pppoe-wan OUT= SRC=9.9.9.9 DST=10.0.0.1 PROTO=TCP SPT=1 DPT=22", st, now, nets, ports)
@@ -744,6 +839,10 @@ def selftest():
     assert "8.8.8.8" in shown
     assert "1.2.3.4" in shown
     assert "9.9.9.9" not in shown
+    by_ip = {r["ip"]: r for r in full["attack_summary"]}
+    assert 22 in (by_ip["8.8.8.8"].get("ports") or [])
+    assert 80 in (by_ip["1.2.3.4"].get("ports") or [])
+    assert 4242 in (by_ip["8.8.8.8"].get("sports") or [])
     assert full["cards"]["pppoe_online"] in (0, 1)
     print("atkmon selftest ok")
 
