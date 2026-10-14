@@ -1,5 +1,0 @@
-config atkmon 'main'
-	option enabled '1'
-	option wan_if ''
-	option dns_log '1'
-	option open_ports '22 80 443 2323 23232 2000 23234 554 16601 8080 8443'

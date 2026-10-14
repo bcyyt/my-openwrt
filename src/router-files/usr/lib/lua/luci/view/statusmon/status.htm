@@ -21,10 +21,12 @@
 .sm-ch .meta{font-size:11px;color:var(--sm-g400);white-space:nowrap;font-variant-numeric:tabular-nums}
 .sm-cb{padding:18px}
 .sm-grid{display:grid;gap:14px;margin-bottom:14px}
-.sm-g4{grid-template-columns:repeat(4,1fr)}.sm-g2{grid-template-columns:repeat(2,1fr)}
-.sm-gcl{display:grid;grid-template-columns:2fr 1fr;gap:14px;margin-bottom:14px}
-@media(max-width:1100px){.sm-g4{grid-template-columns:repeat(2,1fr)}.sm-g2,.sm-gcl{grid-template-columns:1fr}}
-@media(max-width:720px){.sm-g4{grid-template-columns:1fr}.sm-cb{padding:14px}.sm-stat{padding:14px}.sm-sv{font-size:20px}}
+.sm-g3{grid-template-columns:repeat(3,1fr)}
+.sm-g3 .sm-card{display:flex;flex-direction:column;min-width:0}
+.sm-g3 .sm-cb{flex:1;display:flex;flex-direction:column}
+.sm-g3 .sm-spk{margin-top:auto}
+@media(max-width:900px){.sm-g3{grid-template-columns:1fr}}
+@media(max-width:720px){.sm-cb{padding:14px}.sm-stat{padding:14px}.sm-sv{font-size:20px}}
 /* 快捷入口 */
 .sm-sc{display:flex;gap:8px;flex-wrap:wrap;padding:2px 0 14px}
 .sm-sc a{display:inline-flex;align-items:center;gap:7px;padding:8px 14px;border-radius:999px;border:1px solid var(--sm-g200);background:#fff;text-decoration:none;color:var(--sm-g600);font-size:12.5px;font-weight:500;transition:all .18s;box-shadow:0 1px 2px rgba(16,24,40,.04)}
@@ -41,14 +43,15 @@
 .sm-ss{font-size:11px;color:var(--sm-g400);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sm-sbar{height:4px;border-radius:2px;background:var(--sm-g100);margin-top:9px;overflow:hidden}
 .sm-sfill{height:100%;border-radius:2px;transition:width .6s ease,background .3s}
-/* 进度环+趋势 */
+/* 指标行 */
 .sm-rw{display:flex;align-items:center;gap:20px}
+.sm-ri{flex:1;min-width:0}
+/* 占用环 */
 .sm-ring{width:100px;height:100px;position:relative;flex-shrink:0}
 .sm-ring svg{transform:rotate(-90deg)}
 .sm-rbg{stroke:var(--sm-g100);stroke-width:7;fill:none}
 .sm-rfg{stroke-width:7;fill:none;stroke-linecap:round;transition:stroke-dashoffset .8s ease}
 .sm-rt{position:absolute;top:0;left:0;width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;color:var(--sm-g900);font-variant-numeric:tabular-nums}
-.sm-ri{flex:1;min-width:0}
 .sm-rr{display:flex;justify-content:space-between;font-size:12px;margin:5px 0;gap:10px}
 .sm-rl{color:var(--sm-g400);white-space:nowrap;flex-shrink:0}
 .sm-rr.long .sm-rl{min-width:64px}
@@ -187,9 +190,24 @@
 .sm-flow-div{border-top:1px dashed var(--sm-g200);margin:16px 0}
 .sm-flow-daily{display:grid;grid-template-columns:300px 1fr;gap:18px}
 @media(max-width:1000px){.sm-flow-daily{grid-template-columns:1fr}}
-.sm-sysh-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:18px}
-@media(max-width:1000px){.sm-sysh-grid{grid-template-columns:1fr}}
+/* 系统性能面板：系统 / CPU / 内存 合成单面板，无小标题、无分割线；CPU 与内存占用合并为同一基线的双曲线 */
+.sm-perf-info{display:grid;grid-template-columns:repeat(3,1fr);gap:22px;align-items:start;margin-bottom:16px}
+.sm-perf-col{min-width:0;display:flex;flex-direction:column}
+.sm-perf-col .sm-spk{border-top:none}
+.sm-perf-chart .sm-flow-head{gap:8px}
+.sm-perf-chart .sm-flow-cur{font-size:14px}
+@media(max-width:900px){.sm-perf-info{grid-template-columns:repeat(2,1fr);gap:18px 22px}}
+@media(max-width:600px){
+  .sm-perf-info{grid-template-columns:1fr;gap:18px}
+  .sm-perf-col .sm-rw{flex-direction:row;align-items:center;gap:16px}
+  .sm-ring,.sm-uptime-block{width:80px;height:80px}
+  .sm-ring svg{width:80px;height:80px}
+  .sm-rt{font-size:16px}.sm-uptime-big{font-size:16px}.sm-uptime-sub{font-size:10px}}
+.sm-flow-head.wrap{flex-wrap:wrap;row-gap:3px}
 .sm-flow-legend.temp{color:var(--sm-w)}
+.sm-flow-legend.disk{color:var(--sm-ac)}
+.sm-flow-legend.cpu{color:var(--sm-p)}
+.sm-flow-legend.mem{color:var(--sm-s)}
 .sm-ft-t{font-size:11px;color:var(--sm-g400);letter-spacing:.5px;margin-bottom:10px}
 .sm-ft-row{display:flex;justify-content:space-between;align-items:baseline;padding:8px 0;border-bottom:1px solid var(--sm-g50);font-size:12.5px}
 .sm-ft-row:last-child{border-bottom:none}
@@ -227,7 +245,7 @@
 @media(max-width:1100px){
   .sm-pg{grid-template-columns:1fr 1fr}
   .sm-pi.ext-hl{grid-column:1/-1}
-  .sm-flow-grid,.sm-sysh-grid,.sm-flow-daily{grid-template-columns:1fr}
+  .sm-flow-grid,.sm-flow-daily{grid-template-columns:1fr}
 }
 @media(max-width:720px){
   .sm-pg{grid-template-columns:1fr 1fr}
@@ -236,11 +254,34 @@
   .sm-cnm{max-width:120px}
   .sm-flow-yaxis{width:40px;font-size:8.5px}
   .sm-table th,.sm-table td{padding:8px 10px}
+  /* 卡片标题栏窄屏换行，避免右侧 meta 被卡片 overflow:hidden 裁掉 */
+  .sm-ch{flex-wrap:wrap;row-gap:6px}
+  .sm-ch .meta{flex:1 1 100%;margin-left:0!important;white-space:normal}
+  .sm-hd-sub{flex-wrap:wrap;row-gap:6px;width:100%}
+  .sm-hd-sub .meta{flex:0 1 auto;margin-left:0!important}
+  .sm-hd-sub .sm-ctabs{margin-left:auto}
 }
 @media(max-width:480px){
   .sm-pg{grid-template-columns:1fr}
   .sm-svc{grid-template-columns:1fr}
 }
+/* 顶部标签：状态 / 安全 */
+.sm-tabs{display:flex;gap:8px;margin:0 0 14px;flex-wrap:wrap}
+.sm-tab{border:1px solid var(--sm-g200);background:#fff;border-radius:10px;padding:8px 20px;font-size:13px;font-weight:500;color:var(--sm-g600);cursor:pointer;transition:all .18s}
+.sm-tab:hover{border-color:var(--sm-p);color:var(--sm-p)}
+.sm-tab.on{border-color:var(--sm-p);background:var(--sm-pb);color:var(--sm-p);font-weight:600}
+/* 安全：攻击记录 + 攻击日志 */
+.sm-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.sm-atk-in{border:1px solid var(--sm-g200);border-radius:9px;padding:7px 12px;font:12px var(--sm-mono);flex:1 1 220px;min-width:0}
+.sm-atk-btn{border:1px solid var(--sm-g200);background:#fff;border-radius:9px;padding:7px 14px;font-size:12px;cursor:pointer;color:var(--sm-g600);white-space:nowrap}
+.sm-atk-btn:hover{opacity:.88}
+.sm-atk-btn.bad{background:var(--sm-db);color:var(--sm-d);border-color:#fecaca}
+.sm-atk-btn.ok{background:var(--sm-sb);color:var(--sm-s);border-color:#bbf7d0}
+.sm-atk-ok{background:var(--sm-sb);border:1px solid #bbf7d0;color:var(--sm-s);padding:8px 12px;border-radius:8px;font-size:12px;margin-bottom:10px}
+.sm-atk-err{background:var(--sm-db);border:1px solid #fecaca;color:var(--sm-d);padding:8px 12px;border-radius:8px;font-size:12px;margin-bottom:10px}
+.sm-atk-log{max-height:340px;overflow:auto;background:#0f172a;color:#a5f3fc;padding:14px;font:12.5px/1.65 var(--sm-mono);white-space:pre-wrap;border-radius:10px}
+.sm-atk-hd{display:flex;align-items:center;gap:10px}
+@media(max-width:720px){.sm-atk-in{flex:1 1 100%}.sm-atk-btn{min-height:36px}}
 </style>
 
 <h2 id="content" name="content" style="display:flex;align-items:center;gap:13px;flex-wrap:wrap">
@@ -255,6 +296,13 @@
 
 <div class="cbi-section" style="padding:0;border:none">
 
+<!-- 顶部标签：状态 / 安全 -->
+<div class="sm-tabs" id="sm-tabs">
+  <button type="button" class="sm-tab on" data-tab="status">状态</button>
+  <button type="button" class="sm-tab" data-tab="attack">安全</button>
+</div>
+
+<div id="sm-tab-status">
 <!-- 快捷入口：文件管理固定；其余由 CGI shortcuts 按已开启服务填充 -->
 <div class="sm-sc" id="sm-sc">
   <a href="/cgi-bin/luci"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>LuCI 首页</a>
@@ -263,12 +311,39 @@
   <a href="/cgi-bin/luci/admin/system/filemanager"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>文件管理</a>
 </div>
 
-<!-- 系统概览 -->
-<div class="sm-grid sm-g2">
-  <div class="sm-card"><div class="sm-ch"><h2><span class="sm-ic blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></span>系统</h2><span class="sm-badge sm-b-run" id="sm-sys-badge">运行中</span></div><div class="sm-cb"><div class="sm-rw"><div class="sm-uptime-block"><div class="sm-uptime-big" id="sm-uptime">--</div><div class="sm-uptime-sub">已运行</div></div><div class="sm-ri"><div class="sm-rr long"><span class="sm-rl">固件</span><span class="sm-rv" id="sm-sys-fw">--</span></div><div class="sm-rr long"><span class="sm-rl">内核</span><span class="sm-rv" id="sm-sys-kernel">--</span></div><div class="sm-rr"><span class="sm-rl">主机名</span><span class="sm-rv" id="sm-sys-host">--</span></div><div class="sm-rr"><span class="sm-rl">开机时刻</span><span class="sm-rv" id="sm-sys-boot">--</span></div><div class="sm-rr"><span class="sm-rl">连接追踪</span><span class="sm-rv" id="sm-sys-conn">--</span></div><div class="sm-rr"><span class="sm-rl">系统时间</span><span class="sm-rv" id="sm-sys-clock">--</span></div></div></div><div class="sm-spk"><div class="sm-spk-t"><span>近 3 分钟连接表占用</span><span id="sm-spark-conn-max">峰值 --%</span></div><div class="sm-spk-b" id="sm-spark-conn"><div class="sm-spk-e">采集中...</div></div></div></div></div>
-  <div class="sm-card"><div class="sm-ch"><h2><span class="sm-ic green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></span>系统负载</h2><span class="sm-badge sm-b-run" id="sm-load-badge">正常</span></div><div class="sm-cb"><div class="sm-rw"><div class="sm-ring"><svg width="100" height="100"><circle class="sm-rbg" cx="50" cy="50" r="42"/><circle class="sm-rfg" cx="50" cy="50" r="42" id="sm-load-ring" style="stroke:var(--sm-s)" stroke-dasharray="263.89" stroke-dashoffset="263.89"/></svg><div class="sm-rt" id="sm-load-rt">--%</div></div><div class="sm-ri"><div class="sm-rr"><span class="sm-rl">1 分钟</span><span class="sm-rv" id="sm-load-1">--</span></div><div class="sm-rr"><span class="sm-rl">5 分钟</span><span class="sm-rv" id="sm-load-5">--</span></div><div class="sm-rr"><span class="sm-rl">15 分钟</span><span class="sm-rv" id="sm-load-15">--</span></div><div class="sm-rr"><span class="sm-rl">核心数</span><span class="sm-rv" id="sm-load-cores">-- 核</span></div></div></div><div class="sm-spk"><div class="sm-spk-t"><span>近 3 分钟负载趋势</span><span id="sm-spark-load-max">峰值 --%</span></div><div class="sm-spk-b" id="sm-spark-load"><div class="sm-spk-e">采集中...</div></div></div></div></div>
-  <div class="sm-card"><div class="sm-ch"><h2><span class="sm-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3"/></svg></span>CPU</h2><span class="sm-badge sm-b-run" id="sm-cpu-badge">--</span></div><div class="sm-cb"><div class="sm-rw"><div class="sm-ring"><svg width="100" height="100"><circle class="sm-rbg" cx="50" cy="50" r="42"/><circle class="sm-rfg" cx="50" cy="50" r="42" id="sm-cpu-ring" style="stroke:var(--sm-p)" stroke-dasharray="263.89" stroke-dashoffset="263.89"/></svg><div class="sm-rt" id="sm-cpu-rt">--%</div></div><div class="sm-ri"><div class="sm-rr long"><span class="sm-rl">型号</span><span class="sm-rv" id="sm-cpu-model">--</span></div><div class="sm-rr"><span class="sm-rl">核心数</span><span class="sm-rv" id="sm-cpu-cores">--</span></div><div class="sm-rr"><span class="sm-rl">负载 1/5/15m</span><span class="sm-rv" id="sm-cpu-load">--</span></div><div class="sm-rr"><span class="sm-rl">温度</span><span class="sm-rv" id="sm-cpu-temp">--</span></div></div></div><div class="sm-spk"><div class="sm-spk-t"><span>近 3 分钟使用率趋势</span><span id="sm-spark-cpu-max">峰值 --%</span></div><div class="sm-spk-b" id="sm-spark-cpu"><div class="sm-spk-e">采集中...</div></div></div></div></div>
-  <div class="sm-card"><div class="sm-ch"><h2><span class="sm-ic cyan"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 3v18"/></svg></span>内存</h2><span class="sm-badge sm-b-run" id="sm-mem-badge">--</span></div><div class="sm-cb"><div class="sm-rw"><div class="sm-ring"><svg width="100" height="100"><circle class="sm-rbg" cx="50" cy="50" r="42"/><circle class="sm-rfg" cx="50" cy="50" r="42" id="sm-mem-ring" style="stroke:var(--sm-s)" stroke-dasharray="263.89" stroke-dashoffset="263.89"/></svg><div class="sm-rt" id="sm-mem-rt">--%</div></div><div class="sm-ri"><div class="sm-rr"><span class="sm-rl">总量</span><span class="sm-rv" id="sm-mem-total">--</span></div><div class="sm-rr"><span class="sm-rl">已用</span><span class="sm-rv" id="sm-mem-used">--</span></div><div class="sm-rr"><span class="sm-rl">可用</span><span class="sm-rv" id="sm-mem-avail">--</span></div><div class="sm-rr"><span class="sm-rl">缓存/缓冲</span><span class="sm-rv" id="sm-mem-cache">--</span></div></div></div><div class="sm-spk"><div class="sm-spk-t"><span>近 3 分钟占用趋势</span><span id="sm-spark-mem-max">峰值 --%</span></div><div class="sm-spk-b" id="sm-spark-mem"><div class="sm-spk-e">采集中...</div></div></div></div></div>
+<!-- 系统性能（系统 / CPU / 内存 信息 + 占用环；CPU 与内存占用合并为同一基线的双曲线；时间选择在模块最前，统一控制曲线）-->
+<div class="sm-card" style="margin-bottom:14px">
+  <div class="sm-ch"><h2><span class="sm-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l3-3 4 4 5-5"/></svg></span>系统性能</h2><div class="sm-ctabs sm-win-tabs" style="padding:0"><button type="button" class="sm-ctab" data-win="10800">3 小时</button><button type="button" class="sm-ctab on" data-win="86400">24 小时</button></div><span class="meta" id="sm-perf-meta" style="margin-left:auto">近 24 小时 · 每分钟采样</span></div>
+  <div class="sm-cb">
+    <div class="sm-perf-info">
+    <div class="sm-perf-col"><div class="sm-rw"><div class="sm-uptime-block"><div class="sm-uptime-big" id="sm-uptime">--</div><div class="sm-uptime-sub">已运行</div></div><div class="sm-ri"><div class="sm-rr long"><span class="sm-rl">固件</span><span class="sm-rv" id="sm-sys-fw">--</span></div><div class="sm-rr long"><span class="sm-rl">内核</span><span class="sm-rv" id="sm-sys-kernel">--</span></div><div class="sm-rr"><span class="sm-rl">主机名</span><span class="sm-rv" id="sm-sys-host">--</span></div><div class="sm-rr"><span class="sm-rl">开机时刻</span><span class="sm-rv" id="sm-sys-boot">--</span></div><div class="sm-rr"><span class="sm-rl">连接追踪</span><span class="sm-rv" id="sm-sys-conn">--</span></div><div class="sm-rr"><span class="sm-rl">系统时间</span><span class="sm-rv" id="sm-sys-clock">--</span></div></div></div><div class="sm-spk"><div class="sm-spk-t"><span>近 3 分钟连接表占用</span><span id="sm-spark-conn-max">峰值 --%</span></div><div class="sm-spk-b" id="sm-spark-conn"><div class="sm-spk-e">采集中...</div></div></div></div>
+    <div class="sm-perf-col"><div class="sm-rw"><div class="sm-ring"><svg width="100" height="100"><circle class="sm-rbg" cx="50" cy="50" r="42"/><circle class="sm-rfg" cx="50" cy="50" r="42" id="sm-cpu-ring" style="stroke:var(--sm-p)" stroke-dasharray="263.89" stroke-dashoffset="263.89"/></svg><div class="sm-rt" id="sm-cpu-rt">--%</div></div><div class="sm-ri"><div class="sm-rr long"><span class="sm-rl">型号</span><span class="sm-rv" id="sm-cpu-model">--</span></div><div class="sm-rr"><span class="sm-rl">核心数</span><span class="sm-rv" id="sm-cpu-cores">--</span></div><div class="sm-rr"><span class="sm-rl">频率</span><span class="sm-rv" id="sm-cpu-freq">--</span></div><div class="sm-rr"><span class="sm-rl">负载 1/5/15m</span><span class="sm-rv" id="sm-cpu-load">--</span></div></div></div></div>
+    <div class="sm-perf-col"><div class="sm-rw"><div class="sm-ring"><svg width="100" height="100"><circle class="sm-rbg" cx="50" cy="50" r="42"/><circle class="sm-rfg" cx="50" cy="50" r="42" id="sm-mem-ring" style="stroke:var(--sm-s)" stroke-dasharray="263.89" stroke-dashoffset="263.89"/></svg><div class="sm-rt" id="sm-mem-rt">--%</div></div><div class="sm-ri"><div class="sm-rr"><span class="sm-rl">总量</span><span class="sm-rv" id="sm-mem-total">--</span></div><div class="sm-rr"><span class="sm-rl">已用</span><span class="sm-rv" id="sm-mem-used">--</span></div><div class="sm-rr"><span class="sm-rl">可用</span><span class="sm-rv" id="sm-mem-avail">--</span></div><div class="sm-rr"><span class="sm-rl">缓存/缓冲</span><span class="sm-rv" id="sm-mem-cache">--</span></div></div></div></div>
+    </div>
+    <div class="sm-perf-chart">
+      <div class="sm-flow-chart">
+        <div class="sm-flow-head wrap">
+          <span class="sm-flow-legend cpu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/></svg>CPU 占用</span><span class="sm-flow-cur" id="sm-perf-cpu-cur" style="margin-left:6px">--</span>
+          <span class="sm-flow-legend mem" style="margin-left:14px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 3v18"/></svg>内存占用</span><span class="sm-flow-cur" id="sm-perf-mem-cur" style="margin-left:6px">--</span>
+          <span class="sm-flow-peak" style="margin-left:auto">峰值 CPU <span id="sm-perf-cpu-peak">--</span> · 内存 <span id="sm-perf-mem-peak">--</span></span>
+        </div>
+        <div class="sm-flow-plot"><div class="sm-flow-yaxis"><span id="sm-perf-cm-y1">100%</span><span id="sm-perf-cm-y2">50%</span><span>0%</span></div><div class="sm-flow-svg" id="sm-perf-cm-svg"><div class="sm-spk-e">采集中...</div></div></div>
+        <div class="sm-flow-xaxis"><span class="sm-perf-x1">24 小时前</span><span class="sm-perf-x2">12 小时前</span><span>现在</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 温度（CPU 封装 + 硬盘，3 小时 / 24 小时 可切换）-->
+<div class="sm-card" style="margin-bottom:14px">
+  <div class="sm-ch"><h2><span class="sm-ic amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 14.76V3.5a2.5 2.5 0 00-5 0v11.26a4.5 4.5 0 105 0z"/></svg></span>温度</h2><div class="sm-hd-sub" style="display:flex;align-items:center;gap:12px"><span class="meta" id="sm-temp-meta">近 24 小时 · 每分钟采样</span><div class="sm-ctabs sm-win-tabs" style="padding:0"><button type="button" class="sm-ctab" data-win="10800">3 小时</button><button type="button" class="sm-ctab on" data-win="86400">24 小时</button></div></div></div>
+  <div class="sm-cb">
+    <div class="sm-flow-chart">
+      <div class="sm-flow-head wrap"><span class="sm-flow-legend temp"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 14.76V3.5a2.5 2.5 0 00-5 0v11.26a4.5 4.5 0 105 0z"/></svg>CPU 封装</span><span class="sm-flow-cur" id="sm-perf-temp-cur" style="margin-left:6px">--</span><span class="sm-flow-legend disk" style="margin-left:14px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/></svg>硬盘</span><span class="sm-flow-cur" id="sm-perf-temp-disk-cur" style="margin-left:6px">--</span><span class="sm-flow-peak" style="margin-left:auto">峰值 CPU <span id="sm-perf-temp-peak">--</span> · 硬盘 <span id="sm-perf-temp-dpeak">--</span></span></div>
+      <div class="sm-flow-plot"><div class="sm-flow-yaxis"><span id="sm-perf-temp-y1">--</span><span id="sm-perf-temp-y2">--</span><span>0</span></div><div class="sm-flow-svg" id="sm-perf-temp-svg"><div class="sm-spk-e">采集中...</div></div></div>
+      <div class="sm-flow-xaxis"><span class="sm-perf-x1">24 小时前</span><span class="sm-perf-x2">12 小时前</span><span>现在</span></div>
+    </div>
+  </div>
 </div>
 
 <!-- WAN 流量监控 -->
@@ -296,30 +371,6 @@
       <div>
         <div class="sm-ft-t">分类明细 <span style="color:var(--sm-g400);font-weight:400">· 每月 1 日 0 点清零重计</span></div>
         <div id="sm-month-cats"><div class="sm-spk-e">加载中...</div></div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- CPU / 内存 / 温度 24 小时曲线 -->
-<div class="sm-card" style="margin-bottom:14px">
-  <div class="sm-ch"><h2><span class="sm-ic amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l3-3 4 4 5-5"/></svg></span>CPU / 内存 / 温度</h2><span class="meta" id="sm-sysh-meta">近 24 小时 · 每分钟采样</span></div>
-  <div class="sm-cb">
-    <div class="sm-sysh-grid">
-      <div class="sm-flow-chart">
-        <div class="sm-flow-head"><span class="sm-flow-legend down"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/></svg>CPU 占用</span><span class="sm-flow-cur" id="sm-sysh-cpu-cur">--</span><span class="sm-flow-peak">峰值 <span id="sm-sysh-cpu-peak">--</span></span></div>
-        <div class="sm-flow-plot"><div class="sm-flow-yaxis"><span id="sm-sysh-cpu-y1">100%</span><span id="sm-sysh-cpu-y2">50%</span><span>0</span></div><div class="sm-flow-svg" id="sm-sysh-cpu-svg"><div class="sm-spk-e">采集中...</div></div></div>
-        <div class="sm-flow-xaxis"><span>24 小时前</span><span>12 小时前</span><span>现在</span></div>
-      </div>
-      <div class="sm-flow-chart">
-        <div class="sm-flow-head"><span class="sm-flow-legend up"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 3v18"/></svg>内存占用</span><span class="sm-flow-cur" id="sm-sysh-mem-cur">--</span><span class="sm-flow-peak">峰值 <span id="sm-sysh-mem-peak">--</span></span></div>
-        <div class="sm-flow-plot"><div class="sm-flow-yaxis"><span id="sm-sysh-mem-y1">100%</span><span id="sm-sysh-mem-y2">50%</span><span>0</span></div><div class="sm-flow-svg" id="sm-sysh-mem-svg"><div class="sm-spk-e">采集中...</div></div></div>
-        <div class="sm-flow-xaxis"><span>24 小时前</span><span>12 小时前</span><span>现在</span></div>
-      </div>
-      <div class="sm-flow-chart">
-        <div class="sm-flow-head"><span class="sm-flow-legend temp"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 14.76V3.5a2.5 2.5 0 00-5 0v11.26a4.5 4.5 0 105 0z"/></svg>CPU 温度</span><span class="sm-flow-cur" id="sm-sysh-temp-cur">--</span><span class="sm-flow-peak">峰值 <span id="sm-sysh-temp-peak">--</span></span></div>
-        <div class="sm-flow-plot"><div class="sm-flow-yaxis"><span id="sm-sysh-temp-y1">--</span><span id="sm-sysh-temp-y2">--</span><span>0</span></div><div class="sm-flow-svg" id="sm-sysh-temp-svg"><div class="sm-spk-e">采集中...</div></div></div>
-        <div class="sm-flow-xaxis"><span>24 小时前</span><span>12 小时前</span><span>现在</span></div>
       </div>
     </div>
   </div>
@@ -372,6 +423,28 @@
   <div class="sm-cb"><div class="sm-svc" id="sm-svc"><span class="sm-empty">加载中...</span></div></div>
 </div>
 
+</div><!-- /sm-tab-status -->
+
+<!-- 安全：攻击记录 + 攻击日志（数据由 statusmon-attack 采集器写入 /var/lib/statusmon-attack）-->
+<div id="sm-tab-attack" style="display:none">
+  <div id="sm-atk-msg"></div>
+  <div class="sm-card" style="margin-bottom:14px">
+    <div class="sm-ch"><h2><span class="sm-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span>攻击记录</h2><div class="sm-atk-hd"><span class="meta" id="sm-atk-meta">--</span><button type="button" class="sm-atk-btn" id="sm-atk-clr-rec">清除记录</button></div></div>
+    <div class="sm-cb">
+      <div class="sm-row">
+        <input class="sm-atk-in" id="sm-atk-ip" placeholder="手动输入要拉黑的外网地址" spellcheck="false">
+        <button type="button" class="sm-atk-btn bad" id="sm-atk-add">拉黑</button>
+      </div>
+      <div class="sm-tscroll"><table class="sm-table"><thead><tr><th>地址</th><th class="sm-ta-r">次数</th><th class="sm-ta-r">爆破</th><th>端口</th><th>来源端口</th><th>最近</th><th></th></tr></thead><tbody id="sm-atk-body"><tr><td colspan="7" class="sm-empty">加载中...</td></tr></tbody></table></div>
+      <div class="sm-cpage" id="sm-atk-pager"></div>
+    </div>
+  </div>
+  <div class="sm-card">
+    <div class="sm-ch"><h2><span class="sm-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><path d="M8 9h8M8 13h8M8 17h5"/></svg></span>攻击日志</h2><div class="sm-atk-hd"><span class="meta">永久保留 · 不含端口探测</span><button type="button" class="sm-atk-btn" id="sm-atk-clr-log">清空日志</button></div></div>
+    <div class="sm-cb"><div class="sm-atk-log" id="sm-atk-log">加载中...</div><div class="sm-cpage" id="sm-atk-log-pager"></div></div>
+  </div>
+</div><!-- /sm-tab-attack -->
+
 </div>
 
 <!-- 弹窗 -->
@@ -387,8 +460,9 @@ function sm_f(b){if(!b||b<0)return '0 B';if(b<1024)return b+' B';if(b<1048576)re
 function sm_fr(r){if(!r||r<1)return '0 B/s';if(r<1024)return Math.round(r)+' B/s';if(r<1048576)return(r/1024).toFixed(1)+' KB/s';return(r/1048576).toFixed(1)+' MB/s'}
 function sm_u(s){if(!s)return'--';var d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);if(d>0)return d+'天 '+h+'小时';if(h>0)return h+'小时 '+m+'分';return m+'分钟'}
 function sm_t(t){if(t===null||t===undefined)return'N/A';return parseFloat(t).toFixed(1)+'°C'}
-function sm_sr(id,p,c){var r=document.getElementById(id);var ci=2*Math.PI*42;r.setAttribute('stroke-dasharray',ci);r.setAttribute('stroke-dashoffset',ci*(1-Math.min(100,p)/100));if(c)r.style.stroke=c}
+function sm_freq(s){s=s||{};var mx=parseInt(s.cpu_freq_max||s.cpu_freq||0,10)||0;var mn=parseInt(s.cpu_freq_min||0,10)||0;if(!mx)return'--';if(mn&&mn!==mx)return mn+'~'+mx+' MHz';return mx+' MHz'}
 function sm_lc(p){p=+p;if(p<50)return'var(--sm-s)';if(p<80)return'var(--sm-w)';return'var(--sm-d)'}
+function sm_sr(id,p,c){var r=document.getElementById(id);if(!r)return;var ci=2*Math.PI*42;r.setAttribute('stroke-dasharray',ci);r.setAttribute('stroke-dashoffset',ci*(1-Math.min(100,p)/100));if(c)r.style.stroke=c}
 function sm_fk(n){if(!n)return'0';if(n<1000)return n;if(n<1000000)return(n/1000).toFixed(1)+'K';return(n/1000000).toFixed(1)+'M'}
 function sm_fs(b){if(!b||b<0)return'0';if(b<1024)return b+'B';if(b<1048576)return Math.round(b/1024)+'K';if(b<1073741824)return(b/1048576).toFixed(0)+'M';return(b/1073741824).toFixed(1)+'G'}
 
@@ -404,7 +478,7 @@ function sm_calcRates(d){
 }
 
  /* 趋势历史（localStorage 持久化） */
-var sm_HMAX=90,hc=[],hm=[],hl=[],hc2=[];
+var sm_HMAX=90,hc2=[];
 function sm_histVal(p){return (p&&typeof p==='object')?(+p.v||0):(+p||0)}
 function sm_migrateHist(arr){
   if(!Array.isArray(arr))return [];
@@ -414,13 +488,10 @@ function sm_migrateHist(arr){
     return {t:now-(a.length-1-i)*2,v:Math.max(0,Math.min(100,+x||0))};
   });
 }
-try{hc=sm_migrateHist(JSON.parse(localStorage.getItem('sm-hist-cpu')||'[]'))}catch(e){}
-try{hm=sm_migrateHist(JSON.parse(localStorage.getItem('sm-hist-mem')||'[]'))}catch(e){}
-try{hl=sm_migrateHist(JSON.parse(localStorage.getItem('sm-hist-load')||'[]'))}catch(e){}
 try{hc2=sm_migrateHist(JSON.parse(localStorage.getItem('sm-hist-conn')||'[]'))}catch(e){}
 function sm_push(arr,v){arr.push({t:Math.floor(Date.now()/1000),v:Math.max(0,Math.min(100,v))});if(arr.length>sm_HMAX)arr.shift()}
 function sm_bootTime(upt){var d=new Date(Date.now()-upt*1000);return ('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2)+' '+('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2)}
-function sm_save(){try{localStorage.setItem('sm-hist-cpu',JSON.stringify(hc));localStorage.setItem('sm-hist-mem',JSON.stringify(hm));localStorage.setItem('sm-hist-load',JSON.stringify(hl));localStorage.setItem('sm-hist-conn',JSON.stringify(hc2))}catch(e){}}
+function sm_save(){try{localStorage.setItem('sm-hist-conn',JSON.stringify(hc2))}catch(e){}}
 function sm_hms(t){var d=new Date(t*1000);return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2)+':'+('0'+d.getSeconds()).slice(-2)}
 function sm_hoverSpark(el,arr){
   var tip=el.querySelector('.sm-chtip'),line=el.querySelector('.sm-chline');
@@ -497,52 +568,150 @@ function sm_drawFlow(svgId,y1Id,y2Id,curId,peakId,vals,stroke,fill){
   document.getElementById(peakId).textContent=sm_fr(peak);
   sm_hover(el,vals,t1,t2,sm_fr);
 }
-/* v4.16：CPU/内存/温度 24h 曲线 */
-var sm_SYSH_WIN=86400,sm_syshPts=[],sm_syshTs=0;
-function sm_drawSysH(svgId,y1Id,y2Id,curId,peakId,vals,stroke,fill,unit,fixedMax){
-  var el=document.getElementById(svgId);
+/* v4.37：系统性能合成单面板（去掉小标题/徽标/分割线），CPU 与内存占用合并为同一基线的双曲线；
+   v4.36：系统性能 / 温度曲线，3 小时 / 24 小时 可切换，数据来自 sys_hist 归档 */
+var sm_PERF_WIN=86400,sm_perfPts=[];
+function sm_perfNow(){return Math.floor(Date.now()/1000)}
+/* CPU 占用 + 内存占用 合并为同一基线（0-100%）的双曲线，参考温度图样式 */
+function sm_perfCpuMem(cpu,mem){
+  var el=document.getElementById('sm-perf-cm-svg');
   if(!el)return;
-  if(!vals||vals.length<2){el.innerHTML='<div class="sm-spk-e">采集中...</div>';return}
-  var now=Math.floor(Date.now()/1000),t1=now-sm_SYSH_WIN,t2=now+2;
-  var W=560,H=140,pt=14,pb=4,peak=0;
-  vals.forEach(function(p){if(p.v>peak)peak=p.v});
-  var vmax=fixedMax||(peak*1.12);if(vmax<1)vmax=1;
+  var now=sm_perfNow(),t1=now-sm_PERF_WIN,t2=now+2,c=[],m=[];
+  cpu.forEach(function(p){if(p.t>=t1)c.push(p)});
+  mem.forEach(function(p){if(p.t>=t1)m.push(p)});
+  if(c.length<2&&m.length<2){el.innerHTML='<div class="sm-spk-e">采集中...</div>';return}
+  var vmax=100,W=560,H=140,pt=14,pb=4;
   function X(t){return ((t-t1)/(t2-t1)*W).toFixed(2)}
   function Y(v){return (H-pb-(v/vmax)*(H-pb-pt)).toFixed(2)}
-  function fmt(v){return unit==='°C'?v.toFixed(1)+'°C':Math.round(v)+'%'}
-  var pts=[],first=null,last=null;
-  vals.forEach(function(p){var x=X(p.t),y=Y(p.v);if(first===null)first=[x,y];last=[x,y];pts.push(x+','+y)});
+  function path(arr){return arr.map(function(p){return X(p.t)+','+Y(p.v)}).join(' ')}
   var grid='';
   for(var g=1;g<=3;g++){var gy=Y(vmax*g/4);grid+='<line x1="0" y1="'+gy+'" x2="'+W+'" y2="'+gy+'" stroke="rgba(148,163,184,.28)" stroke-width="1" stroke-dasharray="3 4"/>'}
-  el.innerHTML='<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none">'
-    +'<defs><linearGradient id="gf-'+svgId+'" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="'+fill+'" stop-opacity=".28"/><stop offset="1" stop-color="'+fill+'" stop-opacity=".02"/></linearGradient></defs>'
-    +grid
-    +'<polygon points="'+first[0]+','+H+' '+pts.join(' ')+' '+last[0]+','+H+'" fill="url(#gf-'+svgId+')"/>'
-    +'<polyline points="'+pts.join(' ')+'" fill="none" stroke="'+stroke+'" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>'
-    +'<circle cx="'+last[0]+'" cy="'+last[1]+'" r="2.6" fill="'+stroke+'"/></svg>';
-  document.getElementById(y1Id).textContent=fmt(vmax);
-  document.getElementById(y2Id).textContent=fmt(vmax/2);
-  document.getElementById(curId).textContent=fmt(vals[vals.length-1].v);
-  document.getElementById(peakId).textContent=fmt(peak);
-  sm_hover(el,vals,t1,t2,fmt);
+  var svg='<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none">'+grid;
+  if(m.length)svg+='<polyline points="'+path(m)+'" fill="none" stroke="#16a34a" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>';
+  if(c.length)svg+='<polyline points="'+path(c)+'" fill="none" stroke="#2563eb" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>';
+  var lc=c[c.length-1],lm=m[m.length-1];
+  if(lm)svg+='<circle cx="'+X(lm.t)+'" cy="'+Y(lm.v)+'" r="2.4" fill="#16a34a"/>';
+  if(lc)svg+='<circle cx="'+X(lc.t)+'" cy="'+Y(lc.v)+'" r="2.6" fill="#2563eb"/>';
+  el.innerHTML=svg+'</svg>';
+  function mx(arr){var x=0;arr.forEach(function(p){if(p.v>x)x=p.v});return x}
+  var ccur=document.getElementById('sm-perf-cpu-cur');if(ccur)ccur.textContent=lc?Math.round(lc.v)+'%':'--';
+  var mcur=document.getElementById('sm-perf-mem-cur');if(mcur)mcur.textContent=lm?Math.round(lm.v)+'%':'--';
+  document.getElementById('sm-perf-cpu-peak').textContent=Math.round(mx(c))+'%';
+  document.getElementById('sm-perf-mem-peak').textContent=Math.round(mx(m))+'%';
+  sm_cmHover(el,c,m,t1,t2);
 }
-function sm_renderSysH(pts){
+function sm_cmHover(el,cpu,mem,t1,t2){
+  var tip=el.querySelector('.sm-chtip'),line=el.querySelector('.sm-chline');
+  if(!tip){tip=document.createElement('div');tip.className='sm-chtip';el.appendChild(tip)}
+  if(!line){line=document.createElement('div');line.className='sm-chline';el.appendChild(line)}
+  function near(arr,t){var b=null,bd=1e18;arr.forEach(function(p){var d=Math.abs(p.t-t);if(d<bd){bd=d;b=p}});return b}
+  el.onmousemove=function(e){
+    var r=el.getBoundingClientRect(),x=e.clientX-r.left,t=t1+(x/Math.max(1,r.width))*(t2-t1);
+    var pc=near(cpu,t),pm=near(mem,t),px=x;
+    if(px<8)px=8;if(px>r.width-8)px=r.width-8;
+    var rows='';
+    if(pc)rows+='<div style="color:#2563eb">CPU 占用 '+Math.round(pc.v)+'%</div>';
+    if(pm)rows+='<div style="color:#16a34a">内存占用 '+Math.round(pm.v)+'%</div>';
+    if(!rows)return;
+    tip.innerHTML='<div style="color:var(--sm-g400);font-size:10px">'+sm_hm(pc?pc.t:pm.t)+'</div>'+rows;
+    tip.style.display='block';line.style.display='block';
+    tip.style.left=px+'px';line.style.left=px+'px';
+  };
+  el.onmouseleave=function(){tip.style.display='none';line.style.display='none'};
+}
+function sm_perfTemp(cpu,disk){
+  var el=document.getElementById('sm-perf-temp-svg');
+  if(!el)return;
+  var now=sm_perfNow(),t1=now-sm_PERF_WIN,t2=now+2,c=[],k=[];
+  cpu.forEach(function(p){if(p.t>=t1)c.push(p)});
+  disk.forEach(function(p){if(p.t>=t1)k.push(p)});
+  if(c.length<2&&k.length<2){el.innerHTML='<div class="sm-spk-e">采集中...</div>';return}
+  var peak=0;c.concat(k).forEach(function(p){if(p.v>peak)peak=p.v});
+  var vmax=Math.max(60,Math.ceil(peak*1.15/5)*5);
+  var W=560,H=140,pt=14,pb=4;
+  function X(t){return ((t-t1)/(t2-t1)*W).toFixed(2)}
+  function Y(v){return (H-pb-(v/vmax)*(H-pb-pt)).toFixed(2)}
+  function path(arr){return arr.map(function(p){return X(p.t)+','+Y(p.v)}).join(' ')}
+  var grid='';
+  for(var g=1;g<=3;g++){var gy=Y(vmax*g/4);grid+='<line x1="0" y1="'+gy+'" x2="'+W+'" y2="'+gy+'" stroke="rgba(148,163,184,.28)" stroke-width="1" stroke-dasharray="3 4"/>'}
+  var svg='<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none">'+grid;
+  if(k.length)svg+='<polyline points="'+path(k)+'" fill="none" stroke="#06b6d4" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>';
+  if(c.length)svg+='<polyline points="'+path(c)+'" fill="none" stroke="#d97706" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>';
+  var lc=c[c.length-1],ld=k[k.length-1];
+  if(ld)svg+='<circle cx="'+X(ld.t)+'" cy="'+Y(ld.v)+'" r="2.4" fill="#06b6d4"/>';
+  if(lc)svg+='<circle cx="'+X(lc.t)+'" cy="'+Y(lc.v)+'" r="2.6" fill="#d97706"/>';
+  el.innerHTML=svg+'</svg>';
+  document.getElementById('sm-perf-temp-y1').textContent=vmax+'°C';
+  document.getElementById('sm-perf-temp-y2').textContent=(vmax/2).toFixed(0)+'°C';
+  function mx(arr){var m=0;arr.forEach(function(p){if(p.v>m)m=p.v});return m}
+  var cp=mx(c),dp=mx(k);
+  document.getElementById('sm-perf-temp-peak').textContent=cp>0?cp.toFixed(1)+'°C':'--';
+  document.getElementById('sm-perf-temp-dpeak').textContent=dp>0?dp.toFixed(1)+'°C':'--';
+  sm_tempHover(el,c,k,t1,t2);
+}
+function sm_tempHover(el,cpu,disk,t1,t2){
+  var tip=el.querySelector('.sm-chtip'),line=el.querySelector('.sm-chline');
+  if(!tip){tip=document.createElement('div');tip.className='sm-chtip';el.appendChild(tip)}
+  if(!line){line=document.createElement('div');line.className='sm-chline';el.appendChild(line)}
+  function near(arr,t){var b=null,bd=1e18;arr.forEach(function(p){var d=Math.abs(p.t-t);if(d<bd){bd=d;b=p}});return b}
+  el.onmousemove=function(e){
+    var r=el.getBoundingClientRect(),x=e.clientX-r.left,t=t1+(x/Math.max(1,r.width))*(t2-t1);
+    var pc=near(cpu,t),pd=near(disk,t),px=x;
+    if(px<8)px=8;if(px>r.width-8)px=r.width-8;
+    var rows='';
+    if(pc)rows+='<div style="color:#d97706">CPU 封装 '+pc.v.toFixed(1)+'°C</div>';
+    if(pd)rows+='<div style="color:#06b6d4">硬盘 '+pd.v.toFixed(1)+'°C</div>';
+    if(!rows)return;
+    tip.innerHTML='<div style="color:var(--sm-g400);font-size:10px">'+sm_hm(pc?pc.t:pd.t)+'</div>'+rows;
+    tip.style.display='block';line.style.display='block';
+    tip.style.left=px+'px';line.style.left=px+'px';
+  };
+  el.onmouseleave=function(){tip.style.display='none';line.style.display='none'};
+}
+function sm_perfAxis(){
+  var x1=document.querySelectorAll('.sm-perf-x1'),x2=document.querySelectorAll('.sm-perf-x2'),i;
+  var a=sm_PERF_WIN<=10800?'3 小时前':'24 小时前',b=sm_PERF_WIN<=10800?'1.5 小时前':'12 小时前';
+  for(i=0;i<x1.length;i++)x1[i].textContent=a;
+  for(i=0;i<x2.length;i++)x2[i].textContent=b;
+}
+function sm_setPerfWin(win){
+  sm_PERF_WIN=win;
+  Array.prototype.forEach.call(document.querySelectorAll('.sm-win-tabs'),function(tabs){
+    var bs=tabs.querySelectorAll('.sm-ctab');
+    for(var i=0;i<bs.length;i++){bs[i].className='sm-ctab'+(+bs[i].getAttribute('data-win')===win?' on':'')}
+  });
+  var label=(win<=10800?'近 3 小时':'近 24 小时')+' · 每分钟采样';
+  var m=document.getElementById('sm-perf-meta');if(m)m.textContent=label;
+  var tm=document.getElementById('sm-temp-meta');if(tm)tm.textContent=label;
+  sm_perfAxis();
+  sm_perfDraw();
+}
+function sm_perfDraw(){
+  if(!sm_perfPts.length)return;
+  var cpu=[],mem=[],tcpu=[],tdisk=[];
+  sm_perfPts.forEach(function(p){
+    if(typeof p.c==='number')cpu.push({t:p.t,v:p.c});
+    if(typeof p.m==='number')mem.push({t:p.t,v:p.m});
+    if(typeof p.p==='number'&&p.p>0)tcpu.push({t:p.t,v:p.p});
+    if(typeof p.d==='number'&&p.d>0)tdisk.push({t:p.t,v:p.d});
+  });
+  sm_perfCpuMem(cpu,mem);
+  sm_perfTemp(tcpu,tdisk);
+}
+function sm_renderPerf(pts){
   if(!pts||!pts.length)return;
-  sm_syshPts=pts;
-  var meta=document.getElementById('sm-sysh-meta');
-  if(meta)meta.textContent='近 24 小时 · '+pts.length+' 点 · 每分钟采样';
-  sm_drawSysH('sm-sysh-cpu-svg','sm-sysh-cpu-y1','sm-sysh-cpu-y2','sm-sysh-cpu-cur','sm-sysh-cpu-peak',pts.map(function(p){return{t:p.t,v:p.c}}),'var(--sm-p)','#2563eb','%',100);
-  sm_drawSysH('sm-sysh-mem-svg','sm-sysh-mem-y1','sm-sysh-mem-y2','sm-sysh-mem-cur','sm-sysh-mem-peak',pts.map(function(p){return{t:p.t,v:p.m}}),'var(--sm-s)','#16a34a','%',100);
-  var tmax=0;pts.forEach(function(p){if(p.p>tmax)tmax=p.p});
-  var tscale=Math.max(60,Math.ceil(tmax*1.15/5)*5);
-  sm_drawSysH('sm-sysh-temp-svg','sm-sysh-temp-y1','sm-sysh-temp-y2','sm-sysh-temp-cur','sm-sysh-temp-peak',pts.map(function(p){return{t:p.t,v:p.p}}),'var(--sm-w)','#d97706','°C',tscale);
+  sm_perfPts=pts;
+  var label=(sm_PERF_WIN<=10800?'近 3 小时':'近 24 小时')+' · '+pts.length+' 点 · 每分钟采样';
+  var meta=document.getElementById('sm-perf-meta');if(meta)meta.textContent=label;
+  var tmeta=document.getElementById('sm-temp-meta');if(tmeta)tmeta.textContent=label;
+  sm_perfAxis();
+  sm_perfDraw();
 }
 async function sm_fetchSysH(){
   try{
     var r=await fetch('/cgi-bin/statusmon?sys_hist=1',{cache:'no-store'});
     var d=await r.json();
-    if(d&&d.points)sm_renderSysH(d.points);
-    sm_syshTs=Date.now();
+    if(d&&d.points)sm_renderPerf(d.points);
   }catch(e){}
 }
 /* v4.14：本月流量总计（WAN 接口累计，分类按占比对齐）*/
@@ -665,28 +834,17 @@ function sm_render(d){
   var connCur=d.protocols?(d.protocols.conntrack_current||0):0;
   var connMax=d.protocols?(d.protocols.conntrack_max||1):1;
   document.getElementById('sm-sys-conn').textContent=connCur+' / '+connMax;
-  var cores=d.system.cpu_cores||4;
-  var lp=Math.min(100,Math.round(d.system.load[0]/cores*100));
-  sm_sr('sm-load-ring',lp,sm_lc(lp));document.getElementById('sm-load-rt').textContent=lp+'%';
-  document.getElementById('sm-load-1').textContent=d.system.load[0].toFixed(2);
-  document.getElementById('sm-load-5').textContent=d.system.load[1].toFixed(2);
-  document.getElementById('sm-load-15').textContent=d.system.load[2].toFixed(2);
-  document.getElementById('sm-load-cores').textContent=cores+' 核';
-  document.getElementById('sm-load-badge').textContent=lp<70?'正常':'偏高';document.getElementById('sm-load-badge').className='sm-badge '+(lp<70?'sm-b-run':'sm-b-stop');
   var mp=d.memory.total>0?Math.round(d.memory.used/d.memory.total*100):0;
-  sm_sr('sm-cpu-ring',d.system.cpu_usage,sm_lc(d.system.cpu_usage));document.getElementById('sm-cpu-rt').textContent=d.system.cpu_usage+'%';
+  sm_sr('sm-cpu-ring',d.system.cpu_usage,sm_lc(d.system.cpu_usage));var crt=document.getElementById('sm-cpu-rt');if(crt)crt.textContent=d.system.cpu_usage+'%';
   document.getElementById('sm-cpu-model').textContent=d.system.cpu_model;document.getElementById('sm-cpu-cores').textContent=d.system.cpu_cores+' 核';
-  document.getElementById('sm-cpu-load').textContent=d.system.load.join(' / ');document.getElementById('sm-cpu-temp').textContent=sm_t(d.system.temperature);
-  document.getElementById('sm-cpu-badge').textContent=d.system.cpu_usage<80?'正常':'高负载';document.getElementById('sm-cpu-badge').className='sm-badge '+(d.system.cpu_usage<80?'sm-b-run':'sm-b-stop');
-  sm_sr('sm-mem-ring',mp,sm_lc(mp));document.getElementById('sm-mem-rt').textContent=mp+'%';
+  document.getElementById('sm-cpu-freq').textContent=sm_freq(d.system);document.getElementById('sm-cpu-load').textContent=d.system.load.join(' / ');
+  sm_sr('sm-mem-ring',mp,sm_lc(mp));var mrt=document.getElementById('sm-mem-rt');if(mrt)mrt.textContent=mp+'%';
   document.getElementById('sm-mem-total').textContent=sm_f(d.memory.total*1024);document.getElementById('sm-mem-used').textContent=sm_f(d.memory.used*1024);
   document.getElementById('sm-mem-avail').textContent=sm_f(d.memory.available*1024);document.getElementById('sm-mem-cache').textContent=sm_f((d.memory.cached+d.memory.buffers)*1024);
-  document.getElementById('sm-mem-badge').textContent=mp<80?'正常':'紧张';document.getElementById('sm-mem-badge').className='sm-badge '+(mp<80?'sm-b-run':'sm-b-stop');
+  var ctc=document.getElementById('sm-perf-temp-cur');if(ctc)ctc.textContent=sm_t(d.system.temperature);
+  var ctd=document.getElementById('sm-perf-temp-disk-cur');if(ctd)ctd.textContent=sm_t(d.system.disk_temp);
   var connPct=connMax>0?Math.round(connCur/connMax*100):0;
-  sm_push(hc,d.system.cpu_usage);sm_push(hm,mp);sm_push(hl,lp);sm_push(hc2,connPct);sm_save();
-  sm_spark(document.getElementById('sm-spark-cpu'),hc,'var(--sm-p)','rgba(37,99,235,.10)','sm-spark-cpu-max');
-  sm_spark(document.getElementById('sm-spark-mem'),hm,'var(--sm-s)','rgba(22,163,74,.10)','sm-spark-mem-max');
-  sm_spark(document.getElementById('sm-spark-load'),hl,'var(--sm-s)','rgba(22,163,74,.10)','sm-spark-load-max');
+  sm_push(hc2,connPct);sm_save();
   sm_spark(document.getElementById('sm-spark-conn'),hc2,'var(--sm-p)','rgba(37,99,235,.10)','sm-spark-conn-max');
   var smwans=sm_getWanList(d.network||[]);
   var smwan=sm_getSelWan(d.network||[]);
@@ -891,9 +1049,146 @@ sm_sortIcons();
 // WAN 接口选择
 document.getElementById('sm-flow-sel').addEventListener('change',function(){sm_selWan=this.value;try{localStorage.setItem('sm-selwan',sm_selWan)}catch(e){}if(sm_flow[sm_selWan])sm_flow[sm_selWan]=[];sm_saveFlow();if(sm_last)sm_render(sm_last)});
 setInterval(function(){var el=document.getElementById('sm-sys-clock');if(el)el.textContent=new Date().toLocaleTimeString('zh-CN')},1000);
+// 系统性能 / 温度 3h / 24h 切换
+Array.prototype.forEach.call(document.querySelectorAll('.sm-win-tabs'),function(g){
+  g.addEventListener('click',function(e){var b=e.target.closest('.sm-ctab[data-win]');if(b)sm_setPerfWin(+b.getAttribute('data-win'))});
+});
+sm_perfAxis();
 sm_fetch();
 sm_fetchSysH();
 setInterval(sm_fetch,5000);
 setInterval(sm_fetchSysH,60000);
+</script>
+
+<!-- 安全标签：攻击记录与攻击日志（独立作用域，避免与主脚本命名冲突）-->
+<script>
+(function(){
+  var DATA="<%=luci.dispatcher.build_url('admin/statusmon/attack/data')%>";
+  var EVURL="<%=luci.dispatcher.build_url('admin/statusmon/attack/events')%>";
+  var BLOCK="<%=luci.dispatcher.build_url('admin/statusmon/attack/block')%>";
+  var UNBLOCK="<%=luci.dispatcher.build_url('admin/statusmon/attack/unblock')%>";
+  var CLEAR="<%=luci.dispatcher.build_url('admin/statusmon/attack/clear')%>";
+  var TOKEN="<%=token%>";
+  var PAGE={atk:1,log:1}, PS=10, D=null, EV=[];
+
+  function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]})}
+  function fmtTs(ts){if(!ts)return"-";var d=new Date(ts*1000);function p(n){return n<10?"0"+n:n}return (d.getMonth()+1)+"/"+p(d.getDate())+" "+p(d.getHours())+":"+p(d.getMinutes())}
+  function pageOf(rows,key,size){
+    size=size||PS;
+    if(!PAGE[key])PAGE[key]=1;
+    var total=rows.length,pages=Math.max(1,Math.ceil(total/size));
+    if(PAGE[key]>pages)PAGE[key]=pages;
+    if(PAGE[key]<1)PAGE[key]=1;
+    var a=(PAGE[key]-1)*size;
+    return {rows:rows.slice(a,a+size),page:PAGE[key],pages:pages,total:total};
+  }
+  function drawPager(id,key,info){
+    var el=document.getElementById(id);if(!el)return;
+    if(!info.total){el.innerHTML="";return}
+    el.innerHTML='<button type="button" '+(info.page<=1?"disabled":"")+' data-atkpage="'+key+'" data-d="-1">上一页</button>'+
+      '<span>'+info.page+' / '+info.pages+' · '+info.total+' 条</span>'+
+      '<button type="button" '+(info.page>=info.pages?"disabled":"")+' data-atkpage="'+key+'" data-d="1">下一页</button>';
+  }
+  function msg(ok,text){
+    var el=document.getElementById("sm-atk-msg");
+    if(!text){el.innerHTML="";return}
+    el.innerHTML='<div class="'+(ok?"sm-atk-ok":"sm-atk-err")+'">'+esc(text)+"</div>";
+    setTimeout(function(){if(el.textContent===text)el.innerHTML=""},8000);
+  }
+  function renderAtk(d){
+    if(d)D=d;
+    if(!D)return;
+    var meta=document.getElementById("sm-atk-meta");
+    if(meta)meta.textContent=D.ts?("更新 "+fmtTs(D.ts)):"采集中";
+    var body=document.getElementById("sm-atk-body");
+    var rows=(D.attack_summary||[]).filter(function(r){return (r.auth_count||0)>0});
+    if(!rows.length){body.innerHTML='<tr><td colspan="7" class="sm-empty">暂无登录爆破记录</td></tr>';drawPager("sm-atk-pager","atk",{total:0,page:1,pages:1});return}
+    var blk={};(D.blocked||[]).forEach(function(ip){blk[ip]=1});
+    var pg=pageOf(rows,"atk");
+    body.innerHTML=pg.rows.map(function(r){
+      var ip=r.ip,on=blk[ip];
+      var btn=on?'<button type="button" class="sm-atk-btn ok" data-atkunblock="'+esc(ip)+'">解除</button>'
+                :'<button type="button" class="sm-atk-btn bad" data-atkblock="'+esc(ip)+'">拉黑</button>';
+      return '<tr><td data-k="地址">'+esc(ip)+'</td><td data-k="次数" class="sm-ta-r">'+(r.count||0)+'</td><td data-k="爆破" class="sm-ta-r">'+(r.auth_count||0)+'</td><td data-k="端口">'+esc((r.ports||[]).join(",")||"-")+'</td><td data-k="来源端口">'+esc((r.sports||[]).join(",")||"-")+'</td><td data-k="最近">'+fmtTs(r.last_ts)+'</td><td data-k="操作">'+btn+'</td></tr>';
+    }).join("");
+    drawPager("sm-atk-pager","atk",pg);
+  }
+  function renderLog(events){
+    if(events)EV=events;
+    var el=document.getElementById("sm-atk-log");
+    var rows=(EV||[]).filter(function(e){return e.cat==="attack"||e.cat==="pppoe"});
+    if(!rows.length){el.textContent="暂无事件";drawPager("sm-atk-log-pager","log",{total:0,page:1,pages:1});return}
+    var src=rows.slice().reverse();
+    var pg=pageOf(src,"log",12);
+    el.textContent=pg.rows.map(function(e){
+      var host=e.ip||"";
+      if(e.sport)host+=":"+e.sport;
+      return fmtTs(e.ts)+"  "+(e.cat||"")+"/"+(e.type||"")+"  "+host+"  "+(e.channel||e.user||e.msg||"")+"  "+(e.port||"");
+    }).join("\n");
+    drawPager("sm-atk-log-pager","log",pg);
+  }
+  function act(url,ip){
+    ip=String(ip||"").trim();
+    if(!ip){msg(false,"请填写地址");return}
+    var q="?ip="+encodeURIComponent(ip)+"&token="+encodeURIComponent(TOKEN||"");
+    fetch(url+q,{credentials:"same-origin",cache:"no-store"}).then(function(r){return r.json()}).then(function(d){
+      if(!d||!d.ok){msg(false,(d&&d.error)||"操作失败");return}
+      msg(true,(url===BLOCK?"已拉黑 ":"已解除 ")+ip);
+      load();
+    }).catch(function(){msg(false,"操作失败")});
+  }
+  function blockIP(ip){
+    ip=String(ip||"").trim();
+    if(!ip){msg(false,"请填写地址");return}
+    if(!confirm("拉黑 "+ip+"？仅拒绝它访问本机，不影响局域网转发。"))return;
+    act(BLOCK,ip);
+  }
+  function clearData(what){
+    if(!confirm(what==="records"?"确定清除全部攻击记录？":"确定清空攻击日志？"))return;
+    fetch(CLEAR+"?what="+what+"&token="+encodeURIComponent(TOKEN||""),{credentials:"same-origin",cache:"no-store"}).then(function(r){return r.json()}).then(function(d){
+      if(!d||!d.ok){msg(false,(d&&d.error)||"清除失败");return}
+      msg(true,what==="records"?"攻击记录已清除":"攻击日志已清空");
+      if(what==="records"){D={ts:D&&D.ts,attack_summary:[],blocked:(D&&D.blocked)||[]};renderAtk()}
+      else{EV=[];renderLog()}
+      load();
+    }).catch(function(){msg(false,"清除失败")});
+  }
+  function load(){
+    fetch(DATA,{credentials:"same-origin",cache:"no-store"}).then(function(r){return r.json()}).then(renderAtk).catch(function(){});
+    fetch(EVURL,{credentials:"same-origin",cache:"no-store"}).then(function(r){return r.json()}).then(function(d){renderLog(d.events||[])}).catch(function(){});
+  }
+
+  document.addEventListener("click",function(e){
+    var t=e.target;if(!t||!t.closest)return;
+    var b=t.closest("[data-atkblock]");if(b){blockIP(b.getAttribute("data-atkblock"));return}
+    var u=t.closest("[data-atkunblock]");if(u){act(UNBLOCK,u.getAttribute("data-atkunblock"));return}
+    var pg=t.closest("[data-atkpage]");
+    if(pg){
+      var key=pg.getAttribute("data-atkpage");
+      PAGE[key]=(PAGE[key]||1)+parseInt(pg.getAttribute("data-d"),10);
+      if(key==="log")renderLog();else renderAtk();
+    }
+  });
+  var add=document.getElementById("sm-atk-add");
+  if(add)add.addEventListener("click",function(){blockIP(document.getElementById("sm-atk-ip").value)});
+  var clrRec=document.getElementById("sm-atk-clr-rec");
+  if(clrRec)clrRec.addEventListener("click",function(){clearData("records")});
+  var clrLog=document.getElementById("sm-atk-clr-log");
+  if(clrLog)clrLog.addEventListener("click",function(){clearData("log")});
+
+  var tabs=document.querySelectorAll("#sm-tabs .sm-tab");
+  Array.prototype.forEach.call(tabs,function(btn){
+    btn.addEventListener("click",function(){
+      var name=btn.getAttribute("data-tab");
+      Array.prototype.forEach.call(tabs,function(b){b.className=(b===btn)?"sm-tab on":"sm-tab"});
+      document.getElementById("sm-tab-status").style.display=(name==="status")?"":"none";
+      document.getElementById("sm-tab-attack").style.display=(name==="attack")?"":"none";
+      if(name==="attack")load();
+    });
+  });
+
+  load();
+  setInterval(load,10000);
+})();
 </script>
 <%+footer%>

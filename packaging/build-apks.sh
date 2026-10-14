@@ -14,11 +14,10 @@ PUB_KEY="$KEYS/my-openwrt.rsa.pub"
 
 IPTV_VER="${IPTV_VER:-2.3.32-r0}"
 MEDIA_VER="${MEDIA_VER:-1.5.7-r0}"
-STATUS_VER="${STATUS_VER:-4.29}"
-NETQ_VER="${NETQ_VER:-1.0.19-r0}"
+STATUS_VER="${STATUS_VER:-4.38}"
+NETQ_VER="${NETQ_VER:-1.0.20-r0}"
 SYSKEEP_VER="${SYSKEEP_VER:-1.0.18-r0}"
 DATE_STR="$(date +%Y-%m-%d)"
-ATKMON_VER="${ATKMON_VER:-1.0.4-r0}"
 OTA_URL_BASE="https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages"
 
 if [ ! -x "$APK" ]; then
@@ -30,7 +29,7 @@ if [ ! -f "$SIGN_KEY" ] || [ ! -f "$PUB_KEY" ]; then
 	exit 1
 fi
 
-mkdir -p "$OUT/iptv-auth" "$OUT/luci-app-mediahub" "$OUT/luci-app-statusmon" "$OUT/luci-app-netqueue" "$OUT/luci-app-syskeep" "$OUT/luci-app-atkmon" "$OUT/keys"
+mkdir -p "$OUT/iptv-auth" "$OUT/luci-app-mediahub" "$OUT/luci-app-statusmon" "$OUT/luci-app-netqueue" "$OUT/luci-app-syskeep" "$OUT/keys"
 cp -a "$PUB_KEY" "$OUT/keys/my-openwrt.rsa.pub"
 install -m 600 "$SIGN_KEY" "$OUT/keys/my-openwrt.rsa"
 
@@ -97,7 +96,7 @@ EOF
 
 # ---------- IPTV 代理 ----------
 IPTV_ROOT="$(mktemp -d /tmp/pkg-iptv.XXXXXX)"
-trap 'rm -rf "$IPTV_ROOT" "$MEDIA_ROOT" "$STATUS_ROOT" "$NETQ_ROOT" "$SYSKEEP_ROOT" "$ATKMON_ROOT"' EXIT
+trap 'rm -rf "$IPTV_ROOT" "$MEDIA_ROOT" "$STATUS_ROOT" "$NETQ_ROOT" "$SYSKEEP_ROOT"' EXIT
 
 install -d "$IPTV_ROOT/etc/config" "$IPTV_ROOT/etc/init.d" "$IPTV_ROOT/etc/uci-defaults" \
 	"$IPTV_ROOT/etc/hotplug.d/iface" \
@@ -191,7 +190,9 @@ mkpkg \
 
 # ---------- 状态监控（内嵌 filemanager + 中文语言包） ----------
 STATUS_ROOT="$(mktemp -d /tmp/pkg-status.XXXXXX)"
-install -d "$STATUS_ROOT/etc/init.d" \
+install -d "$STATUS_ROOT/etc/config" \
+	"$STATUS_ROOT/etc/init.d" \
+	"$STATUS_ROOT/usr/bin" \
 	"$STATUS_ROOT/usr/lib/lua/luci/controller" \
 	"$STATUS_ROOT/usr/lib/lua/luci/view/statusmon" \
 	"$STATUS_ROOT/www/cgi-bin" \
@@ -204,6 +205,12 @@ install -d "$STATUS_ROOT/etc/init.d" \
 	"$STATUS_ROOT/etc/uci-defaults"
 
 install -m 755 "$SRC/etc/init.d/statusmon-acct" "$STATUS_ROOT/etc/init.d/statusmon-acct"
+install -m 755 "$SRC/etc/init.d/statusmon-sampler" "$STATUS_ROOT/etc/init.d/statusmon-sampler"
+install -m 755 "$SRC/etc/init.d/statusmon-attack" "$STATUS_ROOT/etc/init.d/statusmon-attack"
+install -m 644 "$SRC/etc/config/statusmon" "$STATUS_ROOT/etc/config/statusmon"
+install -m 755 "$SRC/usr/bin/statusmon-sampler" "$STATUS_ROOT/usr/bin/statusmon-sampler"
+install -m 755 "$SRC/usr/bin/statusmon-attack.py" "$STATUS_ROOT/usr/bin/statusmon-attack.py"
+install -m 755 "$SRC/usr/bin/statusmon-attack-nft.sh" "$STATUS_ROOT/usr/bin/statusmon-attack-nft.sh"
 install -m 644 "$SRC/usr/lib/lua/luci/controller/statusmon.lua" "$STATUS_ROOT/usr/lib/lua/luci/controller/statusmon.lua"
 install -m 644 "$SRC/usr/lib/lua/luci/view/statusmon/status.htm" "$STATUS_ROOT/usr/lib/lua/luci/view/statusmon/status.htm"
 install -m 755 "$SRC/www/cgi-bin/statusmon" "$STATUS_ROOT/www/cgi-bin/statusmon"
@@ -245,19 +252,21 @@ mkpkg \
 	"LuCI 状态监控（statusmon）含流量分类、文件管理器与中文语言包" \
 	custom/statusmon GPL-2.0 "https://github.com/bcyyt/my-openwrt" \
 	"$STATUS_ROOT" "$STATUS_APK" \
-	-I "depends:libc luci-base" \
+	-I "depends:libc python3 luci-base" \
 	-I "provides:luci-app-statusmon-any" \
-	-I "replaces:statusmon luci-app-filemanager luci-i18n-filemanager-zh-cn" \
+	-I "replaces:statusmon luci-app-atkmon luci-app-filemanager luci-i18n-filemanager-zh-cn" \
 	-I "tags:openwrt:section=luci" \
-	-s "post-install:$PACK/luci-app-statusmon/post-install.sh"
+	-s "post-install:$PACK/luci-app-statusmon/post-install.sh" \
+	-s "post-upgrade:$PACK/luci-app-statusmon/post-install.sh"
 
 STATUS_IPK="$OUT/luci-app-statusmon/luci-app-statusmon_${STATUS_VER}_${IPK_ARCH}.ipk"
 mkipk \
 	luci-app-statusmon "$STATUS_VER" "$IPK_ARCH" \
 	"LuCI 状态监控（statusmon）含流量分类、文件管理器与中文语言包" \
-	luci "libc, luci-base" \
+	luci "libc, python3, luci-base" \
 	"$STATUS_ROOT" "$STATUS_IPK" \
-	"$PACK/luci-app-statusmon/post-install.sh"
+	"$PACK/luci-app-statusmon/post-install.sh" \
+	/etc/config/statusmon
 
 # ---------- 网络优化 ----------
 NETQ_ROOT="$(mktemp -d /tmp/pkg-netq.XXXXXX)"
@@ -333,41 +342,6 @@ mkipk \
 	"$PACK/luci-app-syskeep/post-install.sh" \
 	/etc/syskeep/custom-apks.txt \
 	/etc/syskeep/datadir.sh
-
-
-# ---------- 安全监测 ----------
-ATKMON_ROOT="$(mktemp -d /tmp/pkg-atkmon.XXXXXX)"
-install -d "$ATKMON_ROOT/etc/config" "$ATKMON_ROOT/etc/init.d" "$ATKMON_ROOT/etc/uci-defaults" \
-	"$ATKMON_ROOT/usr/bin" \
-	"$ATKMON_ROOT/usr/lib/lua/luci/controller" \
-	"$ATKMON_ROOT/usr/lib/lua/luci/view/atkmon"
-
-install -m 644 "$SRC/etc/config/atkmon" "$ATKMON_ROOT/etc/config/atkmon"
-install -m 755 "$PACK/luci-app-atkmon/files/etc/uci-defaults/atkmon-setup" "$ATKMON_ROOT/etc/uci-defaults/atkmon-setup"
-install -m 755 "$SRC/etc/init.d/atkmon" "$ATKMON_ROOT/etc/init.d/atkmon"
-install -m 755 "$SRC/usr/bin/atkmon-collect.py" "$ATKMON_ROOT/usr/bin/atkmon-collect.py"
-install -m 755 "$SRC/usr/bin/atkmon-nft.sh" "$ATKMON_ROOT/usr/bin/atkmon-nft.sh"
-install -m 644 "$SRC/usr/lib/lua/luci/controller/atkmon.lua" "$ATKMON_ROOT/usr/lib/lua/luci/controller/atkmon.lua"
-install -m 644 "$SRC/usr/lib/lua/luci/view/atkmon/status.htm" "$ATKMON_ROOT/usr/lib/lua/luci/view/atkmon/status.htm"
-
-ATKMON_APK="$OUT/luci-app-atkmon/luci-app-atkmon-${ATKMON_VER}.apk"
-mkpkg \
-	luci-app-atkmon "$ATKMON_VER" noarch \
-	"LuCI 安全监测：外网爆破/探测、PPPoE、DNS、IPTV、DHCP，手动拉黑" \
-	luci-app-atkmon GPL-2.0 "https://github.com/bcyyt/my-openwrt" \
-	"$ATKMON_ROOT" "$ATKMON_APK" \
-	-I "depends:libc python3 luci-base" \
-	-I "tags:openwrt:section=luci" \
-	-s "post-install:$PACK/luci-app-atkmon/post-install.sh"
-
-ATKMON_IPK="$OUT/luci-app-atkmon/luci-app-atkmon_${ATKMON_VER}_${IPK_ARCH}.ipk"
-mkipk \
-	luci-app-atkmon "$ATKMON_VER" "$IPK_ARCH" \
-	"LuCI 安全监测：外网爆破/探测、PPPoE、DNS、IPTV、DHCP，手动拉黑" \
-	luci "libc, python3, luci-base" \
-	"$ATKMON_ROOT" "$ATKMON_IPK" \
-	"$PACK/luci-app-atkmon/post-install.sh" \
-	/etc/config/atkmon
 
 echo
 echo "==== packages ===="

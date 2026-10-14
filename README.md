@@ -1,6 +1,6 @@
 # my-openwrt
 
-ImmortalWrt / OpenWrt 插件：IPTV 代理、影视中心、状态监控、网络优化、保留升级、安全监测。APK（apk）与 x86_64 IPK（opkg）均在 `packages/`。
+ImmortalWrt / OpenWrt 插件：IPTV 代理、影视中心、状态监控、网络优化、保留升级。APK（apk）与 x86_64 IPK（opkg）均在 `packages/`。
 
 ## 软件包
 
@@ -8,10 +8,9 @@ ImmortalWrt / OpenWrt 插件：IPTV 代理、影视中心、状态监控、网�
 |------|------|------|------|
 | `iptv-auth` | 2.3.32-r0 | noarch | 鉴权、M3U/EPG、RTSP 回看；缓冲池 24MB、UDP 接收 4MB |
 | `luci-app-mediahub` | 1.5.7-r0 | x86_64 | 影视中心（CMS + AList + ffmpeg） |
-| `luci-app-statusmon` | 4.29 | noarch | 状态监控；客户端分页；PPPoE 流量跨重拨累计；rtp2httpd 快捷入口新开页；显示固件与内核 |
-| `luci-app-netqueue` | 1.0.19-r0 | noarch | 网络优化：转发、NAT 模式、DHCP、DNS、静态 IP、过期 ARP 清理 |
+| `luci-app-statusmon` | 4.38 | noarch | 状态监控；常驻采样器固定节奏采样（更准更省）；「系统性能」单面板（系统/CPU/内存 合成一张面板，含占用环 + CPU/内存曲线）与「温度」模块（CPU 封装/硬盘，3h/24h 可切换）；客户端分页；PPPoE 流量跨重拨累计；「安全」标签：登录爆破来源记录（永久保留、可清除）、攻击日志（永久保留、可清空）与手动拉黑（原安全监测已并入） |
+| `luci-app-netqueue` | 1.0.20-r0 | noarch | 网络优化：转发、CPU 模式/睿频、NAT、DHCP、DNS、静态 IP、过期 ARP 清理 |
 | `luci-app-syskeep` | 1.0.18-r0 | noarch | 保留升级：刷机还原网络/接口/防火墙；备份优先拷贝路由器本地安装包；日志逐条写出自装插件 |
-| `luci-app-atkmon` | 1.0.4-r0 | noarch | 安全监测：爆破目标/来源端口、手机卡片；PPPoE、DNS、IPTV、DHCP；手动拉黑 |
 
 APK 在 `packages/`，用 `keys/my-openwrt.rsa` 签名。
 影视中心只有 APK。其余插件另有 x86_64 IPK，供传统 opkg 使用。
@@ -30,16 +29,13 @@ apk add iptv-auth-2.3.32-r0.apk
 apk add luci-app-mediahub-1.5.7-r0.apk
 
 # 状态监控
-apk add luci-app-statusmon-4.29.apk
+apk add luci-app-statusmon-4.38.apk
 
 # 网络优化
-apk add luci-app-netqueue-1.0.19-r0.apk
+apk add luci-app-netqueue-1.0.20-r0.apk
 
 # 保留升级
 apk add luci-app-syskeep-1.0.18-r0.apk
-
-# 安全监测
-apk add luci-app-atkmon-1.0.4-r0.apk
 ```
 
 签名未信任时：
@@ -56,16 +52,13 @@ apk add --allow-untrusted xxx.apk
 opkg install iptv-auth_2.3.32-r0_x86_64.ipk
 
 # 状态监控
-opkg install luci-app-statusmon_4.29_x86_64.ipk
+opkg install luci-app-statusmon_4.38_x86_64.ipk
 
 # 网络优化
-opkg install luci-app-netqueue_1.0.19-r0_x86_64.ipk
+opkg install luci-app-netqueue_1.0.20-r0_x86_64.ipk
 
 # 保留升级
 opkg install luci-app-syskeep_1.0.18-r0_x86_64.ipk
-
-# 安全监测
-opkg install luci-app-atkmon_1.0.4-r0_x86_64.ipk
 ```
 
 ## IPTV
@@ -102,7 +95,9 @@ bash packaging/rtp2httpd/build.sh 3.17.2
 
 LuCI 菜单：**网络 → 网络优化**。转发、DHCP、邻居、DNS 分区保存。绑定静态 IP 立刻生效。
 
-转发默认开队列绑定、CPU performance、PPPoE 队列、UDP GRO、接收积压；软件分载默认关。
+转发默认开队列绑定、CPU 锁定最高、睿频、PPPoE 队列、UDP GRO、接收积压；软件分载默认关。
+
+CPU 模式对应 Intel HWP：节能 power、均衡 balance_performance、性能 performance；锁定最高把最低频率钉满。睿频对应 `intel_pstate/no_turbo`。
 
 NAT 模式：NAT1 完全锥形（`defaults.fullcone`）、NAT3 默认 masquerade、NAT4 `masquerade fully-random`。与转发总开关无关。
 

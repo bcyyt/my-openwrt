@@ -1,10 +1,10 @@
 #!/bin/sh
-# Apply inet atkmon table: WAN NEW log + INPUT reject for blocked addresses.
+# Apply inet statusmon_attack table: WAN NEW log + INPUT reject for blocked addresses.
 
 NFT=/usr/sbin/nft
 [ -x "$NFT" ] || NFT=nft
 
-WAN=$(uci -q get atkmon.main.wan_if)
+WAN=$(uci -q get statusmon.attack.wan_if)
 if [ -z "$WAN" ]; then
 	WAN=$(ifstatus wan 2>/dev/null | jsonfilter -e '@.l3_device' 2>/dev/null)
 fi
@@ -15,10 +15,10 @@ fi
 WAN=$(printf '%s' "$WAN" | tr -cd 'A-Za-z0-9._-')
 [ -n "$WAN" ] || WAN=pppoe-wan
 
-$NFT delete table inet atkmon 2>/dev/null || true
+$NFT delete table inet statusmon_attack 2>/dev/null || true
 
 if ! $NFT -f - <<EOF
-table inet atkmon {
+table inet statusmon_attack {
 	set block4 {
 		type ipv4_addr
 	}
@@ -31,12 +31,12 @@ table inet atkmon {
 		iifname "br-lan" accept
 		ip saddr @block4 counter reject
 		ip6 saddr @block6 counter reject
-		iifname "$WAN" ct state new log prefix "atkmon: " limit rate 20/second
+		iifname "$WAN" ct state new log prefix "statusmon-attack: " limit rate 20/second
 	}
 }
 EOF
 then
-	echo "atkmon-nft: table apply failed" >&2
+	echo "statusmon-attack-nft: table apply failed" >&2
 	exit 1
 fi
 
@@ -44,13 +44,13 @@ add_ip() {
 	ip="$1"
 	[ -n "$ip" ] || return 0
 	case "$ip" in
-		*:*) $NFT add element inet atkmon block6 "{ $ip }" 2>/dev/null || return 1 ;;
-		*) $NFT add element inet atkmon block4 "{ $ip }" 2>/dev/null || return 1 ;;
+		*:*) $NFT add element inet statusmon_attack block6 "{ $ip }" 2>/dev/null || return 1 ;;
+		*) $NFT add element inet statusmon_attack block4 "{ $ip }" 2>/dev/null || return 1 ;;
 	esac
 }
 
 rc=0
-for ip in $(uci -q get atkmon.main.block); do
+for ip in $(uci -q get statusmon.attack.block); do
 	add_ip "$ip" || rc=1
 done
 

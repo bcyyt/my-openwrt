@@ -1,0 +1,116 @@
+#!/bin/sh
+# statusmon-sampler — 常驻轻量系统采样器
+# 目的：把「采样」从 HTTP 请求里拆出来。
+#   * 固定节奏（默认 2s）读取 /proc + /sys 标量文件，写快照 /tmp/statusmon-snap
+#   * 页面/CGI 只读这份快照，不再每次请求各自读 /proc/stat 差分或探测传感器
+# 好处：
+#   * 更准：温度/占用按固定节奏采样，不受请求突发（nft/conntrack 等重活）污染
+#   * 更省：常驻单进程 + 少量文件读，替代每次请求的 fork + /proc 解析扇出
+#   * 更方便：一份 key=value 快照，任何前端直接消费
+# 快照字段：
+#   ts   采样时间（epoch 秒）
+#   cpu  CPU 使用率（%，基于 /proc/stat 相邻两次差分）
+#   temp 封装温度（毫摄氏度，x86_pkg_temp → coretemp 回退；无传感器为 0）
+#   disk 硬盘温度（毫摄氏度，hwmon nvme/drivetemp Composite；无传感器为 0）
+#   fmin/fmax 当前各核频率 min/max（MHz）
+#   l1/l5/l15 系统负载（/proc/loadavg）
+SNAP=/tmp/statusmon-snap
+SNAP_NEW=$SNAP.$$
+INTERVAL=${STATUSMON_SAMPLE_INTERVAL:-2}
+case "$INTERVAL" in ''|*[!0-9]*) INTERVAL=2 ;; esac
+[ "$INTERVAL" -lt 1 ] && INTERVAL=2
+
+read_cpu() {
+	read -r _ u n s i w q sq st _ _ < /proc/stat 2>/dev/null
+	TOT=$((u + n + s + i + w + q + sq + st))
+	IDL=$((i + w))
+}
+
+read_temp() {
+	local z t
+	for z in /sys/class/thermal/thermal_zone*; do
+		[ -r "$z/type" ] && [ "$(cat "$z/type" 2>/dev/null)" = "x86_pkg_temp" ] && {
+			t=$(cat "$z/temp" 2>/dev/null)
+			case "$t" in ''|*[!0-9]*) ;; *) echo "$t"; return ;; esac
+		}
+	done
+	for z in /sys/class/hwmon/hwmon*; do
+		[ -r "$z/name" ] && [ "$(cat "$z/name" 2>/dev/null)" = "coretemp" ] && {
+			t=$(cat "$z/temp1_input" 2>/dev/null)
+			case "$t" in ''|*[!0-9]*) ;; *) echo "$t"; return ;; esac
+		}
+	done
+	echo 0
+}
+
+read_freq() {
+	local f khz mhz
+	FMIN=0
+	FMAX=0
+	for f in /sys/devices/system/cpu/cpu[0-9]*/cpufreq/scaling_cur_freq; do
+		[ -r "$f" ] || continue
+		khz=$(cat "$f" 2>/dev/null)
+		case "$khz" in ''|*[!0-9]*) continue ;; esac
+		mhz=$((khz / 1000))
+		[ "$mhz" -gt 0 ] || continue
+		if [ "$FMIN" -eq 0 ] || [ "$mhz" -lt "$FMIN" ]; then
+			FMIN=$mhz
+		fi
+		if [ "$mhz" -gt "$FMAX" ]; then
+			FMAX=$mhz
+		fi
+	done
+}
+
+read_disk() {
+	local z t n
+	for z in /sys/class/hwmon/hwmon*; do
+		[ -r "$z/name" ] || continue
+		n=$(cat "$z/name" 2>/dev/null)
+		case "$n" in
+			nvme|drivetemp)
+				t=$(cat "$z/temp1_input" 2>/dev/null)
+				case "$t" in ''|*[!0-9]*) ;; *) echo "$t"; return ;; esac
+				;;
+		esac
+	done
+	echo 0
+}
+
+read_cpu
+PTOT=$TOT
+PIDL=$IDL
+
+while :; do
+	sleep "$INTERVAL"
+	read_cpu
+	dt=$((TOT - PTOT))
+	di=$((IDL - PIDL))
+	if [ "$dt" -gt 0 ]; then
+		usage=$(( (dt - di) * 100 / dt ))
+	else
+		usage=0
+	fi
+	[ "$usage" -lt 0 ] && usage=0
+	[ "$usage" -gt 100 ] && usage=100
+	PTOT=$TOT
+	PIDL=$IDL
+
+	temp=$(read_temp)
+	disk=$(read_disk)
+	read_freq
+	read -r l1 l5 l15 _ < /proc/loadavg 2>/dev/null
+	ts=$(date +%s)
+
+	{
+		printf 'ts=%s\n' "$ts"
+		printf 'cpu=%s\n' "$usage"
+		printf 'temp=%s\n' "$temp"
+		printf 'disk=%s\n' "$disk"
+		printf 'fmin=%s\n' "$FMIN"
+		printf 'fmax=%s\n' "$FMAX"
+		printf 'l1=%s\n' "$l1"
+		printf 'l5=%s\n' "$l5"
+		printf 'l15=%s\n' "$l15"
+	} > "$SNAP_NEW" 2>/dev/null && mv -f "$SNAP_NEW" "$SNAP" 2>/dev/null
+done

@@ -1,4 +1,10 @@
+/etc/config/statusmon
 /etc/init.d/statusmon-acct
+/etc/init.d/statusmon-sampler
+/etc/init.d/statusmon-attack
+/usr/bin/statusmon-attack-nft.sh
+/usr/bin/statusmon-attack.py
+/usr/bin/statusmon-sampler
 /lib/apk/packages/luci-app-statusmon.list
 /usr/lib/lua/luci/controller/statusmon.lua
 /usr/lib/lua/luci/view/statusmon/status.htm

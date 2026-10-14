@@ -59,3 +59,39 @@ Entries discovered by the Agent during task execution should follow this format:
   - `luci-app-natfrp` is a third-party APK, not in OpenWrt feeds. Official x86_64 package: `https://nya.globalslb.net/natfrp/client/launcher-openwrt/3.1.8/luci-app-natfrp-3.1.8-r6-x86_64.apk`
   - Keep that APK on `/mnt/data/syskeep/apks/` and a line in `/etc/syskeep/custom-apks.txt`. Overlay-pkgs must list `luci-app-natfrp`.
   - After flash, `/etc/config/natfrp` and `/etc/natfrp/config.json` can remain while `/usr/bin/natfrp-service` is gone. Install the APK then `/etc/init.d/natfrp restart`.
+
+[Tokens and credits]
+- Date: 2026-10-13
+- Context: User instructed while fixing CPU temperature bias
+- Instructions:
+  - If model/API tokens are exhausted, pause the task.
+  - Do not spend 积分 / paid credits to continue.
+
+[statusmon build and packaging]
+- Date: 2026-10-13
+- Context: Discovered by Agent while adding the resident sysmon sampler
+- Category: Build Methods
+- Instructions:
+  - Build only statusmon (avoid repacking other same-version plugins): `sed -n "1,96p;191,269p" packaging/build-apks.sh | sed "s|^ROOT=.*|ROOT=/workspace|" | bash`. Lines 1-96 are the mkpkg/mkipk helper definitions; the statusmon range must cover the whole 状态监控 section (to the line before `# ---------- 网络优化`). Re-check the range after editing build-apks.sh.
+  - `apk` runs `post-upgrade` (not `post-install`) on upgrades. mkpkg must register both: `-s post-install:<script> -s post-upgrade:<script>`, otherwise install-time init enable/start never fires on upgrade.
+- Project Knowledge (Operations & Deployment):
+  - statusmon system metrics are sampled by a procd-managed daemon `/etc/init.d/statusmon-sampler` (`/usr/bin/statusmon-sampler`, default 2s) writing `/tmp/statusmon-snap`; the CGI prefers this snapshot and falls back to inline sampling when missing/stale (>12s).
+
+[Router syslog DNS noise]
+- Date: 2026-10-14
+- Context: Discovered by Agent while investigating many `127.0.0.1` lines in logread
+- Category: Troubleshooting & Debugging
+- Instructions:
+  - `dhcp.@dnsmasq[0].dns_redirect='1'` inserts an nftables rule (`udp dport 53 redirect to :53`, comment "DNSMASQ HIJACK", from `/etc/init.d/dnsmasq`) that rewrites LAN DNS client source addresses to `127.0.0.1` in dnsmasq logs. So `from 127.0.0.1` in `dnsmasq[...] query/reply/forwarded` lines means a LAN device, not localhost.
+  - `dhcp.@dnsmasq[0].logqueries='1'` makes dnsmasq log every query; disable with `uci set dhcp.@dnsmasq[0].logqueries='0'` + `uci commit dhcp` + `/etc/init.d/dnsmasq restart`.
+  - The old atkmon DNS module depended on logqueries and `atkmon-setup` re-enabled it (via `atkmon.main.dns_log`). Both the module and the setup hook were removed in luci-app-atkmon 1.0.6-r0, so `atkmon-setup` no longer touches dnsmasq logqueries.
+  - statusmon traffic classification via dnsmasq `nftset=` is independent of `logqueries`; it keeps working when query logging is off.
+
+[statusmon attack data persistence]
+- Date: 2026-10-14
+- Context: Discovered by Agent while merging atkmon into luci-app-statusmon
+- Category: Operations & Deployment
+- Instructions:
+  - `/var` is a symlink to `/tmp` (tmpfs), so anything under `/var/lib` is lost on reboot. To persist attack records/logs, the collector mirrors them to the overlay: `/etc/statusmon/attack-state.json` (records, max 2000) and `/etc/statusmon/attack-log.jsonl` (auth + PPPoE events, max 50000). `/var/lib/statusmon-attack/` holds the live snapshot/state only.
+  - Manual clear is asynchronous: LuCI writes `/var/lib/statusmon-attack/cmd.json` (`{"records":true}` or `{"log":true}`), and the collector consumes it at the next loop, clears the in-memory state, then flushes the mirror.
+  - busybox `sleep` in OpenWrt only accepts integer seconds; `sleep 0.25` fails instantly. Poll loops must use `sleep 1` (or `nixio.nanosleep`).

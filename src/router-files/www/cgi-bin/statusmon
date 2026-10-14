@@ -1,6 +1,18 @@
 #!/bin/sh
-# statusmon v4.29 — OpenWrt 系统状态数据采集 CGI
+# statusmon v4.37 — OpenWrt 系统状态数据采集 CGI
 # 部署到 /www/cgi-bin/statusmon
+# v4.37 变更：「系统性能」合成单面板，去掉系统/CPU/内存小标题与运行状态徽标、去掉分割线；CPU 与内存占用合并为同一基线的双曲线，窄屏改 2 列紧凑网格
+# v4.36 变更：删除系统概览三卡；运行时间/固件/内核/主机名/开机时刻/连接追踪/系统时间与 CPU/内存占用环
+#             全部并入「系统性能」模块，模块保留 CPU/内存两条占用曲线；温度独立为「温度」模块（CPU 封装 + 硬盘）
+# v4.35 变更：恢复 CPU/内存占用环；新增「性能曲线」模块（CPU 占用 / 内存占用 / 温度，共用 3 小时 / 24 小时 切换）；
+#             概览三卡与曲线模块版式统一，温度曲线合并进性能曲线模块
+# v4.34 变更：温度曲线改为 CPU 封装 + 硬盘双曲线（sys_hist 归档新增第 5 列 disk），前端支持 3 小时 / 24 小时 切换；
+#             去掉 CPU 占用/内存占用环形卡片与 3 分钟 sparkline，系统 JSON 新增 disk_temp
+# v4.33 变更：系统指标优先读常驻采样器快照 /tmp/statusmon-snap（固定节奏采样，更准更省），
+#             快照缺失/过期时回退 CGI 内联采样；新增 /etc/init.d/statusmon-sampler
+# v4.32 变更：去掉与 CPU 重复的系统负载卡片，概览改为系统 / CPU / 内存三列
+# v4.31 修复：CPU 温度在 nft 累计之前采样，避免 CGI 自身负载把读数抬高约 10°C
+# v4.30 变更：CPU 模块输出当前频率（各核 scaling_cur_freq 的 min/max，单位 MHz）
 # v4.24 修复：同一 MAC 多 IPv4 时优先 REACHABLE/DELAY/PROBE，其次 DHCP 租约，避免 STALE 旧地址盖住当前 IP
 # v4.1 修复：ip neigh 字段解析（MAC=$5/状态=末字段）、CPU 采样公式、
 #           conntrack 双向归并 + IPv6 地址规范化匹配、活跃客户端过滤（REACHABLE/DELAY/PROBE）
@@ -475,6 +487,21 @@ _sm_sys_hist_temp() {
     echo "0"
 }
 
+_sm_sys_hist_disk() {
+    local h t
+    for h in /sys/class/hwmon/hwmon*; do
+        [ -f "$h/name" ] || continue
+        case "$(cat "$h/name" 2>/dev/null)" in
+            nvme|drivetemp)
+                [ -f "$h/temp1_input" ] || continue
+                t=$(cat "$h/temp1_input" 2>/dev/null)
+                [ -n "$t" ] && { awk -v v="$t" 'BEGIN{printf "%.1f", v/1000}'; return; }
+                ;;
+        esac
+    done
+    echo "0"
+}
+
 _sm_sys_hist_mem() {
     awk '
       /^MemTotal:/{t=$2}
@@ -490,13 +517,14 @@ sys_hist_sample() {
     [ -f "$SYS_HIST_CPU" ] || first=1
     cpu=$(_sm_sys_hist_cpu)
     mem=$(_sm_sys_hist_mem)
-    temp=$(_sm_sys_hist_temp)
-    cpu=${cpu:-0}; mem=${mem:-0}; temp=${temp:-0}
+    temp=${_sm_cpu_temp_now:-$(_sm_sys_hist_temp)}
+    disk=${_sm_disk_temp_now:-$(_sm_sys_hist_disk)}
+    cpu=${cpu:-0}; mem=${mem:-0}; temp=${temp:-0}; disk=${disk:-0}
     [ "$first" = 1 ] && return 0
     cut=$((NOW - SYS_HIST_WIN))
     {
         [ -s "$SYS_HIST_TMP" ] && awk -v cut="$cut" '$1+0>=cut{print}' "$SYS_HIST_TMP"
-        printf '%s %s %s %s\n' "$NOW" "$cpu" "$mem" "$temp"
+        printf '%s %s %s %s %s\n' "$NOW" "$cpu" "$mem" "$temp" "$disk"
     } > "$SYS_HIST_TMP.new" 2>/dev/null
     mv -f "$SYS_HIST_TMP.new" "$SYS_HIST_TMP" 2>/dev/null
     lastf=$(cat "$SYS_HIST_FLUSH" 2>/dev/null || echo 0)
@@ -515,7 +543,7 @@ sys_hist_json() {
       BEGIN{print "{\"points\":["}
       $1+0>=cut{
         if(n++) printf ","
-        printf "{\"t\":%d,\"c\":%d,\"m\":%d,\"p\":%s}", $1+0, $2+0, $3+0, ($4==""?"0":$4)
+        printf "{\"t\":%d,\"c\":%d,\"m\":%d,\"p\":%s,\"d\":%s}", $1+0, $2+0, $3+0, ($4==""?"0":$4), ($5==""?"0":$5)
       }
       END{print "]}"}
     ' "$f"
@@ -960,6 +988,58 @@ client_accumulate() {
 # ===== 全局流量分类统计（?summary=1 / ?proto_day=YYYY-MM-DD）=====
 # ?summary=1: 返回当前 conntrack 实时分类流量
 # ?proto_day=YYYY-MM-DD: 返回历史某日的协议分类流量（从归档读取）
+# ===== 常驻采样器快照（v4.33）=====
+# 由 statusmon-sampler 以固定节奏（默认 2s）写入 /tmp/statusmon-snap。
+# 优先使用快照：温度/占用按固定节奏采样，不受本次请求重活（nft/conntrack）污染；
+# 快照缺失或过期（>12s）时回退到 CGI 内联采样，保证单独装本包也能正常工作。
+SNAP_FILE=/tmp/statusmon-snap
+SNAP_MAX_AGE=12
+_sm_snap_fresh=0
+_sm_snap_cpu=""; _sm_snap_temp_milli=""; _sm_snap_disk_milli=""; _sm_snap_fmin=""; _sm_snap_fmax=""
+_sm_snap_l1=""; _sm_snap_l5=""; _sm_snap_l15=""
+if [ -s "$SNAP_FILE" ]; then
+    _sm_snap_ts=0
+    while IFS='=' read -r _sk _sv; do
+        case "$_sk" in
+            ts) _sm_snap_ts=$_sv ;;
+            cpu) _sm_snap_cpu=$_sv ;;
+            temp) _sm_snap_temp_milli=$_sv ;;
+            disk) _sm_snap_disk_milli=$_sv ;;
+            fmin) _sm_snap_fmin=$_sv ;;
+            fmax) _sm_snap_fmax=$_sv ;;
+            l1) _sm_snap_l1=$_sv ;;
+            l5) _sm_snap_l5=$_sv ;;
+            l15) _sm_snap_l15=$_sv ;;
+        esac
+    done < "$SNAP_FILE"
+    case "$_sm_snap_ts" in ''|*[!0-9]*) _sm_snap_ts=0 ;; esac
+    _sm_snap_age=$((NOW - _sm_snap_ts))
+    [ "$_sm_snap_ts" -gt 0 ] && [ "$_sm_snap_age" -ge 0 ] && [ "$_sm_snap_age" -lt "$SNAP_MAX_AGE" ] && _sm_snap_fresh=1
+fi
+_sm_now_temp() {
+    if [ "$_sm_snap_fresh" = 1 ]; then
+        case "$_sm_snap_temp_milli" in
+            ''|*[!0-9]*) ;;
+            *)
+                [ "$_sm_snap_temp_milli" -gt 0 ] && { awk -v v="$_sm_snap_temp_milli" 'BEGIN{printf "%.1f", v/1000}'; return; }
+                ;;
+        esac
+    fi
+    _sm_sys_hist_temp
+}
+_sm_now_disk() {
+    if [ "$_sm_snap_fresh" = 1 ]; then
+        case "$_sm_snap_disk_milli" in
+            ''|*[!0-9]*) ;;
+            *)
+                [ "$_sm_snap_disk_milli" -gt 0 ] && { awk -v v="$_sm_snap_disk_milli" 'BEGIN{printf "%.1f", v/1000}'; return; }
+                ;;
+        esac
+    fi
+    _sm_sys_hist_disk
+}
+_sm_cpu_temp_now=$(_sm_now_temp)
+_sm_disk_temp_now=$(_sm_now_disk)
 _qs_summary=$(echo "$QUERY_STRING" | sed -n 's/^summary=\([^&]*\).*/\1/p')
 _qs_proto_day=$(echo "$QUERY_STRING" | sed -n 's/^proto_day=\([^&]*\).*/\1/p')
 if [ -n "$_qs_proto_day" ]; then
@@ -983,10 +1063,11 @@ fi
 _qs_accumulate=$(echo "$QUERY_STRING" | sed -n 's/^accumulate=\([^&]*\).*/\1/p')
 if [ -n "$_qs_accumulate" ]; then
     # cron 每分钟调用：只累计不返回数据（协议 nft counter + 客户端 nft 动态 set 差分）
+    # v4.31：先采温度/负载，再跑 nft 累计，避免 CGI 自身把 CPU 烤热后写入 24h 曲线
+    sys_hist_sample
     proto_accumulate 0
     client_accumulate
     _sm_sets_seed
-    sys_hist_sample
     _sm_pppoe_acct_tick
     echo '{"result":"ok"}'
     exit 0
@@ -1165,32 +1246,35 @@ board=$(cat /tmp/sysinfo/board_name 2>/dev/null || echo "unknown")
 cpu_model=$(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2 | sed 's/^ *//' || echo "unknown")
 cpu_cores=$(grep -c processor /proc/cpuinfo 2>/dev/null || echo 1)
 
-# CPU 温度（v4.10）：优先 x86_pkg_temp（内核 x86 包温度，与 LuCI 首页口径一致；
-# 本机实测 x86_pkg_temp=coretemp Package=35C，而 thermal_zone0=acpitz=41C 是主板 ACPI 传感器非 CPU 本体）
-# 其次 coretemp hwmon 的 Package id 0，最后回退首个 thermal zone / hwmon
-temp_c="null"
-for z in /sys/class/thermal/thermal_zone*; do
-    [ -f "$z/type" ] && [ "$(cat "$z/type" 2>/dev/null)" = "x86_pkg_temp" ] && [ -f "$z/temp" ] && {
-        t=$(cat "$z/temp" 2>/dev/null)
-        [ -n "$t" ] && { temp_c=$(awk -v v="$t" 'BEGIN{printf "%.1f", v/1000}'); break; }
-    }
+# CPU 当前频率（v4.30）：读各核 scaling_cur_freq（kHz），输出 MHz 的 min/max
+cpu_freq_min=0
+cpu_freq_max=0
+for _sf in /sys/devices/system/cpu/cpu[0-9]*/cpufreq/scaling_cur_freq; do
+	[ -f "$_sf" ] || continue
+	_khz=$(cat "$_sf" 2>/dev/null)
+	case "$_khz" in ''|*[!0-9]*) continue ;; esac
+	_mhz=$((_khz / 1000))
+	[ "$_mhz" -gt 0 ] || continue
+	if [ "$cpu_freq_min" -eq 0 ] || [ "$_mhz" -lt "$cpu_freq_min" ]; then
+		cpu_freq_min=$_mhz
+	fi
+	if [ "$_mhz" -gt "$cpu_freq_max" ]; then
+		cpu_freq_max=$_mhz
+	fi
 done
-if [ "$temp_c" = "null" ]; then
-    for h in /sys/class/hwmon/hwmon*; do
-        [ -f "$h/name" ] && [ "$(cat "$h/name" 2>/dev/null)" = "coretemp" ] && [ -f "$h/temp1_input" ] && {
-            t=$(cat "$h/temp1_input" 2>/dev/null)
-            [ -n "$t" ] && { temp_c=$(awk -v v="$t" 'BEGIN{printf "%.1f", v/1000}'); break; }
-        }
-    done
+if [ "$cpu_freq_max" -eq 0 ]; then
+	_mhz=$(awk -F: '/^cpu MHz/{gsub(/ /,"",$2); printf "%.0f\n",$2; exit}' /proc/cpuinfo 2>/dev/null)
+	case "$_mhz" in ''|*[!0-9]*) _mhz=0 ;; esac
+	cpu_freq_min=$_mhz
+	cpu_freq_max=$_mhz
 fi
-if [ "$temp_c" = "null" ]; then
-    for z in /sys/class/thermal/thermal_zone*/temp; do
-        [ -f "$z" ] && { t=$(cat "$z" 2>/dev/null); [ -n "$t" ] && { temp_c=$(awk -v v="$t" 'BEGIN{printf "%.1f", v/1000}'); break; }; }
-    done
-fi
-[ "$temp_c" = "null" ] && for h in /sys/class/hwmon/hwmon*/temp1_input; do
-    [ -f "$h" ] && { t=$(cat "$h" 2>/dev/null); [ -n "$t" ] && { temp_c=$(awk -v v="$t" 'BEGIN{printf "%.1f", v/1000}'); break; }; }
-done
+cpu_freq=$cpu_freq_max
+
+# CPU 温度：入口处分发前已采样（v4.31），避免后面 nft/客户端累计把读数抬高
+temp_c=${_sm_cpu_temp_now:-null}
+case "$temp_c" in ''|0) temp_c="null" ;; esac
+disk_c=${_sm_disk_temp_now:-null}
+case "$disk_c" in ''|0) disk_c="null" ;; esac
 
 # CPU 使用率：跨请求差分采样（v4.8）
 # BusyBox sleep 不支持小数秒，请求内 sleep 0.5 必然失败（日志刷屏 + 窗口退化 ~1ms，
@@ -1222,6 +1306,18 @@ if [ -n "$cu_i2" ]; then
     fi
     printf '%s %s %s\n' "$cu_tot2" "$cu_idl2" "$cpu_usage" > "$CPU_STATE.$$" 2>/dev/null && mv -f "$CPU_STATE.$$" "$CPU_STATE" 2>/dev/null
     rm -f "$CPU_STATE.$$" 2>/dev/null
+fi
+
+# 采样器快照优先（v4.33）：固定节奏采样，覆盖上面的内联采样结果（缺失/过期时保留回退值）
+if [ "$_sm_snap_fresh" = 1 ]; then
+    case "$_sm_snap_cpu" in ''|*[!0-9]*) ;; *) cpu_usage=$_sm_snap_cpu ;; esac
+    case "$_sm_snap_fmax" in
+        ''|*[!0-9]*) ;;
+        *) cpu_freq_min=$_sm_snap_fmin; cpu_freq_max=$_sm_snap_fmax; cpu_freq=$_sm_snap_fmax ;;
+    esac
+    [ -n "$_sm_snap_l1" ] && load1=$_sm_snap_l1
+    [ -n "$_sm_snap_l5" ] && load5=$_sm_snap_l5
+    [ -n "$_sm_snap_l15" ] && load15=$_sm_snap_l15
 fi
 
 # ===== 内存 =====
@@ -1739,7 +1835,11 @@ cat <<JSONEOF
     "cpu_model": "$cpu_model",
     "cpu_cores": $cpu_cores,
     "cpu_usage": $cpu_usage,
-    "temperature": $temp_c
+    "cpu_freq": $cpu_freq,
+    "cpu_freq_min": $cpu_freq_min,
+    "cpu_freq_max": $cpu_freq_max,
+    "temperature": $temp_c,
+    "disk_temp": $disk_c
   },
   "memory": {
     "total": $mem_total,

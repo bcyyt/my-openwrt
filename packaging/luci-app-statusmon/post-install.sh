@@ -4,11 +4,39 @@
 
 mkdir -p /etc/statusmon
 chmod 755 /etc/statusmon
-chmod 755 /www/cgi-bin/statusmon /etc/init.d/statusmon-acct 2>/dev/null || true
+chmod 755 /www/cgi-bin/statusmon /etc/init.d/statusmon-acct /etc/init.d/statusmon-sampler /usr/bin/statusmon-sampler 2>/dev/null || true
+chmod 755 /etc/init.d/statusmon-attack /usr/bin/statusmon-attack.py /usr/bin/statusmon-attack-nft.sh 2>/dev/null || true
+
+# 攻击记录采集依赖 dnsmasq 之外的 syslog；此处仅修复“重复 log-facility 导致 dnsmasq 崩溃”的历史问题
+if [ -f /etc/dnsmasq.conf ] && grep -qE '^[[:space:]]*log-facility=/dev/null' /etc/dnsmasq.conf; then
+	sed -i 's|^[[:space:]]*log-facility=/dev/null|# log-facility=/dev/null|' /etc/dnsmasq.conf
+	/etc/init.d/dnsmasq restart >/dev/null 2>&1 || true
+fi
+
+if [ -x /etc/init.d/statusmon-attack ]; then
+	/etc/init.d/statusmon-attack enable 2>/dev/null || true
+	/etc/init.d/statusmon-attack restart 2>/dev/null || true
+fi
+
+# 并入迁移：旧「安全监测」(luci-app-atkmon) 的采集数据搬过来，并清掉已废弃的旧服务
+if [ -d /var/lib/atkmon ] && [ ! -f /var/lib/statusmon-attack/snapshot.json ]; then
+	mkdir -p /var/lib/statusmon-attack
+	cp -a /var/lib/atkmon/. /var/lib/statusmon-attack/ 2>/dev/null || true
+fi
+if [ -x /etc/init.d/atkmon ] && ! apk info --installed luci-app-atkmon >/dev/null 2>&1; then
+	/etc/init.d/atkmon stop 2>/dev/null || true
+	/etc/init.d/atkmon disable 2>/dev/null || true
+	rm -f /etc/init.d/atkmon
+fi
 
 if [ -x /etc/init.d/statusmon-acct ]; then
 	/etc/init.d/statusmon-acct enable 2>/dev/null || true
 	/etc/init.d/statusmon-acct start 2>/dev/null || true
+fi
+
+if [ -x /etc/init.d/statusmon-sampler ]; then
+	/etc/init.d/statusmon-sampler enable 2>/dev/null || true
+	/etc/init.d/statusmon-sampler restart 2>/dev/null || true
 fi
 
 need_fm=0
