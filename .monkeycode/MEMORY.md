@@ -87,6 +87,7 @@ Entries discovered by the Agent during task execution should follow this format:
   - The old atkmon DNS module depended on logqueries and `atkmon-setup` re-enabled it (via `atkmon.main.dns_log`). Both the module and the setup hook were removed in luci-app-atkmon 1.0.6-r0, so `atkmon-setup` no longer touches dnsmasq logqueries.
   - statusmon traffic classification via dnsmasq `nftset=` is independent of `logqueries`; it keeps working when query logging is off.
   - dnsmasq only emits `DHCPACK/DHCPNAK` lines to syslog when `dhcp.@dnsmasq[0].logdhcp='1'`. The statusmon「日志」页 DHCP 类别依赖它，post-install 会按需开启（仅 DHCP，不含 DNS 查询）。
+  - 真实 dnsmasq DHCP 行在 tag 与事件名之间带一个数字事务 ID：`dnsmasq-dhcp[1]: <txid> DHCPACK(br-lan) <ip> <mac> <name>`。匹配正则须写成 `(?:\d+ )?DHCPACK`，否则 DHCP 日志永远采不到（statusmon 4.40 修复）。
   - statusmon-attack 曾在 nft `input` 链对 WAN 新连接 `log prefix "statusmon-attack: " limit rate 20/second`，导致系统日志被 `IN=pppoe-wan` 行刷屏（占 logread 约 80%，看起来"全是 pppoe"）。4.39 移除该 log 规则与端口探测采集，攻击记录仅保留登录爆破来源；排查此类刷屏先看 `nft list chain inet statusmon_attack input`。
 
 [statusmon attack data persistence]
