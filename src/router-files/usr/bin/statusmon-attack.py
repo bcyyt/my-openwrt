@@ -18,11 +18,6 @@ CMD = DIR + "/cmd.json"
 # 攻击记录/日志持久化到 overlay（/var 是 tmpfs，重启即失）；镜像文件不随包卸载
 PERSIST_STATE = "/etc/statusmon/attack-state.json"
 PERSIST_LOG = "/etc/statusmon/attack-log.jsonl"
-PROBE_WINDOW = 600
-PROBE_HIT_MIN = 8
-PROBE_PORT_MIN = 5
-PROBE_UDP_MIN = 20
-
 MAX_RECORDS = 2000
 # 持久化日志按类别限长（防单类刷爆 flash）；无固定短期过期
 LOG_CAP = {"attack": 30000, "login": 20000, "dhcp": 20000, "pppoe": 5000}
@@ -37,8 +32,6 @@ RE_DROPBEAR_OK = re.compile(
 )
 RE_LUCI = re.compile(r"luci: failed login(?: on \S+)?(?: for (\S+))? from ([0-9a-fA-F:.]+)")
 RE_LUCI_OK = re.compile(r"luci: accepted login(?: on \S+)?(?: for (\S+))? from ([0-9a-fA-F:.]+)")
-RE_ATTACK = re.compile(r"statusmon-attack:.*SRC=(\S+).*PROTO=(\S+).*DPT=(\d+)")
-RE_PPPOE_UP = re.compile(r"(pppoe-|Interface 'wan' is now up|CHAP authentication succeeded|PPP session is )")
 RE_PPPOE_DOWN = re.compile(r"(Modem hangup|Connection terminated|Interface 'wan' is now down|Timeout waiting for PADO)")
 RE_DHCPACK = re.compile(r"dnsmasq-dhcp\[\d+\]: DHCPACK\(\S+\) (\S+) (\S+)(?: (\S+))?")
 RE_DHCPNAK = re.compile(r"dnsmasq-dhcp\[\d+\]: DHCPNAK")
@@ -69,17 +62,6 @@ def write_json(path, obj):
 
 def uci_get(key):
     return sh(["uci", "-q", "get", key])
-
-
-def open_ports():
-    raw = uci_get("statusmon.attack.open_ports") or "22 80 443 2323 23232 2000 23234 554 16601"
-    out = set()
-    for p in raw.replace(",", " ").split():
-        try:
-            out.add(int(p))
-        except ValueError:
-            pass
-    return out
 
 
 def lan_nets():
@@ -219,7 +201,8 @@ def append_event(events, ev, now):
 
 
 def log_events(st):
-    # 持久化日志：攻击(不含端口探测) / 登录 / DHCP / PPPoE，按类别分别限长
+    # 持久化日志：攻击 / 登录 / DHCP / PPPoE，按类别分别限长
+    # （旧版本遗留的端口探测事件 type=probe 一并过滤，避免写入）
     rows = [e for e in st.get("events") or []
             if e.get("type") != "probe"
             and e.get("cat") in ("attack", "login", "dhcp", "pppoe")]
@@ -306,7 +289,6 @@ def handle_cmd(st):
         return False
     if cmd.get("records"):
         st["attack"] = {}
-        st["probe_pending"] = {}
     if cmd.get("log"):
         st["events"] = []
     return True
@@ -314,7 +296,7 @@ def handle_cmd(st):
 
 def bump(hourly, ts, field, n=1):
     k = hour_key(ts)
-    row = hourly.setdefault(k, {"auth": 0, "probe": 0, "pppoe": 0})
+    row = hourly.setdefault(k, {"auth": 0, "pppoe": 0})
     row[field] = int(row.get(field) or 0) + n
 
 
@@ -342,55 +324,16 @@ def wan_status():
 
 
 def is_real_attack(row, now=None):
-    if int(row.get("auth_count") or 0) > 0:
-        return True
-    now = int(now or time.time())
-    recent = [(int(t), p) for t, p in (row.get("probe_ports") or []) if now - int(t) <= PROBE_WINDOW]
-    nports = len({p for t, p in recent if p})
-    return nports >= PROBE_PORT_MIN or len(recent) >= PROBE_HIT_MIN
-
-
-def note_probe(st, ip, dpt, proto, now):
-    pending = st.setdefault("probe_pending", {})
-    rec = pending.get(ip) or {"hits": [], "promoted": False}
-    already = bool(rec.get("promoted"))
-    rec["hits"] = [h for h in (rec.get("hits") or []) if now - h[0] <= PROBE_WINDOW]
-    rec["hits"].append((now, dpt, proto))
-    rec["hits"] = rec["hits"][-80:]
-    hits = rec["hits"]
-    nports = len({h[1] for h in hits if h[1]})
-    tcp_n = sum(1 for h in hits if h[2] == "tcp")
-    udp_n = sum(1 for h in hits if h[2] == "udp")
-    should = nports >= PROBE_PORT_MIN or tcp_n >= PROBE_HIT_MIN or udp_n >= PROBE_UDP_MIN
-    rec["promoted"] = already or should
-    rec["last"] = now
-    pending[ip] = rec
-    if not rec["promoted"]:
-        return None
-    if already:
-        return [(now, dpt, proto)]
-    return list(hits)
+    return int(row.get("auth_count") or 0) > 0
 
 
 def attack_tag(summary, ip, now):
     row = summary.get(ip) or {}
-    auths = [t for t in row.get("auth_ts") or [] if now - t <= 600]
-    ports = set()
-    for t, p in row.get("probe_ports") or []:
-        if now - t <= 300:
-            ports.add(p)
-    tag = "probe"
-    if len(auths) >= 5:
-        tag = "auth"
-    if len(ports) >= 8:
-        tag = "scan"
-    row["tag"] = tag
-    row["auth_ts"] = auths[-20:]
-    row["probe_ports"] = [(t, p) for t, p in (row.get("probe_ports") or []) if now - t <= 3600][-40:]
+    row["auth_ts"] = [t for t in row.get("auth_ts") or [] if now - t <= 600][-20:]
     summary[ip] = row
 
 
-def parse_line(line, st, now, nets, ports):
+def parse_line(line, st, now, nets):
     events = st["events"]
     hourly = st["hourly"]
     summary = st["attack"]
@@ -409,8 +352,8 @@ def parse_line(line, st, now, nets, ports):
             ev = {"ts": now, "cat": "attack", "type": "auth", "svc": "ssh", "ip": ip, "user": user, "port": dport, "sport": sport}
             append_event(events, ev, now)
             bump(hourly, now, "auth")
-            row = summary.setdefault(ip, {"ip": ip, "count": 0, "auth_count": 0, "probe_count": 0,
-                                          "ports": [], "first_ts": now, "last_ts": now, "auth_ts": [], "probe_ports": []})
+            row = summary.setdefault(ip, {"ip": ip, "count": 0, "auth_count": 0,
+                                          "ports": [], "first_ts": now, "last_ts": now, "auth_ts": []})
             row["count"] += 1
             row["auth_count"] += 1
             row["last_ts"] = now
@@ -430,8 +373,8 @@ def parse_line(line, st, now, nets, ports):
             ev = {"ts": now, "cat": "attack", "type": "auth", "svc": "luci", "ip": ip, "port": dport}
             append_event(events, ev, now)
             bump(hourly, now, "auth")
-            row = summary.setdefault(ip, {"ip": ip, "count": 0, "auth_count": 0, "probe_count": 0,
-                                          "ports": [], "first_ts": now, "last_ts": now, "auth_ts": [], "probe_ports": []})
+            row = summary.setdefault(ip, {"ip": ip, "count": 0, "auth_count": 0,
+                                          "ports": [], "first_ts": now, "last_ts": now, "auth_ts": []})
             row["count"] += 1
             row["auth_count"] += 1
             row["last_ts"] = now
@@ -453,34 +396,6 @@ def parse_line(line, st, now, nets, ports):
         ev = {"ts": now, "cat": "login", "type": "ok", "svc": "luci",
               "ip": parse_ip(m.group(2)), "user": m.group(1) or ""}
         append_event(events, ev, now)
-        return
-
-    m = RE_ATTACK.search(line)
-    if m:
-        st["probe_seen"] = True
-        ip = parse_ip(m.group(1))
-        try:
-            dpt = int(m.group(3))
-        except ValueError:
-            dpt = 0
-        proto = (m.group(2) or "TCP").split()[0].lower()
-        if ip and not is_lan(ip, nets) and dpt not in ports:
-            flushed = note_probe(st, ip, dpt, proto, now)
-            if not flushed:
-                return
-            row = summary.setdefault(ip, {"ip": ip, "count": 0, "auth_count": 0, "probe_count": 0,
-                                          "ports": [], "first_ts": now, "last_ts": now, "auth_ts": [], "probe_ports": []})
-            for ts, port, pr in flushed:
-                ev = {"ts": ts, "cat": "attack", "type": "probe", "svc": "fw", "ip": ip, "port": port, "proto": pr}
-                append_event(events, ev, now)
-                bump(hourly, ts, "probe")
-                row["count"] += 1
-                row["probe_count"] += 1
-                row["last_ts"] = ts
-                if port and port not in row["ports"]:
-                    row["ports"].append(port)
-                row["probe_ports"].append((ts, port))
-            attack_tag(summary, ip, now)
         return
 
     if RE_PPPOE_DOWN.search(line) and ("pppoe" in line.lower() or "wan" in line.lower() or "pado" in line.lower() or "modem hangup" in line.lower()):
@@ -524,10 +439,8 @@ def default_state():
         "events": [],
         "hourly": {},
         "attack": {},
-        "probe_seen": False,
         "pppoe_events": [],
         "redial_ts": [],
-        "probe_pending": {},
         "dhcp_seen": {},
     }
 
@@ -547,28 +460,13 @@ def build_snapshot(st, now):
         series.append({
             "ts": ts,
             "auth": int(row.get("auth") or 0),
-            "probe": int(row.get("probe") or 0),
             "pppoe": int(row.get("pppoe") or 0),
         })
 
-    pending = st.get("probe_pending") or {}
-    keep_p = {}
-    for ip, rec in pending.items():
-        hits = [h for h in (rec.get("hits") or []) if now - h[0] <= PROBE_WINDOW]
-        last = int(rec.get("last") or (hits[-1][0] if hits else 0))
-        if rec.get("promoted") and now - last <= 86400:
-            rec["hits"] = hits
-            keep_p[ip] = rec
-        elif hits:
-            rec["hits"] = hits
-            keep_p[ip] = rec
-    st["probe_pending"] = keep_p
     st["attack"] = {ip: row for ip, row in st["attack"].items() if is_real_attack(row, now)}
     if len(st["attack"]) > MAX_RECORDS:
         keep = sorted(st["attack"].items(), key=lambda kv: int(kv[1].get("last_ts") or 0), reverse=True)[:MAX_RECORDS]
         st["attack"] = dict(keep)
-    real_ips = set(st["attack"])
-    st["events"] = [e for e in st["events"] if e.get("type") != "probe" or e.get("ip") in real_ips]
 
     attack_rows = []
     auth_dports, auth_sports = auth_ports_from_events(st["events"])
@@ -587,10 +485,8 @@ def build_snapshot(st, now):
                 sports.append(s)
         attack_rows.append({
             "ip": ip,
-            "tag": row.get("tag") or "probe",
             "count": row.get("count") or 0,
             "auth_count": row.get("auth_count") or 0,
-            "probe_count": row.get("probe_count") or 0,
             "ports": ports[:12],
             "sports": sports[:12],
             "first_ts": row.get("first_ts") or 0,
@@ -601,16 +497,13 @@ def build_snapshot(st, now):
 
     last24 = now - 86400
     auth24 = sum(1 for e in st["events"] if e.get("type") == "auth" and e.get("ts", 0) >= last24)
-    probe24 = sum(1 for e in st["events"] if e.get("type") == "probe" and e.get("ts", 0) >= last24)
     src24 = {e.get("ip") for e in st["events"] if e.get("type") == "auth" and e.get("ts", 0) >= last24 and e.get("ip")}
 
     return {
         "ts": now,
-        "probe_available": bool(st.get("probe_seen")),
         "cards": {
             "attack_24h": auth24,
             "auth_24h": auth24,
-            "probe_24h": probe24,
             "sources_24h": len(src24),
             "pppoe_redial_24h": len(redials),
             "pppoe_online": 1 if wan["up"] else 0,
@@ -655,11 +548,10 @@ def loop():
     while True:
         now = int(time.time())
         nets = lan_nets()
-        ports = open_ports()
         lines, st["cursor"] = pull_lines(st.get("cursor") or "")
         for line in lines:
             try:
-                parse_line(line, st, now, nets, ports)
+                parse_line(line, st, now, nets)
             except Exception:
                 continue
         handle_cmd(st)
@@ -677,10 +569,9 @@ def loop():
 
 def selftest():
     nets = lan_nets()
-    ports = {22, 80, 443}
     now = 1700000000
     st = default_state()
-    parse_line("dropbear[1]: Bad password attempt for 'root' from 8.8.8.8:4242", st, now, nets, ports)
+    parse_line("dropbear[1]: Bad password attempt for 'root' from 8.8.8.8:4242", st, now, nets)
     assert st["attack"]["8.8.8.8"]["auth_count"] == 1, st["attack"]
     assert st["attack"]["8.8.8.8"]["ports"] == [22], st["attack"]["8.8.8.8"]
     assert st["events"][-1]["port"] == 22
@@ -689,23 +580,18 @@ def selftest():
     # 失败登录同时进入登录日志（cat=login, type=fail）
     sshfail = [e for e in st["events"] if e.get("svc") == "ssh" and e.get("type") == "fail"]
     assert sshfail and sshfail[-1].get("ip") == "8.8.8.8", sshfail
-    parse_line("dropbear[1]: Bad password attempt for 'root' from 192.168.10.2:4242", st, now, nets, ports)
+    parse_line("dropbear[1]: Bad password attempt for 'root' from 192.168.10.2:4242", st, now, nets)
     assert "192.168.10.2" not in st["attack"]
     lanfail = [e for e in st["events"] if e.get("svc") == "ssh" and e.get("ip") == "192.168.10.2"]
     assert lanfail, "LAN 失败登录也应进入登录日志"
-    parse_line("luci: failed login on /cgi-bin/luci for root from 1.2.3.4", st, now, nets, ports)
+    parse_line("luci: failed login on /cgi-bin/luci for root from 1.2.3.4", st, now, nets)
     assert st["attack"]["1.2.3.4"]["auth_count"] == 1
     assert st["attack"]["1.2.3.4"]["ports"] == [80]
     lucifail = [e for e in st["events"] if e.get("svc") == "luci" and e.get("type") == "fail"]
     assert lucifail and lucifail[-1].get("user") == "root", lucifail
-    parse_line("statusmon-attack: IN=pppoe-wan OUT= SRC=9.9.9.9 DST=10.0.0.1 PROTO=TCP SPT=1 DPT=3333", st, now, nets, ports)
+    # 端口探测日志不再采集（nft log 规则已移除），不应产生记录
+    parse_line("statusmon-attack: IN=pppoe-wan OUT= SRC=9.9.9.9 DST=10.0.0.1 PROTO=TCP SPT=1 DPT=3333", st, now, nets)
     assert "9.9.9.9" not in st["attack"]
-    parse_line("statusmon-attack: IN=pppoe-wan OUT= SRC=9.9.9.9 DST=10.0.0.1 PROTO=TCP SPT=1 DPT=22", st, now, nets, ports)
-    assert "9.9.9.9" not in st["attack"]
-    for port in (2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008):
-        parse_line("statusmon-attack: IN=pppoe-wan OUT= SRC=9.9.9.9 DST=10.0.0.1 PROTO=TCP SPT=1 DPT=%d" % port, st, now, nets, ports)
-    assert st["attack"]["9.9.9.9"]["probe_count"] >= 8
-    assert len(st["attack"]["9.9.9.9"]["ports"]) >= 5
     full = build_snapshot(st, now)
     shown = {r["ip"] for r in full["attack_summary"]}
     assert "8.8.8.8" in shown
@@ -718,16 +604,14 @@ def selftest():
     assert full["cards"]["pppoe_online"] in (0, 1)
     # 永久保留：远早于 7 天前的爆破记录仍应展示
     old = "7.7.7.7"
-    st["attack"][old] = {"ip": old, "count": 1, "auth_count": 1, "probe_count": 0, "ports": [22],
+    st["attack"][old] = {"ip": old, "count": 1, "auth_count": 1, "ports": [22],
                          "sports": [], "first_ts": now - 40 * 86400, "last_ts": now - 40 * 86400,
-                         "auth_ts": [], "probe_ports": []}
+                         "auth_ts": []}
     full2 = build_snapshot(st, now)
     assert old in {r["ip"] for r in full2["attack_summary"]}
-    # 攻击日志不含端口探测
-    assert all(e.get("type") != "probe" for e in log_events(st))
     # 登录成功事件（SSH / LuCI）归入 login 类别，不计入攻击
-    parse_line("dropbear[2]: Password auth succeeded for 'root' from 8.8.8.8:5555", st, now, nets, ports)
-    parse_line("dispatcher.uc: luci: accepted login on / for root from 1.2.3.4", st, now, nets, ports)
+    parse_line("dropbear[2]: Password auth succeeded for 'root' from 8.8.8.8:5555", st, now, nets)
+    parse_line("dispatcher.uc: luci: accepted login on / for root from 1.2.3.4", st, now, nets)
     login = [e for e in log_events(st) if e.get("cat") == "login"]
     ok = [e for e in login if e.get("type") == "ok"]
     assert len(ok) == 2, ok
@@ -735,8 +619,8 @@ def selftest():
     assert {e.get("type") for e in login} == {"ok", "fail"}
     assert st["attack"]["8.8.8.8"]["auth_count"] == 1  # 成功登录不增加爆破计数
     # DHCP 事件
-    parse_line("dnsmasq-dhcp[1]: DHCPACK(br-lan) 192.168.10.101 64:79:f0:d7:9a:e7 Desk", st, now, nets, ports)
-    parse_line("dnsmasq-dhcp[1]: DHCPNAK(br-lan) 192.168.10.101 64:79:f0:d7:9a:e7", st, now, nets, ports)
+    parse_line("dnsmasq-dhcp[1]: DHCPACK(br-lan) 192.168.10.101 64:79:f0:d7:9a:e7 Desk", st, now, nets)
+    parse_line("dnsmasq-dhcp[1]: DHCPNAK(br-lan) 192.168.10.101 64:79:f0:d7:9a:e7", st, now, nets)
     dhcp = [e for e in log_events(st) if e.get("cat") == "dhcp"]
     assert len(dhcp) == 2, dhcp
     assert dhcp[0].get("ip") == "192.168.10.101" and dhcp[0].get("mac") == "64:79:f0:d7:9a:e7"

@@ -8,7 +8,7 @@ ImmortalWrt / OpenWrt 插件：IPTV 代理、影视中心、状态监控、网�
 |------|------|------|------|
 | `iptv-auth` | 2.3.32-r0 | noarch | 鉴权、M3U/EPG、RTSP 回看；缓冲池 24MB、UDP 接收 4MB |
 | `luci-app-mediahub` | 1.5.7-r0 | x86_64 | 影视中心（CMS + AList + ffmpeg） |
-| `luci-app-statusmon` | 4.38 | noarch | 状态监控；常驻采样器固定节奏采样（更准更省）；「系统性能」单面板（系统/CPU/内存 合成一张面板，含占用环 + CPU/内存曲线）与「温度」模块（CPU 封装/硬盘，3h/24h 可切换）；客户端分页；PPPoE 流量跨重拨累计；「安全」标签：登录爆破来源记录（永久保留、可清除）、攻击日志（永久保留、可清空）与手动拉黑；「日志」标签：PPPoE/DHCP/LuCI 登录/SSH 登录四类下拉查看（原安全监测已并入） |
+| `luci-app-statusmon` | 4.39 | noarch | 状态监控；常驻采样器固定节奏采样（更准更省）；「系统性能」单面板（系统/CPU/内存 合成一张面板，含占用环 + CPU/内存曲线）与「温度」模块（CPU 封装/硬盘，3h/24h 可切换）；客户端分页；PPPoE 流量跨重拨累计；「安全」标签：登录爆破来源记录（永久保留、可清除）、攻击日志（永久保留、可清空）与手动拉黑；「日志」标签：PPPoE/DHCP/LuCI 登录/SSH 登录四类下拉查看（原安全监测已并入）；已移除 WAN 端口探测日志，不再刷屏系统日志 |
 | `luci-app-netqueue` | 1.0.20-r0 | noarch | 网络优化：转发、CPU 模式/睿频、NAT、DHCP、DNS、静态 IP、过期 ARP 清理 |
 | `luci-app-syskeep` | 1.0.18-r0 | noarch | 保留升级：刷机还原网络/接口/防火墙；备份优先拷贝路由器本地安装包；日志逐条写出自装插件 |
 
@@ -29,7 +29,7 @@ apk add iptv-auth-2.3.32-r0.apk
 apk add luci-app-mediahub-1.5.7-r0.apk
 
 # 状态监控
-apk add luci-app-statusmon-4.38.apk
+apk add luci-app-statusmon-4.39.apk
 
 # 网络优化
 apk add luci-app-netqueue-1.0.20-r0.apk
@@ -52,7 +52,7 @@ apk add --allow-untrusted xxx.apk
 opkg install iptv-auth_2.3.32-r0_x86_64.ipk
 
 # 状态监控
-opkg install luci-app-statusmon_4.38_x86_64.ipk
+opkg install luci-app-statusmon_4.39_x86_64.ipk
 
 # 网络优化
 opkg install luci-app-netqueue_1.0.20-r0_x86_64.ipk

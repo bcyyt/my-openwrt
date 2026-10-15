@@ -1,4 +1,2 @@
 config attack 'attack'
 	option enabled '1'
-	option wan_if ''
-	option open_ports '22 80 443 2323 23232 2000 23234 554 16601 8080 8443'
