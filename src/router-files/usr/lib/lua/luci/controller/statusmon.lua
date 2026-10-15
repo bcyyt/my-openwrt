@@ -28,6 +28,7 @@ function index()
 		entry({"admin", "statusmon", "attack", "block"}, call("action_attack_block")).leaf = true
 		entry({"admin", "statusmon", "attack", "unblock"}, call("action_attack_unblock")).leaf = true
 		entry({"admin", "statusmon", "attack", "clear"}, call("action_attack_clear")).leaf = true
+		entry({"admin", "statusmon", "attack", "logs"}, call("action_attack_logs")).leaf = true
 	end
 end
 
@@ -97,7 +98,7 @@ function action_attack_events()
 	local raw = fs.readfile(EVENTS) or ""
 	for line in raw:gmatch("[^\n]+") do
 		local ev = jsonc.parse(line)
-		if ev and ev.type ~= "probe" and ev.type ~= "scan" and (ip == "" or ev.ip == ip) then
+		if ev and ev.cat == "attack" and ev.type ~= "probe" and ev.type ~= "scan" and (ip == "" or ev.ip == ip) then
 			out[#out + 1] = ev
 		end
 	end
@@ -110,6 +111,49 @@ function action_attack_events()
 		out = sliced
 	end
 	json_write({ ok = true, events = out })
+end
+
+-- 「日志」页：按类别返回（pppoe / dhcp / luci / ssh），单次最多最近 2000 条
+local LOG_KINDS = { pppoe = true, dhcp = true, luci = true, ssh = true }
+
+function action_attack_logs()
+	local http = require "luci.http"
+	local fs = require "nixio.fs"
+	local jsonc = require "luci.jsonc"
+	local kind = http.formvalue("kind") or "pppoe"
+	if not LOG_KINDS[kind] then
+		json_write({ ok = false, error = "参数无效" })
+		return
+	end
+	local raw = fs.readfile(EVENTS) or ""
+	local out = {}
+	for line in raw:gmatch("[^\n]+") do
+		local ev = jsonc.parse(line)
+		if ev then
+			local cat, svc = ev.cat, ev.svc
+			local hit = false
+			if kind == "pppoe" then
+				hit = (cat == "pppoe")
+			elseif kind == "dhcp" then
+				hit = (cat == "dhcp")
+			elseif kind == "luci" or kind == "ssh" then
+				hit = (svc == kind and cat == "login")
+			end
+			if hit then
+				out[#out + 1] = ev
+			end
+		end
+	end
+	local total = #out
+	local limit = 2000
+	if total > limit then
+		local sliced = {}
+		for i = total - limit + 1, total do
+			sliced[#sliced + 1] = out[i]
+		end
+		out = sliced
+	end
+	json_write({ ok = true, kind = kind, total = total, events = out })
 end
 
 local function block_list()

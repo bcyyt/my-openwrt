@@ -281,6 +281,7 @@
 .sm-atk-err{background:var(--sm-db);border:1px solid #fecaca;color:var(--sm-d);padding:8px 12px;border-radius:8px;font-size:12px;margin-bottom:10px}
 .sm-atk-log{max-height:340px;overflow:auto;background:#0f172a;color:#a5f3fc;padding:14px;font:12.5px/1.65 var(--sm-mono);white-space:pre-wrap;border-radius:10px}
 .sm-atk-hd{display:flex;align-items:center;gap:10px}
+.sm-log-sel{border:1px solid var(--sm-g200);border-radius:9px;padding:6px 10px;font-size:12px;color:var(--sm-g700);background:#fff;cursor:pointer}
 @media(max-width:720px){.sm-atk-in{flex:1 1 100%}.sm-atk-btn{min-height:36px}}
 </style>
 
@@ -300,6 +301,7 @@
 <div class="sm-tabs" id="sm-tabs">
   <button type="button" class="sm-tab on" data-tab="status">状态</button>
   <button type="button" class="sm-tab" data-tab="attack">安全</button>
+  <button type="button" class="sm-tab" data-tab="logs">日志</button>
 </div>
 
 <div id="sm-tab-status">
@@ -440,10 +442,18 @@
     </div>
   </div>
   <div class="sm-card">
-    <div class="sm-ch"><h2><span class="sm-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><path d="M8 9h8M8 13h8M8 17h5"/></svg></span>攻击日志</h2><div class="sm-atk-hd"><span class="meta">永久保留 · 不含端口探测</span><button type="button" class="sm-atk-btn" id="sm-atk-clr-log">清空日志</button></div></div>
+    <div class="sm-ch"><h2><span class="sm-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><path d="M8 9h8M8 13h8M8 17h5"/></svg></span>攻击日志</h2><div class="sm-atk-hd"><span class="meta">仅攻击事件 · 永久保留</span><button type="button" class="sm-atk-btn" id="sm-atk-clr-log">清空日志</button></div></div>
     <div class="sm-cb"><div class="sm-atk-log" id="sm-atk-log">加载中...</div><div class="sm-cpage" id="sm-atk-log-pager"></div></div>
   </div>
 </div><!-- /sm-tab-attack -->
+
+<!-- 日志：PPPoE / DHCP / LuCI 登录 / SSH 登录（下拉选择，单类显示）-->
+<div id="sm-tab-logs" style="display:none">
+  <div class="sm-card">
+    <div class="sm-ch"><h2><span class="sm-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><path d="M8 9h8M8 13h8M8 17h5"/></svg></span>系统日志</h2><div class="sm-atk-hd"><span class="meta" id="sm-log-meta">--</span><select class="sm-log-sel" id="sm-log-kind"><option value="pppoe">PPPoE</option><option value="dhcp">DHCP</option><option value="luci">LuCI 登录</option><option value="ssh">SSH 登录</option></select></div></div>
+    <div class="sm-cb"><div class="sm-atk-log" id="sm-log-body">加载中...</div><div class="sm-cpage" id="sm-log-pager"></div></div>
+  </div>
+</div><!-- /sm-tab-logs -->
 
 </div>
 
@@ -1068,8 +1078,9 @@ setInterval(sm_fetchSysH,60000);
   var BLOCK="<%=luci.dispatcher.build_url('admin/statusmon/attack/block')%>";
   var UNBLOCK="<%=luci.dispatcher.build_url('admin/statusmon/attack/unblock')%>";
   var CLEAR="<%=luci.dispatcher.build_url('admin/statusmon/attack/clear')%>";
+  var LOGS="<%=luci.dispatcher.build_url('admin/statusmon/attack/logs')%>";
   var TOKEN="<%=token%>";
-  var PAGE={atk:1,log:1}, PS=10, D=null, EV=[];
+  var PAGE={atk:1,log:1,sys:1}, PS=10, D=null, EV=[], SYS=[], LOGKIND="pppoe";
 
   function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]})}
   function fmtTs(ts){if(!ts)return"-";var d=new Date(ts*1000);function p(n){return n<10?"0"+n:n}return (d.getMonth()+1)+"/"+p(d.getDate())+" "+p(d.getHours())+":"+p(d.getMinutes())}
@@ -1116,7 +1127,7 @@ setInterval(sm_fetchSysH,60000);
   function renderLog(events){
     if(events)EV=events;
     var el=document.getElementById("sm-atk-log");
-    var rows=(EV||[]).filter(function(e){return e.cat==="attack"||e.cat==="pppoe"});
+    var rows=(EV||[]).filter(function(e){return e.cat==="attack"});
     if(!rows.length){el.textContent="暂无事件";drawPager("sm-atk-log-pager","log",{total:0,page:1,pages:1});return}
     var src=rows.slice().reverse();
     var pg=pageOf(src,"log",12);
@@ -1126,6 +1137,33 @@ setInterval(sm_fetchSysH,60000);
       return fmtTs(e.ts)+"  "+(e.cat||"")+"/"+(e.type||"")+"  "+host+"  "+(e.channel||e.user||e.msg||"")+"  "+(e.port||"");
     }).join("\n");
     drawPager("sm-atk-log-pager","log",pg);
+  }
+  function fmtSysLine(e){
+    var ts=fmtTs(e.ts);
+    if(e.cat==="pppoe")return ts+"  "+(e.type==="down"?"断开":"上线")+"  "+(e.msg||"");
+    if(e.cat==="dhcp"){
+      var t=e.type==="new"?"新分配":(e.type==="nak"?"拒绝":"续租");
+      return ts+"  "+t+"  "+(e.ip||"")+"  "+(e.mac||"")+"  "+(e.name||e.msg||"");
+    }
+    // luci / ssh 登录
+    var svc=(e.svc||"").toUpperCase();
+    var res=(e.type==="ok")?"成功":"失败";
+    var host=e.ip||"";
+    if(e.sport)host+=":"+e.sport;
+    return ts+"  "+svc+"  "+res+"  "+host+"  "+(e.user||"");
+  }
+  function renderSys(data){
+    if(data){SYS=data.events||[];var m=document.getElementById("sm-log-meta");if(m)m.textContent="共 "+(data.total||SYS.length)+" 条"}
+    var el=document.getElementById("sm-log-body");
+    if(!SYS.length){el.textContent="暂无记录";drawPager("sm-log-pager","sys",{total:0,page:1,pages:1});return}
+    var src=SYS.slice().reverse();
+    var pg=pageOf(src,"sys",12);
+    el.textContent=pg.rows.map(fmtSysLine).join("\n");
+    drawPager("sm-log-pager","sys",pg);
+  }
+  function loadSys(){
+    return fetch(LOGS+"?kind="+encodeURIComponent(LOGKIND)+"&token="+encodeURIComponent(TOKEN||""),{credentials:"same-origin",cache:"no-store"})
+      .then(function(r){return r.json()}).then(function(d){if(d&&d.ok)renderSys(d)}).catch(function(){});
   }
   function act(url,ip){
     ip=String(ip||"").trim();
@@ -1166,7 +1204,7 @@ setInterval(sm_fetchSysH,60000);
     if(pg){
       var key=pg.getAttribute("data-atkpage");
       PAGE[key]=(PAGE[key]||1)+parseInt(pg.getAttribute("data-d"),10);
-      if(key==="log")renderLog();else renderAtk();
+      if(key==="log")renderLog();else if(key==="sys")renderSys();else renderAtk();
     }
   });
   var add=document.getElementById("sm-atk-add");
@@ -1175,6 +1213,8 @@ setInterval(sm_fetchSysH,60000);
   if(clrRec)clrRec.addEventListener("click",function(){clearData("records")});
   var clrLog=document.getElementById("sm-atk-clr-log");
   if(clrLog)clrLog.addEventListener("click",function(){clearData("log")});
+  var kindSel=document.getElementById("sm-log-kind");
+  if(kindSel)kindSel.addEventListener("change",function(){LOGKIND=kindSel.value;PAGE.sys=1;loadSys()});
 
   var tabs=document.querySelectorAll("#sm-tabs .sm-tab");
   Array.prototype.forEach.call(tabs,function(btn){
@@ -1183,12 +1223,17 @@ setInterval(sm_fetchSysH,60000);
       Array.prototype.forEach.call(tabs,function(b){b.className=(b===btn)?"sm-tab on":"sm-tab"});
       document.getElementById("sm-tab-status").style.display=(name==="status")?"":"none";
       document.getElementById("sm-tab-attack").style.display=(name==="attack")?"":"none";
+      document.getElementById("sm-tab-logs").style.display=(name==="logs")?"":"none";
       if(name==="attack")load();
+      if(name==="logs")loadSys();
     });
   });
 
   load();
-  setInterval(load,10000);
+  setInterval(function(){
+    if(document.getElementById("sm-tab-attack").style.display!=="none")load();
+    if(document.getElementById("sm-tab-logs").style.display!=="none")loadSys();
+  },10000);
 })();
 </script>
 <%+footer%>

@@ -23,18 +23,25 @@ PROBE_HIT_MIN = 8
 PROBE_PORT_MIN = 5
 PROBE_UDP_MIN = 20
 
-MAX_EVENTS = 50000
 MAX_RECORDS = 2000
+# 持久化日志按类别限长（防单类刷爆 flash）；无固定短期过期
+LOG_CAP = {"attack": 30000, "login": 20000, "dhcp": 20000, "pppoe": 5000}
 HOUR_KEEP = 168
 INTERVAL = 5
 
 RE_DROPBEAR = re.compile(
     r"dropbear.*(?:Bad password attempt for '([^']*)'|Login attempt for nonexistent user).*from ([0-9a-fA-F:.]+)"
 )
-RE_LUCI = re.compile(r"luci: failed login(?: on \S+)?(?: for \S+)? from ([0-9a-fA-F:.]+)")
+RE_DROPBEAR_OK = re.compile(
+    r"dropbear.*(?:Password|Pubkey) auth succeeded for '([^']*)' from ([0-9a-fA-F:.]+)"
+)
+RE_LUCI = re.compile(r"luci: failed login(?: on \S+)?(?: for (\S+))? from ([0-9a-fA-F:.]+)")
+RE_LUCI_OK = re.compile(r"luci: accepted login(?: on \S+)?(?: for (\S+))? from ([0-9a-fA-F:.]+)")
 RE_ATTACK = re.compile(r"statusmon-attack:.*SRC=(\S+).*PROTO=(\S+).*DPT=(\d+)")
 RE_PPPOE_UP = re.compile(r"(pppoe-|Interface 'wan' is now up|CHAP authentication succeeded|PPP session is )")
 RE_PPPOE_DOWN = re.compile(r"(Modem hangup|Connection terminated|Interface 'wan' is now down|Timeout waiting for PADO)")
+RE_DHCPACK = re.compile(r"dnsmasq-dhcp\[\d+\]: DHCPACK\(\S+\) (\S+) (\S+)(?: (\S+))?")
+RE_DHCPNAK = re.compile(r"dnsmasq-dhcp\[\d+\]: DHCPNAK")
 
 
 def sh(cmd):
@@ -197,14 +204,36 @@ def prune_hourly(hourly, now):
 
 def append_event(events, ev, now):
     events.append(ev)
-    if len(events) > MAX_EVENTS:
-        del events[:-MAX_EVENTS]
+    # 按类别分别限长，避免攻击事件洪泛把登录/DHCP/PPPoE 日志挤掉
+    cat = ev.get("cat")
+    cap = LOG_CAP.get(cat)
+    if cap:
+        n = 0
+        idx = []
+        for i, e in enumerate(events):
+            if e.get("cat") == cat:
+                idx.append(i)
+        if len(idx) > cap:
+            drop = set(idx[:len(idx) - cap])
+            events[:] = [e for i, e in enumerate(events) if i not in drop]
 
 
 def log_events(st):
-    # 攻击日志仅保留登录爆破与 PPPoE 事件（不含端口探测）
-    return [e for e in st.get("events") or []
-            if e.get("type") != "probe" and e.get("cat") in ("attack", "pppoe")]
+    # 持久化日志：攻击(不含端口探测) / 登录 / DHCP / PPPoE，按类别分别限长
+    rows = [e for e in st.get("events") or []
+            if e.get("type") != "probe"
+            and e.get("cat") in ("attack", "login", "dhcp", "pppoe")]
+    out = []
+    for cat in ("attack", "login", "dhcp", "pppoe"):
+        bucket = [e for e in rows if e.get("cat") == cat]
+        out.extend(bucket[-LOG_CAP.get(cat, 10000):])
+    out.sort(key=lambda e: int(e.get("ts") or 0))
+    return out
+
+
+def ev_key(e):
+    return (e.get("ts"), e.get("cat"), e.get("type"), e.get("svc"),
+            e.get("ip"), e.get("mac"), e.get("port"), e.get("sport"), e.get("user"))
 
 
 def write_jsonl(path, rows):
@@ -227,7 +256,7 @@ def load_persist(st):
             st["cursor"] = meta.get("cursor") or ""
     seen = set()
     for e in st.get("events") or []:
-        seen.add((e.get("ts"), e.get("cat"), e.get("type"), e.get("ip"), e.get("port"), e.get("sport")))
+        seen.add(ev_key(e))
     evs = []
     try:
         with open(PERSIST_LOG, "r") as f:
@@ -242,12 +271,10 @@ def load_persist(st):
     except OSError:
         evs = []
     for e in evs:
-        k = (e.get("ts"), e.get("cat"), e.get("type"), e.get("ip"), e.get("port"), e.get("sport"))
+        k = ev_key(e)
         if k not in seen:
             seen.add(k)
-            st["events"].append(e)
-    if len(st["events"]) > MAX_EVENTS:
-        del st["events"][:-MAX_EVENTS]
+            append_event(st["events"], e, None)
 
 
 def flush_persist(st, last):
@@ -372,8 +399,11 @@ def parse_line(line, st, now, nets, ports):
     m = RE_DROPBEAR.search(line)
     if m:
         ip = parse_ip(m.group(2))
+        user = m.group(1) or ""
+        # 登录日志（全部来源，含失败）；攻击记录仅取非 LAN 来源
+        append_event(events, {"ts": now, "cat": "login", "type": "fail", "svc": "ssh",
+                              "ip": ip, "user": user, "sport": parse_sport(m.group(2))}, now)
         if ip and not is_lan(ip, nets):
-            user = m.group(1) or ""
             dport = ssh_listen_port()
             sport = parse_sport(m.group(2))
             ev = {"ts": now, "cat": "attack", "type": "auth", "svc": "ssh", "ip": ip, "user": user, "port": dport, "sport": sport}
@@ -392,7 +422,9 @@ def parse_line(line, st, now, nets, ports):
 
     m = RE_LUCI.search(line)
     if m:
-        ip = parse_ip(m.group(1))
+        ip = parse_ip(m.group(2))
+        append_event(events, {"ts": now, "cat": "login", "type": "fail", "svc": "luci",
+                              "ip": ip, "user": m.group(1) or ""}, now)
         if ip and not is_lan(ip, nets):
             dport = 443 if "https" in line.lower() else 80
             ev = {"ts": now, "cat": "attack", "type": "auth", "svc": "luci", "ip": ip, "port": dport}
@@ -406,6 +438,21 @@ def parse_line(line, st, now, nets, ports):
             row["auth_ts"].append(now)
             add_port(row, dport)
             attack_tag(summary, ip, now)
+        return
+
+    # 登录成功事件（供「日志」页展示，不计入攻击记录）
+    m = RE_DROPBEAR_OK.search(line)
+    if m:
+        ev = {"ts": now, "cat": "login", "type": "ok", "svc": "ssh",
+              "ip": parse_ip(m.group(2)), "user": m.group(1) or "", "sport": parse_sport(m.group(2))}
+        append_event(events, ev, now)
+        return
+
+    m = RE_LUCI_OK.search(line)
+    if m:
+        ev = {"ts": now, "cat": "login", "type": "ok", "svc": "luci",
+              "ip": parse_ip(m.group(2)), "user": m.group(1) or ""}
+        append_event(events, ev, now)
         return
 
     m = RE_ATTACK.search(line)
@@ -451,6 +498,20 @@ def parse_line(line, st, now, nets, ports):
         append_event(events, ev, now)
         return
 
+    m = RE_DHCPACK.search(line)
+    if m:
+        ip, mac, name = m.group(1), (m.group(2) or "").lower(), m.group(3) or "*"
+        seen = st.setdefault("dhcp_seen", {})
+        kind = "ack" if mac in seen else "new"
+        seen[mac] = now
+        ev = {"ts": now, "cat": "dhcp", "type": kind, "ip": ip, "mac": mac, "name": name}
+        append_event(events, ev, now)
+        return
+    if RE_DHCPNAK.search(line):
+        ev = {"ts": now, "cat": "dhcp", "type": "nak", "msg": line[-160:]}
+        append_event(events, ev, now)
+        return
+
 
 def top_map(d, n=10):
     items = sorted(d.items(), key=lambda kv: kv[1], reverse=True)[:n]
@@ -467,6 +528,7 @@ def default_state():
         "pppoe_events": [],
         "redial_ts": [],
         "probe_pending": {},
+        "dhcp_seen": {},
     }
 
 
@@ -624,11 +686,18 @@ def selftest():
     assert st["events"][-1]["port"] == 22
     assert st["events"][-1]["sport"] == 4242
     assert st["attack"]["8.8.8.8"]["sports"] == [4242]
+    # 失败登录同时进入登录日志（cat=login, type=fail）
+    sshfail = [e for e in st["events"] if e.get("svc") == "ssh" and e.get("type") == "fail"]
+    assert sshfail and sshfail[-1].get("ip") == "8.8.8.8", sshfail
     parse_line("dropbear[1]: Bad password attempt for 'root' from 192.168.10.2:4242", st, now, nets, ports)
     assert "192.168.10.2" not in st["attack"]
-    parse_line("luci: failed login on /cgi-bin/luci from 1.2.3.4", st, now, nets, ports)
+    lanfail = [e for e in st["events"] if e.get("svc") == "ssh" and e.get("ip") == "192.168.10.2"]
+    assert lanfail, "LAN 失败登录也应进入登录日志"
+    parse_line("luci: failed login on /cgi-bin/luci for root from 1.2.3.4", st, now, nets, ports)
     assert st["attack"]["1.2.3.4"]["auth_count"] == 1
     assert st["attack"]["1.2.3.4"]["ports"] == [80]
+    lucifail = [e for e in st["events"] if e.get("svc") == "luci" and e.get("type") == "fail"]
+    assert lucifail and lucifail[-1].get("user") == "root", lucifail
     parse_line("statusmon-attack: IN=pppoe-wan OUT= SRC=9.9.9.9 DST=10.0.0.1 PROTO=TCP SPT=1 DPT=3333", st, now, nets, ports)
     assert "9.9.9.9" not in st["attack"]
     parse_line("statusmon-attack: IN=pppoe-wan OUT= SRC=9.9.9.9 DST=10.0.0.1 PROTO=TCP SPT=1 DPT=22", st, now, nets, ports)
@@ -656,6 +725,25 @@ def selftest():
     assert old in {r["ip"] for r in full2["attack_summary"]}
     # 攻击日志不含端口探测
     assert all(e.get("type") != "probe" for e in log_events(st))
+    # 登录成功事件（SSH / LuCI）归入 login 类别，不计入攻击
+    parse_line("dropbear[2]: Password auth succeeded for 'root' from 8.8.8.8:5555", st, now, nets, ports)
+    parse_line("dispatcher.uc: luci: accepted login on / for root from 1.2.3.4", st, now, nets, ports)
+    login = [e for e in log_events(st) if e.get("cat") == "login"]
+    ok = [e for e in login if e.get("type") == "ok"]
+    assert len(ok) == 2, ok
+    assert {e.get("svc") for e in ok} == {"ssh", "luci"}
+    assert {e.get("type") for e in login} == {"ok", "fail"}
+    assert st["attack"]["8.8.8.8"]["auth_count"] == 1  # 成功登录不增加爆破计数
+    # DHCP 事件
+    parse_line("dnsmasq-dhcp[1]: DHCPACK(br-lan) 192.168.10.101 64:79:f0:d7:9a:e7 Desk", st, now, nets, ports)
+    parse_line("dnsmasq-dhcp[1]: DHCPNAK(br-lan) 192.168.10.101 64:79:f0:d7:9a:e7", st, now, nets, ports)
+    dhcp = [e for e in log_events(st) if e.get("cat") == "dhcp"]
+    assert len(dhcp) == 2, dhcp
+    assert dhcp[0].get("ip") == "192.168.10.101" and dhcp[0].get("mac") == "64:79:f0:d7:9a:e7"
+    assert dhcp[1].get("type") == "nak"
+    # 各类别分类正确且互不混淆
+    cats = {e.get("cat") for e in log_events(st)}
+    assert {"attack", "login", "dhcp"} <= cats
     print("statusmon attack selftest ok")
 
 

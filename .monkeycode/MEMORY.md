@@ -86,6 +86,7 @@ Entries discovered by the Agent during task execution should follow this format:
   - `dhcp.@dnsmasq[0].logqueries='1'` makes dnsmasq log every query; disable with `uci set dhcp.@dnsmasq[0].logqueries='0'` + `uci commit dhcp` + `/etc/init.d/dnsmasq restart`.
   - The old atkmon DNS module depended on logqueries and `atkmon-setup` re-enabled it (via `atkmon.main.dns_log`). Both the module and the setup hook were removed in luci-app-atkmon 1.0.6-r0, so `atkmon-setup` no longer touches dnsmasq logqueries.
   - statusmon traffic classification via dnsmasq `nftset=` is independent of `logqueries`; it keeps working when query logging is off.
+  - dnsmasq only emits `DHCPACK/DHCPNAK` lines to syslog when `dhcp.@dnsmasq[0].logdhcp='1'`. The statusmon「日志」页 DHCP 类别依赖它，post-install 会按需开启（仅 DHCP，不含 DNS 查询）。
 
 [statusmon attack data persistence]
 - Date: 2026-10-14

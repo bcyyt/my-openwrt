@@ -12,6 +12,12 @@ if [ -f /etc/dnsmasq.conf ] && grep -qE '^[[:space:]]*log-facility=/dev/null' /e
 	sed -i 's|^[[:space:]]*log-facility=/dev/null|# log-facility=/dev/null|' /etc/dnsmasq.conf
 	/etc/init.d/dnsmasq restart >/dev/null 2>&1 || true
 fi
+# 「日志」页需要 DHCP 事件；开启 dnsmasq 的 log-dhcp（仅 DHCP，不含 DNS 查询）
+if [ "$(uci -q get dhcp.@dnsmasq[0].logdhcp 2>/dev/null)" != "1" ]; then
+	uci set dhcp.@dnsmasq[0].logdhcp='1'
+	uci commit dhcp
+	/etc/init.d/dnsmasq restart >/dev/null 2>&1 || true
+fi
 
 if [ -x /etc/init.d/statusmon-attack ]; then
 	/etc/init.d/statusmon-attack enable 2>/dev/null || true
@@ -28,6 +34,15 @@ if [ -x /etc/init.d/atkmon ] && ! apk info --installed luci-app-atkmon >/dev/nul
 	/etc/init.d/atkmon disable 2>/dev/null || true
 	rm -f /etc/init.d/atkmon
 fi
+# 迁移旧拉黑名单，并清掉遗留的旧 nft 表（否则 atkmon: 日志与旧拦截残留）
+if uci -q get atkmon.main.block >/dev/null 2>&1; then
+	_old="$(uci -q get atkmon.main.block)"
+	if [ -n "$_old" ] && [ -z "$(uci -q get statusmon.attack.block)" ]; then
+		uci set statusmon.attack.block="$_old"
+		uci commit statusmon
+	fi
+fi
+nft delete table inet atkmon 2>/dev/null || true
 
 if [ -x /etc/init.d/statusmon-acct ]; then
 	/etc/init.d/statusmon-acct enable 2>/dev/null || true
