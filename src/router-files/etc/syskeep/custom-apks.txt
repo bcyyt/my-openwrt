@@ -1,6 +1,6 @@
 # name url  (downloaded to /mnt/data/syskeep/apks before flash)
 iptv-auth https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth-2.3.32-r0.apk
-luci-app-statusmon https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/luci-app-statusmon/luci-app-statusmon-4.39.apk
+luci-app-statusmon https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/luci-app-statusmon/luci-app-statusmon-4.40.apk
 luci-app-netqueue https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/luci-app-netqueue/luci-app-netqueue-1.0.17-r0.apk
 luci-app-syskeep https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/luci-app-syskeep/luci-app-syskeep-1.0.18-r0.apk
 luci-app-natfrp https://nya.globalslb.net/natfrp/client/launcher-openwrt/3.1.8/luci-app-natfrp-3.1.8-r6-x86_64.apk

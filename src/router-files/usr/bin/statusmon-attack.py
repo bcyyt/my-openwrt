@@ -33,8 +33,10 @@ RE_DROPBEAR_OK = re.compile(
 RE_LUCI = re.compile(r"luci: failed login(?: on \S+)?(?: for (\S+))? from ([0-9a-fA-F:.]+)")
 RE_LUCI_OK = re.compile(r"luci: accepted login(?: on \S+)?(?: for (\S+))? from ([0-9a-fA-F:.]+)")
 RE_PPPOE_DOWN = re.compile(r"(Modem hangup|Connection terminated|Interface 'wan' is now down|Timeout waiting for PADO)")
-RE_DHCPACK = re.compile(r"dnsmasq-dhcp\[\d+\]: DHCPACK\(\S+\) (\S+) (\S+)(?: (\S+))?")
-RE_DHCPNAK = re.compile(r"dnsmasq-dhcp\[\d+\]: DHCPNAK")
+# dnsmasq 在 tag 与事件名之间可能带一个数字事务 ID，例如：
+#   dnsmasq-dhcp[1]: 4239439749 DHCPACK(br-lan) 192.168.10.108 b8:27:.. name
+RE_DHCPACK = re.compile(r"dnsmasq-dhcp\[\d+\]: (?:\d+ )?DHCPACK\(\S+\) (\S+) (\S+)(?: (\S+))?")
+RE_DHCPNAK = re.compile(r"dnsmasq-dhcp\[\d+\]: (?:\d+ )?DHCPNAK\(\S+\) (\S+) (\S+)(?: (\S+))?")
 
 
 def sh(cmd):
@@ -422,8 +424,10 @@ def parse_line(line, st, now, nets):
         ev = {"ts": now, "cat": "dhcp", "type": kind, "ip": ip, "mac": mac, "name": name}
         append_event(events, ev, now)
         return
-    if RE_DHCPNAK.search(line):
-        ev = {"ts": now, "cat": "dhcp", "type": "nak", "msg": line[-160:]}
+    m = RE_DHCPNAK.search(line)
+    if m:
+        ev = {"ts": now, "cat": "dhcp", "type": "nak", "ip": m.group(1),
+              "mac": (m.group(2) or "").lower(), "name": m.group(3) or ""}
         append_event(events, ev, now)
         return
 
@@ -618,13 +622,17 @@ def selftest():
     assert {e.get("svc") for e in ok} == {"ssh", "luci"}
     assert {e.get("type") for e in login} == {"ok", "fail"}
     assert st["attack"]["8.8.8.8"]["auth_count"] == 1  # 成功登录不增加爆破计数
-    # DHCP 事件
-    parse_line("dnsmasq-dhcp[1]: DHCPACK(br-lan) 192.168.10.101 64:79:f0:d7:9a:e7 Desk", st, now, nets)
-    parse_line("dnsmasq-dhcp[1]: DHCPNAK(br-lan) 192.168.10.101 64:79:f0:d7:9a:e7", st, now, nets)
+    # DHCP 事件（真实 dnsmasq 行在 tag 与事件名之间带数字事务 ID）
+    parse_line("dnsmasq-dhcp[1]: 4239439749 DHCPACK(br-lan) 192.168.10.101 64:79:f0:d7:9a:e7 Desk", st, now, nets)
+    parse_line("dnsmasq-dhcp[1]: 1505782091 DHCPNAK(br-lan) 192.168.10.101 64:79:f0:d7:9a:e7", st, now, nets)
+    # 兼容旧格式（无事务 ID）
+    parse_line("dnsmasq-dhcp[2]: DHCPACK(br-lan) 192.168.10.102 aa:bb:cc:dd:ee:ff Phone", st, now, nets)
     dhcp = [e for e in log_events(st) if e.get("cat") == "dhcp"]
-    assert len(dhcp) == 2, dhcp
+    assert len(dhcp) == 3, dhcp
     assert dhcp[0].get("ip") == "192.168.10.101" and dhcp[0].get("mac") == "64:79:f0:d7:9a:e7"
-    assert dhcp[1].get("type") == "nak"
+    assert dhcp[1].get("type") == "nak" and dhcp[1].get("ip") == "192.168.10.101"
+    assert dhcp[1].get("mac") == "64:79:f0:d7:9a:e7"
+    assert dhcp[2].get("ip") == "192.168.10.102"
     # 各类别分类正确且互不混淆
     cats = {e.get("cat") for e in log_events(st)}
     assert {"attack", "login", "dhcp"} <= cats
