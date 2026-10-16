@@ -1,0 +1,7 @@
+{
+  "version": "1.0.0",
+  "date": "2026-10-16",
+  "changelog": "iptv-replayd：独立 C 回看 RTSP 代理（无 Python 依赖），静态 musl。",
+  "url_x86_64": "iptv-replayd-1.0.0-x86_64",
+  "url_aarch64": "iptv-replayd-1.0.0-aarch64"
+}

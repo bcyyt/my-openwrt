@@ -97,4 +97,24 @@ Entries discovered by the Agent during task execution should follow this format:
 - Instructions:
   - `/var` is a symlink to `/tmp` (tmpfs), so anything under `/var/lib` is lost on reboot. To persist attack records/logs, the collector mirrors them to the overlay: `/etc/statusmon/attack-state.json` (records, max 2000) and `/etc/statusmon/attack-log.jsonl` (auth + PPPoE events, max 50000). `/var/lib/statusmon-attack/` holds the live snapshot/state only.
   - Manual clear is asynchronous: LuCI writes `/var/lib/statusmon-attack/cmd.json` (`{"records":true}` or `{"log":true}`), and the collector consumes it at the next loop, clears the in-memory state, then flushes the mirror.
-  - busybox `sleep` in OpenWrt only accepts integer seconds; `sleep 0.25` fails instantly. Poll loops must use `sleep 1` (or `nixio.nanosleep`).
+- busybox `sleep` in OpenWrt only accepts integer seconds; `sleep 0.25` fails instantly. Poll loops must use `sleep 1` (or `nixio.nanosleep`).
+
+[iptv-auth full uninstall / fresh install]
+- Date: 2026-10-15
+- Context: Discovered by Agent while doing a full uninstall + fresh install test of iptv-auth 2.3.33 on the router
+- Category: Troubleshooting & Debugging
+- Instructions:
+  - `python3` is a shared dependency: both `iptv-auth` and `luci-app-statusmon` depend on it, so `apk del python3` refuses (`not removed due to: iptv-auth luci-app-statusmon`). A true full uninstall must also remove `luci-app-statusmon` first, then reinstall it (its APK is kept at `/tmp/luci-app-statusmon-4.40.apk`; it is not in the repo `packages/` dir).
+  - pip-installed modules (`requests`, `urllib3`, `certifi`, `charset_normalizer`, `idna`) under `/usr/lib/python3.14/site-packages` are NOT apk-owned; `apk del python3` leaves them behind. Remove them for a clean test, otherwise a reinstalled python3 still imports `requests` and masks a missing dependency.
+  - APK-owned conffiles survive purge as `.apk-new` leftovers and `/etc/sysctl.d/15-iptv-auth.conf` is kept; generated runtime files (`/www/*.m3u`, `/www/PL.xml(.gz)`, `/www/logo`, `/var/log/iptv-auth`) are not package-owned either. The router has no SFTP: upload APKs with `ssh root@... 'cat > /tmp/x.apk'`.
+  - After `apk add`/`apk upgrade` the running daemon is NOT restarted; you must `apk add --allow-untrusted /tmp/<pkg>.apk` then `/etc/init.d/iptv-auth restart` (and restart the `statusmon-*` services after restoring statusmon).
+  - Fresh-install chain to verify: auth 200 -> 125 channels -> 4 M3U (`/www/{Lan,LanReplay,WanPlay,WanReplay}.m3u`) -> logos -> EPG `/www/PL.xml(.gz)` (~11 min, 125 channels) -> rtp2httpd live on `:23234` and RTSP replay proxy on `[::]:554`. Status is `/var/log/iptv-auth/status.json` (`auth_ok`, `channels`).
+
+[iptv-replayd C daemon: timezone and packaging]
+- Date: 2026-10-16
+- Context: Discovered by Agent while splitting the 554 RTSP replay proxy out of iptv-auth.py into a static-musl C daemon
+- Category: Troubleshooting & Debugging / Environment Configuration
+- Instructions:
+  - This router's `/etc/localtime` is a dangling symlink to missing `/tmp/localtime`; the real timezone lives in `/etc/TZ` (`CST-8`). Upstream static musl only honors `TZ`/localtime and falls back to UTC, so a statically linked C daemon logs 8 hours behind busybox/Python. Fix in C: read `/etc/TZ`, `setenv("TZ", ...)`, then `tzset()` before using `localtime_r`.
+  - The 554 replay proxy is `src/iptv-replayd/iptv-replayd.c`; rebuild both arches with `packaging/iptv-replayd/build.sh` (musl cross toolchain) then `packaging/build-apks.sh`. Both x86_64/aarch64 binaries ship inside the `noarch` iptv-auth package under `/usr/lib/iptv-auth/`, and init.d selects one via `uname -m` (do not copy to `/usr/bin`).
+  - Runtime state handoff is `/tmp/iptv-replayd.state` written by `iptv-auth.py`; side processes (`--apply-route`) also refresh it with an empty `rtsp_source_ip`, so `write_replayd_state()` must preserve the previous on-disk value when the current one is empty.

@@ -51,10 +51,8 @@ ensure_pkg() {
 	apk add "$1" >/dev/null 2>&1
 }
 ensure_pkg python3
-ensure_pkg python3-pip
-if ! python3 -c "import requests" >/dev/null 2>&1; then
-	pip3 install requests >/dev/null 2>&1 || apk add python3-requests >/dev/null 2>&1 || true
-fi
+# HTTP(S) 走标准库 urllib：HTTPS 证书校验依赖系统根证书
+ensure_pkg ca-bundle
 
 if [ -x /etc/init.d/iptv-auth ]; then
 	/etc/init.d/iptv-auth enable >/dev/null 2>&1 || true

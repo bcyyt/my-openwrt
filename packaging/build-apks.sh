@@ -12,7 +12,8 @@ APK="${APK:-/tmp/apk-tools/build/src/apk}"
 SIGN_KEY="$KEYS/my-openwrt.rsa"
 PUB_KEY="$KEYS/my-openwrt.rsa.pub"
 
-IPTV_VER="${IPTV_VER:-2.3.32-r0}"
+IPTV_VER="${IPTV_VER:-2.3.34-r0}"
+REPLAYD_VER="${REPLAYD_VER:-1.0.0}"
 MEDIA_VER="${MEDIA_VER:-1.5.7-r0}"
 STATUS_VER="${STATUS_VER:-4.40}"
 NETQ_VER="${NETQ_VER:-1.0.20-r0}"
@@ -124,20 +125,33 @@ install -m 644 "$PUB_KEY" "$IPTV_ROOT/usr/share/iptv-auth/my-openwrt.rsa.pub"
 install -d "$IPTV_ROOT/etc/sysctl.d"
 install -m 644 "$SRC/etc/sysctl.d/15-iptv-auth.conf" "$IPTV_ROOT/etc/sysctl.d/15-iptv-auth.conf"
 
+# 回看 RTSP 代理由独立 C 守护进程承担：两种架构的静态 musl 二进制都打进 noarch 包，
+# init.d 启动时按 uname -m 选择 /usr/lib/iptv-auth/ 下的对应二进制（无需安装时联网）
+install -d "$IPTV_ROOT/usr/lib/iptv-auth"
+for _arch in x86_64 aarch64; do
+	_replayd="$OUT/iptv-replayd/iptv-replayd-${REPLAYD_VER}-${_arch}"
+	if [ ! -f "$_replayd" ]; then
+		echo "ERROR: iptv-replayd binary missing: $_replayd (run packaging/iptv-replayd/build.sh)" >&2
+		exit 1
+	fi
+	install -m 755 "$_replayd" "$IPTV_ROOT/usr/lib/iptv-auth/iptv-replayd-${_arch}"
+done
+
 IPTV_APK="$OUT/iptv-auth/iptv-auth-${IPTV_VER}.apk"
 mkpkg \
 	iptv-auth "$IPTV_VER" noarch \
-	"IPTV auth + M3U/EPG generation + RTSP replay + rtp2httpd live proxy + OTA update detection" \
+	"IPTV auth + M3U/EPG generation + C replay daemon + rtp2httpd live proxy + OTA update detection" \
 	iptv-auth GPL-2.0 "https://github.com/bcyyt/my-openwrt" \
 	"$IPTV_ROOT" "$IPTV_APK" \
-	-I "depends:libc python3 python3-pip luci-base" \
-	-s "post-install:$PACK/iptv-auth/post-install.sh"
+	-I "depends:libc python3 ca-bundle luci-base" \
+	-s "post-install:$PACK/iptv-auth/post-install.sh" \
+	-s "post-upgrade:$PACK/iptv-auth/post-install.sh"
 
 IPTV_IPK="$OUT/iptv-auth/iptv-auth_${IPTV_VER}_${IPK_ARCH}.ipk"
 mkipk \
 	iptv-auth "$IPTV_VER" "$IPK_ARCH" \
-	"IPTV auth + M3U/EPG generation + RTSP replay + rtp2httpd live proxy + OTA update detection" \
-	net "libc, python3, python3-pip, luci-base" \
+	"IPTV auth + M3U/EPG generation + C replay daemon + rtp2httpd live proxy + OTA update detection" \
+	net "libc, python3, ca-bundle, luci-base" \
 	"$IPTV_ROOT" "$IPTV_IPK" \
 	"$PACK/iptv-auth/post-install.sh" \
 	/etc/config/iptv-auth \
@@ -147,7 +161,7 @@ cat > "$OUT/iptv-auth/version.json" <<EOF
 {
   "version": "${IPTV_VER}",
   "date": "${DATE_STR}",
-  "changelog": "缓冲池改为 16384 块（约 24MB），UDP 接收缓冲改为 4MB。",
+  "changelog": "554 回看/时移代理拆为独立 C 守护进程 iptv-replayd（无 Python、去 GIL，静态 musl，x86_64/aarch64）；控制面仅落盘运行时状态。",
   "url": "${OTA_URL_BASE}/iptv-auth/iptv-auth-${IPTV_VER}.apk",
   "ipk_url": "${OTA_URL_BASE}/iptv-auth/iptv-auth_${IPTV_VER}_${IPK_ARCH}.ipk"
 }

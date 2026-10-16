@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""iptv-auth.py — 中兴 IPTV 鉴权 + 频道抓取 + M3U 生成 + RTSP 回看代理
+"""iptv-auth.py — 中兴 IPTV 鉴权 + 频道抓取 + M3U 生成（回看代理已拆为 C 守护进程 iptv-replayd）
 
 工作流程：
   1. 从 UCI 读取配置
   2. 中兴三步鉴权 → 抓取频道 → 生成 M3U（喂给 rtp2httpd）
-  3. 启动 RTSP 代理（554 端口，处理回看/时移的 302 跳转 + URL 转换）
+  3. 落盘运行时状态（源站 IP 等）供 iptv-replayd 读取
   4. 定时循环刷新频道和节目单
   5. 输出状态 JSON 供 LuCI 读取
 """
-import os, sys, re, json, time, gzip, socket, subprocess, datetime, threading, select
-import requests
+import os, sys, re, json, time, gzip, socket, subprocess, datetime, threading, select, ssl, fcntl
+import http.client, http.cookiejar, urllib.request, urllib.parse, urllib.error
 from urllib.parse import quote
 from datetime import timedelta
 # ===================== 路径常量 =====================
@@ -22,6 +22,7 @@ EPG_PATH = '/www/PL.xml'
 EPG_GZ_PATH = '/www/PL.xml.gz'
 LOG_DIR = '/var/log/iptv-auth'
 LOG_FILE = os.path.join(LOG_DIR, 'iptv-auth.log')
+LOG_LOCK = os.path.join(LOG_DIR, '.log.lock')   # 与 C 回看代理 iptv-replayd 共用的跨进程锁
 STATUS_FILE = os.path.join(LOG_DIR, 'status.json')
 CLIENTS_FILE = os.path.join(LOG_DIR, 'clients.json')  # 回看客户端档案（IP→UA/频道/最近时间）
 CLIENTS_KEEP_DAYS = 7                                  # 客户端档案保留天数
@@ -36,8 +37,7 @@ upstream_iface = 'eth1'
 upstream_src_ip = ''
 rtsp_source_ip = ''     # 原始 RTSP 源站 IP
 rtsp_source_port = 554
-proxy_listening = False
-_log_lock = threading.Lock()   # 日志线程锁：RTSP 代理线程与任务线程并发写保护
+_log_lock = threading.Lock()   # 日志线程锁：任务线程与定时器线程并发写保护
 IPTV_RT_TABLE = '100'
 IPTV_RT_PREF_SRC = '10000'
 IPTV_RT_PREF_OIF = '10001'
@@ -61,18 +61,33 @@ def log(msg, error=False):
     try:
         with _log_lock:
             os.makedirs(LOG_DIR, exist_ok=True)
-            lines = []
+            # 跨进程锁：C 回看代理 iptv-replayd 也重写同一活跃日志，必须互斥
+            lock_fd = None
             try:
-                # errors='replace'：历史损坏字节用替代符读入，避免 UnicodeDecodeError 中断
-                with open(LOG_FILE, 'r', encoding='utf-8', errors='replace') as f:
-                    lines = f.readlines()
-            except FileNotFoundError:
-                pass
-            lines.append(line + '\n')
-            if len(lines) > MAX_LOG_LINES:
-                lines = lines[-MAX_LOG_LINES:]
-            with open(LOG_FILE, 'w', encoding='utf-8') as f:
-                f.writelines(lines)
+                lock_fd = os.open(LOG_LOCK, os.O_WRONLY | os.O_CREAT, 0o644)
+                fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            except OSError:
+                lock_fd = None
+            try:
+                lines = []
+                try:
+                    # errors='replace'：历史损坏字节用替代符读入，避免 UnicodeDecodeError 中断
+                    with open(LOG_FILE, 'r', encoding='utf-8', errors='replace') as f:
+                        lines = f.readlines()
+                except FileNotFoundError:
+                    pass
+                lines.append(line + '\n')
+                if len(lines) > MAX_LOG_LINES:
+                    lines = lines[-MAX_LOG_LINES:]
+                with open(LOG_FILE, 'w', encoding='utf-8') as f:
+                    f.writelines(lines)
+            finally:
+                if lock_fd is not None:
+                    try:
+                        fcntl.flock(lock_fd, fcntl.LOCK_UN)
+                    except OSError:
+                        pass
+                    os.close(lock_fd)
     except Exception:
         pass
     # 定期清理过期历史日志（每 6 小时最多执行一次）
@@ -214,26 +229,174 @@ def load_config():
         ensure_upstream_policy()
     except Exception as e:
         log(f"读取 UCI 配置失败: {e}", error=True)
+    write_replayd_state()
+
+# ===================== 回看代理运行时状态 =====================
+# 回看/时移的 554 代理已拆分为独立 C 守护进程 iptv-replayd；控制面只负责在
+# 鉴权拿到源站后把运行时状态原子落盘，守护进程每次接受连接时读取。
+REPLAYD_STATE_FILE = '/tmp/iptv-replayd.state'
+
+def write_replayd_state():
+    """把回看代理所需的运行时状态原子写盘，供 C 守护进程 iptv-replayd 读取"""
+    try:
+        ip = rtsp_source_ip
+        if not ip:
+            # 保留上一次已落盘的源站 IP：--apply-route 等旁路进程也会刷新状态，
+            # 它们拿不到频道里的源站 IP，若无条件写入空值会把主流程的值清掉
+            try:
+                with open(REPLAYD_STATE_FILE, encoding='utf-8') as f:
+                    for ln in f:
+                        if ln.startswith('rtsp_source_ip='):
+                            ip = ln.split('=', 1)[1].strip()
+                            break
+            except FileNotFoundError:
+                pass
+        data = (
+            f"rtsp_source_ip={ip}\n"
+            f"rtsp_source_port={rtsp_source_port}\n"
+            f"upstream_iface={upstream_iface}\n"
+            f"upstream_src_ip={upstream_src_ip}\n"
+        )
+        tmp = REPLAYD_STATE_FILE + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            f.write(data)
+        os.replace(tmp, REPLAYD_STATE_FILE)
+    except Exception as e:
+        log(f"回看代理状态写盘失败: {e}", error=True)
 
 # ===================== HTTP 请求绑定上游接口 =====================
+# 用标准库 urllib 实现 requests 的最小等价子集：保持 Cookie、可绑定上游接口、
+# 支持 params/data/timeout/headers，响应对象提供 status_code / text / content / json()。
+# 不再依赖第三方 requests / urllib3，装机无需 pip。
+_UA = 'Mozilla/5.0'
+
+def _raw_connect(conn):
+    """建立 TCP 连接，出站前绑定上游接口与源 IP（等价 requests adapter 的 socket_options）"""
+    last_err = None
+    for af, socktype, proto, _canon, sa in socket.getaddrinfo(conn.host, conn.port, 0, socket.SOCK_STREAM):
+        s = None
+        try:
+            s = socket.socket(af, socktype, proto)
+            if conn.timeout is not None and conn.timeout is not socket._GLOBAL_DEFAULT_TIMEOUT:
+                s.settimeout(conn.timeout)
+            if upstream_iface:
+                try:
+                    s.setsockopt(socket.SOL_SOCKET, socket.SO_BINDTODEVICE, (upstream_iface + '\0').encode())
+                except Exception:
+                    pass
+            if upstream_src_ip and af == socket.AF_INET:
+                try:
+                    s.bind((upstream_src_ip, 0))
+                except Exception:
+                    pass
+            s.connect(sa)
+            conn.sock = s
+            return
+        except Exception as e:
+            last_err = e
+            if s is not None:
+                try: s.close()
+                except Exception: pass
+    raise last_err or OSError('connect failed')
+
+class _BoundHTTPConnection(http.client.HTTPConnection):
+    def connect(self):
+        _raw_connect(self)
+
+class _BoundHTTPSConnection(http.client.HTTPSConnection):
+    def connect(self):
+        _raw_connect(self)
+        self.sock = self._context.wrap_socket(self.sock, server_hostname=self.host)
+
+class _BoundHTTPHandler(urllib.request.HTTPHandler):
+    def http_open(self, req):
+        return self.do_open(_BoundHTTPConnection, req)
+
+class _BoundHTTPSHandler(urllib.request.HTTPSHandler):
+    def https_open(self, req):
+        return self.do_open(_BoundHTTPSConnection, req, context=self._context)
+
+class _Response:
+    """requests.Response 的最小替身：status_code / text / content / json()"""
+    def __init__(self, status_code, content, headers):
+        self.status_code = status_code
+        self.content = content
+        self.headers = headers
+    @property
+    def text(self):
+        enc = ''
+        try:
+            m = re.search(r'charset=([\w-]+)', self.headers.get('Content-Type', '') or '', re.I)
+            if m: enc = m.group(1)
+        except Exception:
+            enc = ''
+        if enc:
+            try: return self.content.decode(enc, 'replace')
+            except LookupError: pass
+        # 无 charset：依次尝试 UTF-8 / GBK / BIG5（IPTV 页面可能是 GBK）
+        for e in ('utf-8', 'gbk', 'big5'):
+            try: return self.content.decode(e)
+            except UnicodeDecodeError: continue
+        return self.content.decode('utf-8', 'replace')
+    def json(self):
+        return json.loads(self.text)
+
+def _build_opener(bound=False):
+    """CookieJar 会话；bound=True 时使用绑定上游接口的连接处理器"""
+    cj = http.cookiejar.CookieJar()
+    handlers = [urllib.request.HTTPCookieProcessor(cj)]
+    if bound:
+        handlers.append(_BoundHTTPHandler())
+        handlers.append(_BoundHTTPSHandler(context=ssl.create_default_context()))
+    op = urllib.request.build_opener(*handlers)
+    op.addheaders = [('User-Agent', _UA)]
+    return op
+
+class _Session:
+    """requests.Session 的最小替代：get/post + params/data/timeout/headers"""
+    def __init__(self, opener):
+        self._opener = opener
+    def _request(self, method, url, params=None, data=None, timeout=None, headers=None):
+        if params:
+            sep = '&' if '?' in url else '?'
+            url = url + sep + urllib.parse.urlencode(params, doseq=True)
+        body = None
+        if data is not None:
+            body = urllib.parse.urlencode(data, doseq=True).encode('utf-8')
+        req = urllib.request.Request(url, data=body, method=method)
+        if body is not None:
+            req.add_header('Content-Type', 'application/x-www-form-urlencoded')
+        if headers:
+            for k, v in headers.items():
+                req.add_header(k, v)
+        try:
+            resp = self._opener.open(req, timeout=timeout)
+        except urllib.error.HTTPError as e:
+            return _Response(e.code, e.read(), e.headers)
+        with resp:
+            content = resp.read()
+            try:
+                if 'gzip' in (resp.headers.get('Content-Encoding', '') or '').lower():
+                    content = gzip.decompress(content)
+            except Exception:
+                pass
+            return _Response(resp.status, content, resp.headers)
+    def get(self, url, params=None, timeout=None, headers=None):
+        return self._request('GET', url, params=params, timeout=timeout, headers=headers)
+    def post(self, url, data=None, params=None, timeout=None, headers=None):
+        return self._request('POST', url, params=params, data=data, timeout=timeout, headers=headers)
+
+_default_session = None
+
+def _http_get(url, timeout=None, headers=None):
+    """一次性 GET（台标 / OTA）：不绑定上游接口、不共享会话 Cookie"""
+    global _default_session
+    if _default_session is None:
+        _default_session = _Session(_build_opener(bound=False))
+    return _default_session.get(url, timeout=timeout, headers=headers)
+
 def create_session():
-    import requests
-    from urllib3.connection import HTTPConnection
-    session = requests.Session()
-    session.headers.update({'User-Agent': 'Mozilla/5.0'})
-    if upstream_iface:
-        _iface_opts = list(HTTPConnection.default_socket_options) + [
-            (socket.SOL_SOCKET, socket.SO_BINDTODEVICE, (upstream_iface + '\0').encode())
-        ]
-        class _IfaceAdapter(requests.adapters.HTTPAdapter):
-            def init_poolmanager(self, *a, **kw):
-                kw['socket_options'] = _iface_opts
-                if upstream_src_ip:
-                    kw['source_address'] = (upstream_src_ip, 0)
-                super().init_poolmanager(*a, **kw)
-        session.mount('http://', _IfaceAdapter())
-        session.mount('https://', _IfaceAdapter())
-    return session
+    return _Session(_build_opener(bound=bool(upstream_iface or upstream_src_ip)))
 
 # ===================== 中兴三步鉴权 ======================
 def authenticate():
@@ -408,8 +571,7 @@ def download_logos(channels):
                 mirror, direct = LOGO_REPO[repo]
                 url = (direct if mirror_broken else mirror) + '/' + quote(rel, safe='/') + '.png'
                 try:
-                    resp = requests.get(url, timeout=15,
-                                       headers={'User-Agent': 'Mozilla/5.0'})
+                    resp = _http_get(url, timeout=15, headers={'User-Agent': _UA})
                     if resp.status_code == 200 and len(resp.content) > 100:
                         with open(local_path, 'wb') as f:
                             f.write(resp.content)
@@ -475,6 +637,8 @@ def fetch_channels(session):
             if m:
                 rtsp_source_ip = m.group(1)
                 log(f"提取 RTSP 源 IP: {rtsp_source_ip}")
+                # 源站就绪后立即落盘，回看代理（C 守护进程）据此放行连接
+                write_replayd_state()
         channels.append((index, code, name, group, rtsp_url, igmp.group(1), fccip, fccport))
         index += 1
     log(f"共获取到 {len(channels)} 个有效频道")
@@ -722,295 +886,6 @@ def generate_epg_xml(playlistdata):
     except Exception as e:
         log(f"节目单生成失败: {e}", error=True)
 
-# ===================== RTSP 代理 ======================
-SOCK_TIMEOUT = 30
-PROXY_RECV_BUF = 262144
-
-def _tune_socket(sock):
-    try:
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 262144)
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 262144)
-        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-    except Exception:
-        pass
-
-def _bind_upstream(sock):
-    if upstream_src_ip:
-        try:
-            sock.bind((upstream_src_ip, 0))
-        except Exception:
-            pass
-    if upstream_iface:
-        try:
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_BINDTODEVICE, (upstream_iface + '\0').encode())
-        except Exception:
-            pass
-
-def _safe_decode(data):
-    try: return data.decode('utf-8', errors='ignore')
-    except: return None
-
-def _parse_rtsp_status(data):
-    txt = _safe_decode(data)
-    if not txt: return ''
-    m = re.match(r'RTSP/\d\.\d\s+(\d+)', txt)
-    return m.group(1) if m else ''
-
-def getaddress(response):
-    txt = _safe_decode(response)
-    if not txt: return "0", 0
-    m = re.search(r'rtsp://([^/:]+)(?::(\d+))?', txt)
-    return (m.group(1), int(m.group(2))) if m and m.group(1) else ("0", 0)
-
-def replaceip(response, ip, port):
-    txt = _safe_decode(response)
-    if not txt: return response
-    try:
-        t = re.sub(r'rtsp://\b[a-zA-Z0-9_.-]+\.[a-zA-Z]{2,}\b', f'rtsp://{ip}', txt)
-        t = re.sub(r'rtsp://\d+\.\d+\.\d+\.\d+', f'rtsp://{ip}', t)
-        t = re.sub(r'(?<=://)([^/:]+)(?::\d+)?(?=/|$)', f'\\1:{port}', t)
-        return t.encode('utf-8')
-    except: return response
-
-def replacelocation(request, location):
-    txt = _safe_decode(request)
-    if not txt: return request
-    m = re.search(r'(rtsp://[^\s]+)\s+RTSP/1.0', txt)
-    return txt.replace(m.group(1), location).encode('utf-8') if m else request
-
-def describe(firstrequest):
-    new_ip_port = f"{rtsp_source_ip}:{rtsp_source_port}"
-    txt = _safe_decode(firstrequest)
-    if not txt: return firstrequest
-    try:
-        t = re.sub(r'rtsp://\b[a-zA-Z0-9_.-]+\.[a-zA-Z]{2,}\b:\d+', f'rtsp://{new_ip_port}', txt)
-        t = re.sub(r'rtsp://\d+\.\d+\.\d+\.\d+:\d+', f'rtsp://{new_ip_port}', t)
-        lines = t.split('\n')
-        lines[0] = lines[0].replace('OPTIONS', 'DESCRIBE')
-        if len(lines) > 1: lines[1] = lines[1].replace('CSeq: 1', 'CSeq: 2')
-        lines.insert(1, 'Accept: application/sdp')
-        return '\n'.join(lines).encode('utf-8')
-    except: return firstrequest
-
-def getlocation(response):
-    txt = _safe_decode(response)
-    if not txt: return ""
-    m = re.search(r'Location:\s*([^\s]+)', txt, re.IGNORECASE)
-    return m.group(1) if m else ""
-
-def newoptions(location):
-    return (f"OPTIONS {location} RTSP/1.0\r\nCSeq: 1\r\nUser-Agent: Lavf62.1.100\r\n\r\n").encode()
-
-def Translator(source):
-    """RTSP URL 翻译：回看(playseek)→直播格式，直播→sdp格式"""
-    txt = _safe_decode(source)
-    if not txt: return source
-    try:
-        if 'playseek' in txt:
-            playseek = re.search(r'playseek=\d{14}-\d{14}', txt)
-            if playseek:
-                ps = playseek.group(0)
-                pt = ps.replace("playseek", "programbegin").replace("-", "+08&programend=") + "+08"
-                # 回看日志：记录频道与时间区间，便于排查
-                ch_match = re.search(r'/PLTV/(.+?)\.smil', txt)
-                ch_name = ch_match.group(1) if ch_match else 'unknown'
-                ts_match = re.search(r'playseek=(\d{14})-(\d{14})', txt)
-                if ts_match:
-                    log(f"代理: 回看 {ch_name} | {ts_match.group(1)}~{ts_match.group(2)}")
-                return txt.replace("TVOD", "live").replace("smil?", "mpg?vcdnid=001&boid=001&contname=&").replace(ps, pt).encode('utf-8')
-        else:
-            return txt.replace("PLTV", "live").replace("smil", "sdp?vcdnid=001").encode('utf-8')
-        return source
-    except: return source
-
-_clients_lock = threading.Lock()   # 客户端档案并发写保护（每个代理线程都会记录）
-
-def record_client(ip, ua, channel):
-    """记录回看客户端档案（IP + 设备标识 UA + 频道），供 LuCI 状态页"连接的客户端"展示"""
-    if ip and ip.startswith('::ffff:'):
-        ip = ip[7:]
-    try:
-        with _clients_lock:
-            data = {}
-            try:
-                with open(CLIENTS_FILE) as f:
-                    data = json.load(f)
-            except Exception:
-                data = {}
-            if not isinstance(data, dict):
-                data = {}
-            ent = data.get(ip)
-            if not isinstance(ent, dict):
-                ent = {}
-            if ua:
-                ent['ua'] = ua
-            if channel:
-                ent['channel'] = channel
-            ent['last'] = time.time()
-            ent['count'] = int(ent.get('count', 0)) + 1
-            data[ip] = ent
-            cutoff = time.time() - CLIENTS_KEEP_DAYS * 86400
-            for k in list(data.keys()):
-                v = data[k]
-                if isinstance(v, dict):
-                    try:
-                        if float(v.get('last', 0)) < cutoff:
-                            del data[k]
-                    except Exception:
-                        del data[k]
-                else:
-                    del data[k]
-            with open(CLIENTS_FILE, 'w') as f:
-                json.dump(data, f)
-    except Exception as e:
-        log(f"客户端档案写入失败: {e}", error=True)
-
-# ==== 双线程阻塞直通转发 ====
-# 源站包(含 interleaved 媒体与 RTSP 应答)原样透传, 任一方关闭则双 socket 交叉关闭收尾
-def handle_StoC(client_socket, server_socket):
-    log('代理: 开始转发 S→C')
-    try:
-        while True:
-            data = server_socket.recv(PROXY_RECV_BUF)
-            if not data:
-                log('代理: 上游关闭 (S→C)')
-                break
-            client_socket.sendall(data)
-    except OSError as e:
-        if e.errno not in (9, 32, 104, 107):
-            log(f"代理: S→C 转发错误: {e}", error=True)
-    except Exception as e:
-        log(f"代理: S→C 转发错误: {e}", error=True)
-    finally:
-        try: server_socket.close()
-        except Exception: pass
-        try: client_socket.close()
-        except Exception: pass
-
-def handle_CtoS(client_socket, server_socket):
-    try:
-        while True:
-            data = client_socket.recv(PROXY_RECV_BUF)
-            if not data:
-                log('代理: 客户端关闭 (C→S)')
-                break
-            server_socket.sendall(data)
-    except OSError as e:
-        if e.errno not in (9, 32, 104, 107):
-            log(f"代理: C→S 转发错误: {e}", error=True)
-    except Exception as e:
-        log(f"代理: C→S 转发错误: {e}", error=True)
-    finally:
-        try: server_socket.close()
-        except Exception: pass
-        try: client_socket.close()
-        except Exception: pass
-
-def handle_entrance(client_socket, addr):
-    global proxy_listening
-    server_socket = None
-    client_ip = addr[0] if addr else ''
-    client_ua = ''
-    client_ch = ''
-    try:
-        # 守卫：RTSP 代理线程在首次鉴权完成前就已监听，此时来的连接需等待源站 IP 就绪
-        if not rtsp_source_ip:
-            deadline = time.time() + 60
-            while not rtsp_source_ip and time.time() < deadline:
-                time.sleep(0.5)
-            if not rtsp_source_ip:
-                log("代理: 源站 IP 未就绪（鉴权未完成），关闭连接", error=True)
-                return
-        client_socket.settimeout(SOCK_TIMEOUT)
-        _tune_socket(client_socket)
-        targetaddress = rtsp_source_ip
-        targetport = rtsp_source_port
-        location = ""
-
-        # 连接源站（先连源站再进入四轮握手；出站绑定上游接口）
-        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server_socket.settimeout(SOCK_TIMEOUT)
-        _tune_socket(server_socket)
-        _bind_upstream(server_socket)
-        server_socket.connect((targetaddress, targetport))
-
-        for idx, once in enumerate('1234'):
-            request = client_socket.recv(PROXY_RECV_BUF)
-            if not request:
-                if idx == 0:
-                    log("代理: 客户端未发送请求即断开")
-                    return
-                break
-            if location == "":
-                toserver = replaceip(request, targetaddress, targetport)
-            else:
-                toserver = replacelocation(request, location)
-            # 解析客户端设备标识（UA）与回看频道，供状态页"连接的客户端"展示
-            if client_ip and (not client_ua or not client_ch):
-                try:
-                    if not client_ua:
-                        mua = re.search(rb'User-Agent:\s*([^\r\n]+)', request, re.IGNORECASE)
-                        if mua:
-                            client_ua = mua.group(1).decode('utf-8', 'replace').strip()[:80]
-                    if not client_ch:
-                        mch = re.search(rb'/PLTV/(ch\w+)\.smil', request)
-                        if mch:
-                            client_ch = mch.group(1).decode('ascii', 'replace')
-                except Exception:
-                    pass
-            toserver = Translator(toserver)
-            server_socket.sendall(toserver)
-            response = server_socket.recv(PROXY_RECV_BUF)
-            if not response: break
-            status = _parse_rtsp_status(response)
-            if once == '1':
-                # DESCRIBE + 302 跳转处理（DESCRIBE 基于已翻译的请求构造，
-                # 源站只认 live/xxx.mpg?vcdnid=...&programbegin=... 格式）
-                twotoserver = describe(toserver)
-                server_socket.sendall(twotoserver)
-                response = server_socket.recv(PROXY_RECV_BUF)
-                if response:
-                    addr, port = getaddress(response)
-                    loc = getlocation(response)
-                    if loc:
-                        log(f"代理: 302跳转 {addr}:{port}")
-                        server_socket.close()
-                        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                        server_socket.settimeout(SOCK_TIMEOUT)
-                        _tune_socket(server_socket)
-                        _bind_upstream(server_socket)
-                        server_socket.connect((addr, port))
-                        server_socket.sendall(newoptions(loc))
-                        response = server_socket.recv(PROXY_RECV_BUF)
-                        targetaddress, targetport = addr, port
-                        location = loc
-                    status = _parse_rtsp_status(response)
-            log(f"代理: {[ 'OPTIONS','DESCRIBE','SETUP','PLAY'][idx]} {status}")
-            toclient = replaceip(response, *client_socket.getsockname()[:2])
-            client_socket.sendall(toclient)
-        log(f"代理: 握手完成 {targetaddress}:{targetport}")
-        if client_ip:
-            record_client(client_ip, client_ua, client_ch)
-        try: server_socket.settimeout(None)
-        except: pass
-        try: client_socket.settimeout(None)
-        except: pass
-        t1 = threading.Thread(target=handle_StoC, args=(client_socket, server_socket), daemon=True)
-        t2 = threading.Thread(target=handle_CtoS, args=(client_socket, server_socket), daemon=True)
-        t1.start()
-        t2.start()
-        log('代理: 握手完成，进入双向转发')
-        t1.join()
-        t2.join()
-    except Exception as e:
-        log(f"代理: 连接异常: {e}", error=True)
-    finally:
-        try: client_socket.close()
-        except: pass
-        try: server_socket.close()
-        except: pass
-
 def _get_installed_version():
     """查询当前安装的 iptv-auth 包版本（兼容 apk / opkg 双包管理器）"""
     # apk（iStoreOS 25.12+）：行格式 iptv-auth-2.2.1-r0 ...
@@ -1047,7 +922,7 @@ def check_ota_update():
         info = None
         for u in urls:
             try:
-                resp = requests.get(u, timeout=15)
+                resp = _http_get(u, timeout=15)
                 if resp.status_code == 200:
                     info = resp.json()
                     break
@@ -1071,37 +946,6 @@ def check_ota_update():
             log(f"OTA 检测到新版本 {latest}（当前 {current}），可在 LuCI 状态页在线更新")
     except Exception:
         pass
-
-def start_rtsp_proxy():
-    global proxy_listening
-    replay_port = int(config.get('ReplayPort', 554))
-    sock = None
-    listen_desc = f'0.0.0.0:{replay_port}'
-    try:
-        sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
-        _tune_socket(sock)
-        sock.bind(('::', replay_port))
-        listen_desc = f'[::]:{replay_port}'
-    except OSError:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        _tune_socket(sock)
-        sock.bind(('0.0.0.0', replay_port))
-    sock.listen(32)
-    sock.settimeout(3)
-    proxy_listening = True
-    log(f"RTSP 代理已启动: {listen_desc}, 源站: {rtsp_source_ip or '待首次鉴权确定'}:{rtsp_source_port}")
-    while proxy_listening:
-        try:
-            client, addr = sock.accept()
-            log(f"代理: 新连接 {addr}")
-            threading.Thread(target=handle_entrance, args=(client, addr), daemon=True).start()
-        except socket.timeout:
-            continue
-        except OSError:
-            break
 
 # ===================== 主任务 =====================
 def run_task():
@@ -1160,10 +1004,8 @@ def run_task():
     return True
 
 def main_loop():
-    global proxy_listening
     load_config()
-    # 启动 RTSP 代理线程（rtp2httpd 参数由 init.d 直接读 UCI，无需中转文件）
-    threading.Thread(target=start_rtsp_proxy, daemon=True).start()
+    # 554 回看代理由独立 C 守护进程 iptv-replayd 承担，控制面仅负责状态落盘
     # 启动时执行一次
     run_task()
     # 定时循环 + 手动执行标志（/tmp/iptv-auth-runnow，LuCI 页面/保存配置时 touch）

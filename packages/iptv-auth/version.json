@@ -1,7 +1,7 @@
 {
-  "version": "2.3.32-r0",
-  "date": "2026-10-13",
-  "changelog": "缓冲池改为 16384 块（约 24MB），UDP 接收缓冲改为 4MB。",
-  "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth-2.3.32-r0.apk",
-  "ipk_url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth_2.3.32-r0_x86_64.ipk"
+  "version": "2.3.34-r0",
+  "date": "2026-10-16",
+  "changelog": "554 回看/时移代理拆为独立 C 守护进程 iptv-replayd（无 Python、去 GIL，静态 musl，x86_64/aarch64）；控制面仅落盘运行时状态。",
+  "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth-2.3.34-r0.apk",
+  "ipk_url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth_2.3.34-r0_x86_64.ipk"
 }

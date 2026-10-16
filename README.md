@@ -6,7 +6,7 @@ ImmortalWrt / OpenWrt 插件：IPTV 代理、影视中心、状态监控、网�
 
 | 包名 | 版本 | 架构 | 说明 |
 |------|------|------|------|
-| `iptv-auth` | 2.3.32-r0 | noarch | 鉴权、M3U/EPG、RTSP 回看；缓冲池 24MB、UDP 接收 4MB |
+| `iptv-auth` | 2.3.34-r0 | noarch | 鉴权、M3U/EPG；554 回看/时移代理由独立 C 守护进程 `iptv-replayd`（静态 musl，x86_64/aarch64）；缓冲池 24MB、UDP 接收 4MB；纯标准库 HTTP，无 pip/requests 依赖 |
 | `luci-app-mediahub` | 1.5.7-r0 | x86_64 | 影视中心（CMS + AList + ffmpeg） |
 | `luci-app-statusmon` | 4.40 | noarch | 状态监控；常驻采样器固定节奏采样（更准更省）；「系统性能」单面板（系统/CPU/内存 合成一张面板，含占用环 + CPU/内存曲线）与「温度」模块（CPU 封装/硬盘，3h/24h 可切换）；客户端分页；PPPoE 流量跨重拨累计；「安全」标签：登录爆破来源记录（永久保留、可清除）、攻击日志（永久保留、可清空）与手动拉黑；「日志」标签：PPPoE/DHCP/LuCI 登录/SSH 登录四类下拉查看（原安全监测已并入）；已移除 WAN 端口探测日志，不再刷屏系统日志 |
 | `luci-app-netqueue` | 1.0.20-r0 | noarch | 网络优化：转发、CPU 模式/睿频、NAT、DHCP、DNS、静态 IP、过期 ARP 清理 |
@@ -23,7 +23,7 @@ cp my-openwrt.rsa.pub /etc/apk/keys/
 chmod 644 /etc/apk/keys/my-openwrt.rsa.pub
 
 # IPTV 代理
-apk add iptv-auth-2.3.32-r0.apk
+apk add iptv-auth-2.3.34-r0.apk
 
 # 影视中心
 apk add luci-app-mediahub-1.5.7-r0.apk
@@ -49,7 +49,7 @@ apk add --allow-untrusted xxx.apk
 
 ```bash
 # IPTV 代理
-opkg install iptv-auth_2.3.32-r0_x86_64.ipk
+opkg install iptv-auth_2.3.34-r0_x86_64.ipk
 
 # 状态监控
 opkg install luci-app-statusmon_4.40_x86_64.ipk
@@ -74,12 +74,27 @@ rtp2httpd 自编译（缓冲池 1024）在 `packages/rtp2httpd/`。上游发新�
 bash packaging/rtp2httpd/build.sh 3.17.2
 ```
 
+回看代理 `iptv-replayd` 为独立 C 守护进程，源码在 `src/iptv-replayd/`。改动后重新交叉编译
+（静态 musl，x86_64/aarch64，产物落 `packages/iptv-replayd/`），再执行 `packaging/build-apks.sh`
+打进 `iptv-auth` 包：
+
+```bash
+# 交叉编译 iptv-replayd 两种架构
+bash packaging/iptv-replayd/build.sh
+
+# 打包（自动按架构把二进制装入 iptv-auth apk/ipk）
+export APK=/path/to/apk
+bash packaging/build-apks.sh
+```
+
 ## IPTV 更新日志
 
 从 IPv6 双栈起：
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| 2.3.34 | 2026-10-16 | 554 回看/时移代理拆为独立 C 守护进程 `iptv-replayd`（无 Python、去 GIL，静态 musl；控制面仅落盘运行时状态） |
+| 2.3.33 | 2026-10-15 | HTTP(S) 改用 Python 标准库 urllib，去掉 requests/pip 依赖（依赖改 ca-bundle） |
 | 2.3.32 | 2026-10-13 | 缓冲池改为 16384 块（约 24MB），UDP 接收缓冲改为 4MB |
 | 2.3.31 | 2026-10-13 | 回看代理改为双线程阻塞直通转发（S→C / C→S） |
 | 2.3.30 | 2026-10-12 | 回看上游 S→C 静默 10s 发 OPTIONS keepalive，无效则重建会话 |
