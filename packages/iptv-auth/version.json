@@ -1,7 +1,7 @@
 {
   "version": "2.3.34-r0",
   "date": "2026-10-16",
-  "changelog": "554 回看/时移代理拆为独立 C 守护进程 iptv-replayd（无 Python、去 GIL，静态 musl，x86_64/aarch64）；控制面仅落盘运行时状态。",
+  "changelog": "554 回看/时移代理拆为独立 C 守护进程 iptv-replayd（无 Python、去 GIL，静态 musl x86_64/aarch64；init.d 按架构选二进制）；C 端读 /etc/TZ 修正日志时区；控制面仅落盘运行时状态（空值保留上次源站 IP）。",
   "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth-2.3.34-r0.apk",
   "ipk_url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth_2.3.34-r0_x86_64.ipk"
 }

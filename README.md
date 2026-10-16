@@ -93,7 +93,7 @@ bash packaging/build-apks.sh
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
-| 2.3.34 | 2026-10-16 | 554 回看/时移代理拆为独立 C 守护进程 `iptv-replayd`（无 Python、去 GIL，静态 musl；控制面仅落盘运行时状态） |
+| 2.3.34 | 2026-10-16 | 554 回看/时移代理拆为独立 C 守护进程 `iptv-replayd`（无 Python、去 GIL，静态 musl x86_64/aarch64；init.d 按 `uname -m` 选二进制，升级走 post-upgrade）；C 端读 `/etc/TZ` 修正静态 musl 日志时区（本机 `/etc/localtime` 悬空会回退 UTC）；控制面仅落盘运行时状态（源站 IP 空值时保留上次值） |
 | 2.3.33 | 2026-10-15 | HTTP(S) 改用 Python 标准库 urllib，去掉 requests/pip 依赖（依赖改 ca-bundle） |
 | 2.3.32 | 2026-10-13 | 缓冲池改为 16384 块（约 24MB），UDP 接收缓冲改为 4MB |
 | 2.3.31 | 2026-10-13 | 回看代理改为双线程阻塞直通转发（S→C / C→S） |
