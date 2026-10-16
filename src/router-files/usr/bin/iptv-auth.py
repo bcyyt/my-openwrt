@@ -9,7 +9,7 @@
   4. 定时循环刷新频道和节目单
   5. 输出状态 JSON 供 LuCI 读取
 """
-import os, sys, re, json, time, gzip, socket, subprocess, datetime, threading, select, ssl, fcntl
+import os, sys, re, json, time, gzip, socket, subprocess, datetime, threading, select, ssl, fcntl, queue
 import http.client, http.cookiejar, urllib.request, urllib.parse, urllib.error
 from urllib.parse import quote
 from datetime import timedelta
@@ -216,6 +216,7 @@ def load_config():
             'filter_keywords': [k.strip() for k in g('filter_keywords', '').split(',') if k.strip()],
             'interval': int(g('interval', '10') or '10'),
             'epg_enabled': g('epg_enabled', '1') == '1',
+            'fetch_workers': int(g('fetch_workers', '4') or '4'),
             'rtp2h_workers': g('rtp2h_workers', '4'),
             'rtp2h_rcvbuf': g('rtp2h_rcvbuf', '4194304'),
             'rtp2h_bufpool': g('rtp2h_bufpool', '16384'),
@@ -290,6 +291,11 @@ def _raw_connect(conn):
                 except Exception:
                     pass
             s.connect(sa)
+            # 长连接复用必须关闭 Nagle：否则小请求体与延迟 ACK 叠加会引入 ~40-100ms/请求的停顿
+            try:
+                s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            except Exception:
+                pass
             conn.sock = s
             return
         except Exception as e:
@@ -386,17 +392,129 @@ class _Session:
     def post(self, url, data=None, params=None, timeout=None, headers=None):
         return self._request('POST', url, params=params, data=data, timeout=timeout, headers=headers)
 
-_default_session = None
+class _HttpClient:
+    """极简 keep-alive HTTP 客户端，专用于 IPTV 内网 http:// 接口。
+    相比 urllib 每次请求新建连接，这里按 host 复用一条长连接（省去每请求的 TCP
+    握手与端口消耗），并维护最小 Cookie（承载鉴权会话）。仅处理明文 HTTP；https
+    仍交给 _http_get 的 urllib 分支。
+    """
+    MAX_REDIRECTS = 5
+
+    def __init__(self, bound=True):
+        self._bound = bound
+        self._conns = {}      # (host, port) -> HTTPConnection
+        self._cookies = {}    # host -> {name: value}
+
+    def _new_conn(self, host, port):
+        if self._bound and (upstream_iface or upstream_src_ip):
+            return _BoundHTTPConnection(host, port)
+        return http.client.HTTPConnection(host, port)
+
+    def _drop(self, key):
+        conn = self._conns.pop(key, None)
+        if conn is not None:
+            try: conn.close()
+            except Exception: pass
+
+    def _cookie_header(self, host):
+        ck = self._cookies.get(host)
+        return '; '.join(f'{k}={v}' for k, v in ck.items()) if ck else None
+
+    def _store_cookies(self, host, headers):
+        for raw in (headers.get_all('Set-Cookie') or []):
+            kv = raw.split(';', 1)[0].strip()
+            if '=' in kv:
+                k, v = kv.split('=', 1)
+                if k.strip():
+                    self._cookies.setdefault(host, {})[k.strip()] = v.strip()
+
+    def _request(self, method, url, params=None, data=None, timeout=None,
+                 headers=None, _redirects=0):
+        parts = urllib.parse.urlsplit(url)
+        if parts.scheme != 'http':
+            # 非明文 HTTP：退化到 urllib（保留原行为）
+            return _Session(_build_opener(bound=self._bound))._request(
+                method, url, params=params, data=data, timeout=timeout, headers=headers)
+        host = parts.hostname
+        port = parts.port or 80
+        key = (host, port)
+        path = parts.path or '/'
+        if parts.query:
+            path += '?' + parts.query
+        if params:
+            qs = urllib.parse.urlencode(params, doseq=True)
+            path += ('&' if '?' in path else '?') + qs
+        body = None
+        hdrs = {'User-Agent': _UA, 'Accept-Encoding': 'gzip', 'Connection': 'keep-alive'}
+        if data is not None:
+            body = urllib.parse.urlencode(data, doseq=True).encode('utf-8')
+            hdrs['Content-Type'] = 'application/x-www-form-urlencoded'
+        if headers:
+            hdrs.update(headers)
+        ck = self._cookie_header(host)
+        if ck:
+            hdrs['Cookie'] = ck
+
+        status = rheaders = content = None
+        for attempt in (0, 1):
+            conn = self._conns.get(key)
+            if conn is None:
+                conn = self._new_conn(host, port)
+                self._conns[key] = conn
+            if timeout is not None:
+                conn.timeout = timeout
+                try:
+                    if conn.sock is not None:
+                        conn.sock.settimeout(timeout)
+                except Exception:
+                    pass
+            try:
+                conn.request(method, path, body=body, headers=hdrs)
+                resp = conn.getresponse()
+                content = resp.read()
+                status = resp.status
+                rheaders = resp.headers
+                self._store_cookies(host, rheaders)
+                if resp.will_close or (rheaders.get('Connection', '') or '').lower() == 'close':
+                    self._drop(key)
+                break
+            except Exception:
+                # 复用的长连接被对端关闭/失效：丢弃并重连重试一次
+                self._drop(key)
+                if attempt == 1:
+                    raise
+        if 'gzip' in (rheaders.get('Content-Encoding', '') or '').lower():
+            try: content = gzip.decompress(content)
+            except Exception: pass
+        if status in (301, 302, 303, 307, 308) and _redirects < self.MAX_REDIRECTS:
+            loc = rheaders.get('Location')
+            if loc:
+                nurl = urllib.parse.urljoin(url, loc)
+                if status in (301, 302, 303):
+                    return self._request('GET', nurl, timeout=timeout,
+                                         headers=headers, _redirects=_redirects + 1)
+                return self._request(method, nurl, params=None, data=data, timeout=timeout,
+                                     headers=headers, _redirects=_redirects + 1)
+        return _Response(status, content, rheaders)
+
+    def get(self, url, params=None, timeout=None, headers=None):
+        return self._request('GET', url, params=params, timeout=timeout, headers=headers)
+
+    def post(self, url, data=None, params=None, timeout=None, headers=None):
+        return self._request('POST', url, params=params, data=data, timeout=timeout, headers=headers)
+
+_http_tls = threading.local()   # 每个线程独立会话：并发下载台标时互不共享 Cookie/连接
 
 def _http_get(url, timeout=None, headers=None):
-    """一次性 GET（台标 / OTA）：不绑定上游接口、不共享会话 Cookie"""
-    global _default_session
-    if _default_session is None:
-        _default_session = _Session(_build_opener(bound=False))
-    return _default_session.get(url, timeout=timeout, headers=headers)
+    """一次性 GET（台标 / OTA）：不绑定上游接口、不共享会话 Cookie（线程内复用连接）"""
+    sess = getattr(_http_tls, 'session', None)
+    if sess is None:
+        sess = _Session(_build_opener(bound=False))
+        _http_tls.session = sess
+    return sess.get(url, timeout=timeout, headers=headers)
 
 def create_session():
-    return _Session(_build_opener(bound=bool(upstream_iface or upstream_src_ip)))
+    return _HttpClient(bound=bool(upstream_iface or upstream_src_ip))
 
 # ===================== 中兴三步鉴权 ======================
 def authenticate():
@@ -528,21 +646,59 @@ def get_logo_url(name, host, port='2000'):
     clean = clean_channel_name(name)
     return f"http://{host}:{port}{quote('/logo/' + clean + '.png')}"
 
+def _fetch_workers():
+    """抓取类任务（节目单 / 台标）的并发度，1 表示串行"""
+    try:
+        return max(1, min(16, int(config.get('fetch_workers', 4) or 4)))
+    except (ValueError, TypeError):
+        return 4
+
+def _parallel_map(func, items, workers):
+    """在至多 workers 个线程中并发对 items 逐项调用 func(item)。
+    func 需自行保证线程安全；单线程时直接串行调用（不建线程）。"""
+    if workers <= 1 or len(items) <= 1:
+        for it in items:
+            try: func(it)
+            except Exception: pass
+        return
+    q = queue.Queue()
+    for it in items:
+        q.put(it)
+    def run():
+        while True:
+            try:
+                it = q.get_nowait()
+            except queue.Empty:
+                return
+            try: func(it)
+            except Exception: pass
+    ts = [threading.Thread(target=run, daemon=True) for _ in range(min(workers, len(items)))]
+    for t in ts: t.start()
+    for t in ts: t.join()
+
 def download_logos(channels):
     """每次鉴权后自动下载频道台标到 /www/logo/（跳过已存在的文件）
     候选顺序：包内置种子 → 显式别名 → qist 精确身份/本标 → fm → vc
     完整名优先于本标回退：存在专属 4K 台标（qist 的四川/湖南/江苏等卫视4K）时优先采用"""
     os.makedirs(LOGO_DIR, exist_ok=True)
-    downloaded = 0
-    skipped = 0
-    failed = 0
-    for idx, code, name, group, rtspurl, igmpurl, fccip, fccport in channels:
-        identity = clean_channel_name(name)
+    counters = {'downloaded': 0, 'skipped': 0, 'failed': 0}
+    lock = threading.Lock()
+    # 同一台标身份可能对应多个频道，去重后既省请求也避免并发写同一文件
+    seen, uniq = set(), []
+    for item in channels:
+        identity = clean_channel_name(item[2])
+        if identity in seen:
+            continue
+        seen.add(identity)
+        uniq.append(item)
+
+    def one(item):
+        identity = clean_channel_name(item[2])
         local_path = os.path.join(LOGO_DIR, f"{identity}.png")
         # 已存在且非空则跳过
         if os.path.exists(local_path) and os.path.getsize(local_path) > 100:
-            skipped += 1
-            continue
+            with lock: counters['skipped'] += 1
+            return
         ok = False
         # 1) 包内置种子台标（无公开来源的频道）
         seed_path = os.path.join(LOGO_SEED_DIR, f"{identity}.png")
@@ -582,16 +738,18 @@ def download_logos(channels):
                 if ok:
                     break
         if ok:
-            downloaded += 1
+            with lock: counters['downloaded'] += 1
         else:
             # 下载失败时清理空文件
             try:
                 os.remove(local_path)
             except OSError:
                 pass
-            failed += 1
-    if downloaded > 0 or failed > 0:
-        log(f"台标下载: 新增 {downloaded}, 跳过 {skipped}, 失败 {failed}")
+            with lock: counters['failed'] += 1
+
+    _parallel_map(one, uniq, _fetch_workers())
+    if counters['downloaded'] > 0 or counters['failed'] > 0:
+        log(f"台标下载: 新增 {counters['downloaded']}, 跳过 {counters['skipped']}, 失败 {counters['failed']}")
 
 # ===================== 频道抓取 ======================
 def fetch_channels(session):
@@ -809,34 +967,77 @@ def backfill_4k_epg(playlistdata):
         log(f"4K节目单回填完成: {filled} 个频道")
     return out
 
+def _fetch_channel_epg(session, code):
+    """抓取单个频道最近 8 天（含今天）的节目单，返回 [day_data, ...]"""
+    iptv_server = config['IPTVServer']
+    days_data = []
+    start_date = datetime.datetime.today().date() - timedelta(days=6)
+    for _ in range(8):
+        query_date = start_date.strftime("%Y.%m.%d")
+        try:
+            resp = session.get(f"{iptv_server}/iptvepg/frame299/action/tvod/getTvodlist.jsp",
+                             params={"channelcode": [code], "timedata": [query_date]}, timeout=10)
+            if resp.status_code == 200 and resp.text:
+                days_data.append(parse_day_data(resp.text))
+            else:
+                days_data.append([])
+        except Exception:
+            days_data.append([])
+        start_date += timedelta(days=1)
+    return days_data
+
 def fetch_epg(session, channels):
     if not config.get('epg_enabled', True): return
-    iptv_server = config['IPTVServer']
-    playlistdata = []
     total = len(channels)
     log(f"开始获取 {total} 个频道的节目单...")
-    for idx, (index, code, name, group, rtspurl, igmpurl, fccip, fccport) in enumerate(channels):
-        if (idx + 1) % 20 == 0:
-            log(f"已处理 {idx+1}/{total} 个频道的节目单")
-        if idx > 0 and idx % 30 == 0:
-            log(f"重新验证鉴权信息 (频道 {index})")
-            session = authenticate()
-            if session is None: break
-        days_data = []
-        start_date = datetime.datetime.today().date() - timedelta(days=6)
-        for day in range(8):
-            query_date = start_date.strftime("%Y.%m.%d")
+    if total == 0:
+        generate_epg_xml(backfill_4k_epg([]))
+        return
+    workers = min(_fetch_workers(), total)
+
+    # 串行：沿用传入会话，每 30 个频道重新鉴权（与原行为完全一致）
+    if workers <= 1:
+        playlistdata = []
+        for idx, (index, code, name, group, rtspurl, igmpurl, fccip, fccport) in enumerate(channels):
+            if (idx + 1) % 20 == 0:
+                log(f"已处理 {idx+1}/{total} 个频道的节目单")
+            if idx > 0 and idx % 30 == 0:
+                log(f"重新验证鉴权信息 (频道 {index})")
+                session = authenticate()
+                if session is None: break
+            playlistdata.append((index, name, _fetch_channel_epg(session, code)))
+        generate_epg_xml(backfill_4k_epg(playlistdata))
+        return
+
+    # 并行：只做一次鉴权，随后每个 worker 复制该会话的 Cookie 并各自建立独立长连接。
+    # 这样避免多路独立鉴权互相顶掉（门户通常单会话），又让请求真正并发。
+    base_cookies = getattr(session, '_cookies', None) or {}
+    bound = getattr(session, '_bound', bool(upstream_iface or upstream_src_ip))
+    results = [None] * total
+    q = queue.Queue()
+    for i in range(total):
+        q.put(i)
+    lock = threading.Lock()
+    progress = [0]
+
+    def worker():
+        sess = _HttpClient(bound=bound)
+        sess._cookies = {h: dict(c) for h, c in base_cookies.items()}
+        while True:
             try:
-                resp = session.get(f"{iptv_server}/iptvepg/frame299/action/tvod/getTvodlist.jsp",
-                                 params={"channelcode": [code], "timedata": [query_date]}, timeout=10)
-                if resp.status_code == 200 and resp.text:
-                    days_data.append(parse_day_data(resp.text))
-                else:
-                    days_data.append([])
-            except Exception:
-                days_data.append([])
-            start_date += timedelta(days=1)
-        playlistdata.append((index, name, days_data))
+                i = q.get_nowait()
+            except queue.Empty:
+                return
+            results[i] = _fetch_channel_epg(sess, channels[i][1])
+            with lock:
+                progress[0] += 1
+                if progress[0] % 20 == 0:
+                    log(f"已处理 {progress[0]}/{total} 个频道的节目单")
+
+    ts = [threading.Thread(target=worker, daemon=True) for _ in range(workers)]
+    for t in ts: t.start()
+    for t in ts: t.join()
+    playlistdata = [(channels[i][0], channels[i][2], results[i] or []) for i in range(total)]
     generate_epg_xml(backfill_4k_epg(playlistdata))
 
 def parse_day_data(text):

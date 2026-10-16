@@ -110,6 +110,7 @@ start_service() {
     port=$(uci -q get iptv-auth.main.live_port); port=${port:-23234}
     iface=$(uci -q get iptv-auth.main.upstream_interface)
     workers=$(uci -q get iptv-auth.main.rtp2h_workers); workers=${workers:-4}
+    maxclients=$(uci -q get iptv-auth.main.rtp2h_maxclients); maxclients=${maxclients:-5}
     rcvbuf=$(uci -q get iptv-auth.main.rtp2h_rcvbuf); rcvbuf=${rcvbuf:-4194304}
     bufpool=$(uci -q get iptv-auth.main.rtp2h_bufpool); bufpool=${bufpool:-16384}
     verbose=$(uci -q get iptv-auth.main.rtp2h_verbose); verbose=${verbose:-3}
@@ -159,6 +160,7 @@ start_service() {
     procd_set_param command /usr/bin/rtp2httpd \
         -l "$port" \
         -w "$workers" \
+        -m "$maxclients" \
         -v "$verbose" \
         -s /status \
         -B "$rcvbuf" \

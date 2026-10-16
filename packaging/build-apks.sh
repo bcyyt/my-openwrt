@@ -12,8 +12,8 @@ APK="${APK:-/tmp/apk-tools/build/src/apk}"
 SIGN_KEY="$KEYS/my-openwrt.rsa"
 PUB_KEY="$KEYS/my-openwrt.rsa.pub"
 
-IPTV_VER="${IPTV_VER:-2.3.34-r0}"
-REPLAYD_VER="${REPLAYD_VER:-1.0.0}"
+IPTV_VER="${IPTV_VER:-2.3.35-r0}"
+REPLAYD_VER="${REPLAYD_VER:-1.0.2}"
 MEDIA_VER="${MEDIA_VER:-1.5.7-r0}"
 STATUS_VER="${STATUS_VER:-4.40}"
 NETQ_VER="${NETQ_VER:-1.0.20-r0}"
@@ -161,7 +161,7 @@ cat > "$OUT/iptv-auth/version.json" <<EOF
 {
   "version": "${IPTV_VER}",
   "date": "${DATE_STR}",
-  "changelog": "554 回看/时移代理拆为独立 C 守护进程 iptv-replayd（无 Python、去 GIL，静态 musl，x86_64/aarch64）；控制面仅落盘运行时状态。",
+  "changelog": "修复外网回看偶发失败：上游门户拒绝 playseek 窗口 end 落在未来的请求（RTSP 562），replayd 现将 programend 收敛到当前时刻前 2 秒；握手期间上游非 2xx 不再误判为完成。回看转发优化：握手缓冲区提前释放、S→C 复用入口线程（每会话省约 656KB 内存与一个线程）、运行时状态单次读盘、listen backlog 提升。控制面优化：EPG/台标抓取并发（fetch_workers）、IPTV HTTP 长连接复用（并关闭 Nagle 避免延迟 ACK 停顿）。rtp2httpd 参数页新增「最大客户端数」（-m，默认 5，可调 1~256），可自行提升同时观看并发上限。",
   "url": "${OTA_URL_BASE}/iptv-auth/iptv-auth-${IPTV_VER}.apk",
   "ipk_url": "${OTA_URL_BASE}/iptv-auth/iptv-auth_${IPTV_VER}_${IPK_ARCH}.ipk"
 }

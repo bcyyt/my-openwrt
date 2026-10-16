@@ -1,7 +1,7 @@
 {
-  "version": "2.3.34-r0",
+  "version": "2.3.35-r0",
   "date": "2026-10-16",
-  "changelog": "554 回看/时移代理拆为独立 C 守护进程 iptv-replayd（无 Python、去 GIL，静态 musl x86_64/aarch64；init.d 按架构选二进制）；C 端读 /etc/TZ 修正日志时区；控制面仅落盘运行时状态（空值保留上次源站 IP）。",
-  "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth-2.3.34-r0.apk",
-  "ipk_url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth_2.3.34-r0_x86_64.ipk"
+  "changelog": "修复外网回看偶发失败：上游门户拒绝 playseek 窗口 end 落在未来的请求（RTSP 562），replayd 现将 programend 收敛到当前时刻前 2 秒；握手期间上游非 2xx 不再误判为完成。回看转发优化：握手缓冲区提前释放、S→C 复用入口线程（每会话省约 656KB 内存与一个线程）、运行时状态单次读盘、listen backlog 提升。控制面优化：EPG/台标抓取并发（fetch_workers）、IPTV HTTP 长连接复用（并关闭 Nagle 避免延迟 ACK 停顿）。rtp2httpd 参数页新增「最大客户端数」（-m，默认 5，可调 1~256），可自行提升同时观看并发上限。",
+  "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth-2.3.35-r0.apk",
+  "ipk_url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth_2.3.35-r0_x86_64.ipk"
 }
