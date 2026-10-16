@@ -311,36 +311,30 @@ static int tcp_connect(const char *host, int port, const cfg_t *c, int timeout) 
 }
 
 // ===================== 运行时状态文件 =====================
-static char *state_get(const char *key) {
-    FILE *f = fopen(STATE_FILE, "r");
-    if (!f) return NULL;
-    char line[512];
-    char *res = NULL;
-    size_t kl = strlen(key);
-    while (fgets(line, sizeof(line), f)) {
-        if (strncmp(line, key, kl) == 0 && line[kl] == '=') {
-            char *v = line + kl + 1;
-            size_t n = strlen(v);
-            while (n && (v[n - 1] == '\n' || v[n - 1] == '\r')) v[--n] = 0;
-            res = xstrdup(v);
-            break;
-        }
-    }
-    fclose(f);
-    return res;
-}
-
+// 单次打开解析全部键：旧实现每个 key 都 fopen 一次（共 4 次），每个连接都要读
 static void load_cfg(cfg_t *c) {
     memset(c, 0, sizeof(*c));
-    char *v;
-    v = state_get("upstream_iface");
-    if (v) { snprintf(c->iface, sizeof(c->iface), "%s", v); free(v); }
-    v = state_get("upstream_src_ip");
-    if (v) { snprintf(c->src_ip, sizeof(c->src_ip), "%s", v); free(v); }
-    v = state_get("rtsp_source_ip");
-    if (v) { snprintf(c->rtsp_ip, sizeof(c->rtsp_ip), "%s", v); free(v); }
-    v = state_get("rtsp_source_port");
-    if (v) { c->rtsp_port = atoi(v); free(v); }
+    FILE *f = fopen(STATE_FILE, "r");
+    if (f) {
+        char line[512];
+        while (fgets(line, sizeof(line), f)) {
+            char *eq = strchr(line, '=');
+            if (!eq) continue;
+            *eq = 0;
+            char *v = eq + 1;
+            size_t n = strlen(v);
+            while (n && (v[n - 1] == '\n' || v[n - 1] == '\r')) v[--n] = 0;
+            if (strcmp(line, "upstream_iface") == 0)
+                snprintf(c->iface, sizeof(c->iface), "%s", v);
+            else if (strcmp(line, "upstream_src_ip") == 0)
+                snprintf(c->src_ip, sizeof(c->src_ip), "%s", v);
+            else if (strcmp(line, "rtsp_source_ip") == 0)
+                snprintf(c->rtsp_ip, sizeof(c->rtsp_ip), "%s", v);
+            else if (strcmp(line, "rtsp_source_port") == 0)
+                c->rtsp_port = atoi(v);
+        }
+        fclose(f);
+    }
     if (c->rtsp_port <= 0) c->rtsp_port = 554;
 }
 
@@ -546,7 +540,21 @@ static char *do_translator(const char *text) {
         size_t pslen = 9 + 14 + 1 + 14;
         memcpy(psbuf, ps, pslen);
         psbuf[pslen] = 0;
-        char pt[128];
+        // 上游门户拒绝 programend 落在未来的 playseek 请求（RTSP 562），而
+        // rtp2httpd 的 (e) 占位符会落在“现在”这个边界上，偶发超前 1 秒即失败。
+        // 这里把 end 收敛到当前时刻前 2 秒，消除边界抖动（start 同步收敛，避免倒置）。
+        struct tm tmv;
+        time_t nowsec = time(NULL);
+        char nowb[16];
+        localtime_r(&nowsec, &tmv);
+        strftime(nowb, sizeof(nowb), "%Y%m%d%H%M%S", &tmv);
+        if (strcmp(b2, nowb) > 0) {
+            time_t safest = nowsec - 2;
+            localtime_r(&safest, &tmv);
+            strftime(b2, sizeof(b2), "%Y%m%d%H%M%S", &tmv);
+            if (strcmp(a, b2) > 0) memcpy(a, b2, sizeof(a));
+        }
+        char pt[160];
         snprintf(pt, sizeof(pt), "programbegin=%s+08&programend=%s+08", a, b2);
         // 回看日志：频道 + 时间区间
         char ch[96] = "unknown";
@@ -804,8 +812,8 @@ typedef struct {
     int stoc;
 } fwd_t;
 
-static void *forward_thread(void *arg) {
-    fwd_t *f = arg;
+// 单方向阻塞转发循环（不含线程/资源管理），可在线程内或调用线程内直接执行
+static void forward_loop(fwd_t *f) {
     char *buf = malloc(PROXY_RECV_BUF);
     if (buf) {
         for (;;) {
@@ -828,6 +836,11 @@ static void *forward_thread(void *arg) {
         }
         free(buf);
     }
+}
+
+static void *forward_thread(void *arg) {
+    fwd_t *f = arg;
+    forward_loop(f);
     // 唤醒对向线程后由 handle_entrance 统一 close
     shutdown(f->cfd, SHUT_RDWR);
     shutdown(f->sfd, SHUT_RDWR);
@@ -937,10 +950,9 @@ static void *handle_entrance(void *arg) {
     for (int idx = 0; idx < 4; idx++) {
         ssize_t rn = recv(cfd, reqbuf, PROXY_RECV_BUF - 1, 0);
         if (rn == 0) {
-            if (idx == 0) {
-                log_line(0, "代理: 客户端未发送请求即断开");
-                abnormal = 1;
-            }
+            if (idx == 0) log_line(0, "代理: 客户端未发送请求即断开");
+            // 客户端在握手完成前断开：不得继续进入转发
+            abnormal = 1;
             break;
         }
         if (rn < 0) {
@@ -966,7 +978,7 @@ static void *handle_entrance(void *arg) {
 
         ssize_t sn = recv(sfd, resbuf, PROXY_RECV_BUF - 1, 0);
         if (sn < 0) { free(translated); abnormal = 1; break; }
-        if (sn == 0) { free(translated); break; }
+        if (sn == 0) { free(translated); abnormal = 1; break; }
         resbuf[sn] = 0;
 
         if (idx == 0) {
@@ -1037,6 +1049,12 @@ static void *handle_entrance(void *arg) {
             break;
         }
         free(toclient);
+
+        // 上游返回非 2xx（如 562）：本次握手失败，不得进入转发
+        if (status < 200 || status >= 300) {
+            abnormal = 1;
+            break;
+        }
     }
 
     if (!abnormal) forward = 1;
@@ -1048,29 +1066,33 @@ done:
         set_timeout(cfd, 0);
         if (sfd >= 0) set_timeout(sfd, 0);
 
-        fwd_t *fs = malloc(sizeof(*fs));
+        // 转发阶段不再需要握手缓冲区，提前释放（每会话共 512KB）
+        free(reqbuf); reqbuf = NULL;
+        free(resbuf); resbuf = NULL;
+
         fwd_t *fc = malloc(sizeof(*fc));
-        if (fs && fc && sfd >= 0) {
-            fs->from = sfd; fs->to = cfd; fs->cfd = cfd; fs->sfd = sfd; fs->stoc = 1;
+        if (fc && sfd >= 0) {
             fc->from = cfd; fc->to = sfd; fc->cfd = cfd; fc->sfd = sfd; fc->stoc = 0;
             log_line(0, "代理: 开始转发 S→C");
-            pthread_t t1, t2;
-            if (pthread_create(&t1, NULL, forward_thread, fs) == 0) {
-                if (pthread_create(&t2, NULL, forward_thread, fc) == 0) {
-                    log_line(0, "代理: 握手完成，进入双向转发");
-                    pthread_join(t1, NULL);
-                    pthread_join(t2, NULL);
-                } else {
-                    free(fc);
-                    shutdown(sfd, SHUT_RDWR);
-                    shutdown(cfd, SHUT_RDWR);
-                    pthread_join(t1, NULL);
-                }
+            pthread_t t2;
+            if (pthread_create(&t2, NULL, forward_thread, fc) == 0) {
+                log_line(0, "代理: 握手完成，进入双向转发");
+                // S→C 方向直接在 entrance 线程内转发，省去一个线程及其栈
+                fwd_t fs;
+                fs.from = sfd; fs.to = cfd; fs.cfd = cfd; fs.sfd = sfd; fs.stoc = 1;
+                forward_loop(&fs);
+                shutdown(fs.cfd, SHUT_RDWR);
+                shutdown(fs.sfd, SHUT_RDWR);
+                pthread_join(t2, NULL);
             } else {
-                free(fs); free(fc);
+                free(fc);
+                shutdown(sfd, SHUT_RDWR);
+                shutdown(cfd, SHUT_RDWR);
             }
         } else {
-            free(fs); free(fc);
+            free(fc);
+            shutdown(sfd, SHUT_RDWR);
+            shutdown(cfd, SHUT_RDWR);
         }
     }
 
@@ -1125,7 +1147,7 @@ int main(int argc, char **argv) {
             return 1;
         }
     }
-    listen(ls, 32);
+    listen(ls, 128);
     log_line(0, "回看代理已启动: :%d (C 守护进程)", port);
 
     while (!g_stop) {

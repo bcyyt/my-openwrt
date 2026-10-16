@@ -19,7 +19,7 @@ TOOLCHAIN_ROOT="$WORK/toolchain"
 # 已存在的 rtp2httpd 工具链可直接复用
 ALT_TOOLCHAIN="/tmp/opencode/rtp2httpd-build/3.17.2/rtp2httpd-3.17.2/toolchain"
 
-REPLAYD_VER="${REPLAYD_VER:-1.0.0}"
+REPLAYD_VER="${REPLAYD_VER:-1.0.2}"
 
 if [ ! -f "$SRC" ]; then
 	echo "ERROR: source not found: $SRC" >&2
@@ -66,7 +66,7 @@ cat > "$OUT/version.json" <<EOF
 {
   "version": "${REPLAYD_VER}",
   "date": "${DATE_STR}",
-  "changelog": "iptv-replayd：独立 C 回看 RTSP 代理（无 Python 依赖），静态 musl。",
+  "changelog": "iptv-replayd：独立 C 回看 RTSP 代理（无 Python 依赖），静态 musl；1.0.2 将 playseek programend 收敛到当前时刻前 2 秒（修复上游对未来窗口返回 562 导致的回看失败），转发阶段提前释放握手缓冲区并复用入口线程转发 S→C，运行时状态单次读盘、listen backlog 提升。",
   "url_x86_64": "iptv-replayd-${REPLAYD_VER}-x86_64",
   "url_aarch64": "iptv-replayd-${REPLAYD_VER}-aarch64"
 }
