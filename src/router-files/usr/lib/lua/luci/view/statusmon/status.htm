@@ -280,9 +280,15 @@
 .sm-atk-ok{background:var(--sm-sb);border:1px solid #bbf7d0;color:var(--sm-s);padding:8px 12px;border-radius:8px;font-size:12px;margin-bottom:10px}
 .sm-atk-err{background:var(--sm-db);border:1px solid #fecaca;color:var(--sm-d);padding:8px 12px;border-radius:8px;font-size:12px;margin-bottom:10px}
 .sm-atk-log{max-height:340px;overflow:auto;background:#0f172a;color:#a5f3fc;padding:14px;font:12.5px/1.65 var(--sm-mono);white-space:pre-wrap;border-radius:10px}
+/* 日志页：大窗口滚动查看，替代分页 */
+.sm-logview{height:520px;height:clamp(420px,68vh,860px);overflow:auto;background:#0f172a;color:#a5f3fc;padding:16px 18px;font:12.5px/1.7 var(--sm-mono);white-space:pre-wrap;overflow-wrap:anywhere;border-radius:10px;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#3b4a63 #0f172a}
+.sm-logview::-webkit-scrollbar{width:10px;height:10px}
+.sm-logview::-webkit-scrollbar-track{background:#0f172a;border-radius:10px}
+.sm-logview::-webkit-scrollbar-thumb{background:#3b4a63;border-radius:10px}
+.sm-logview::-webkit-scrollbar-thumb:hover{background:#4c5f7d}
 .sm-atk-hd{display:flex;align-items:center;gap:10px}
 .sm-log-sel{border:1px solid var(--sm-g200);border-radius:9px;padding:6px 10px;font-size:12px;color:var(--sm-g700);background:#fff;cursor:pointer}
-@media(max-width:720px){.sm-atk-in{flex:1 1 100%}.sm-atk-btn{min-height:36px}}
+@media(max-width:720px){.sm-atk-in{flex:1 1 100%}.sm-atk-btn{min-height:36px}.sm-logview{height:62vh;min-height:340px;padding:12px}}
 </style>
 
 <h2 id="content" name="content" style="display:flex;align-items:center;gap:13px;flex-wrap:wrap">
@@ -451,7 +457,7 @@
 <div id="sm-tab-logs" style="display:none">
   <div class="sm-card">
     <div class="sm-ch"><h2><span class="sm-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><path d="M8 9h8M8 13h8M8 17h5"/></svg></span>系统日志</h2><div class="sm-atk-hd"><span class="meta" id="sm-log-meta">--</span><select class="sm-log-sel" id="sm-log-kind"><option value="pppoe">PPPoE</option><option value="dhcp">DHCP</option><option value="luci">LuCI 登录</option><option value="ssh">SSH 登录</option></select></div></div>
-    <div class="sm-cb"><div class="sm-atk-log" id="sm-log-body">加载中...</div><div class="sm-cpage" id="sm-log-pager"></div></div>
+    <div class="sm-cb"><div class="sm-logview" id="sm-log-body">加载中...</div></div>
   </div>
 </div><!-- /sm-tab-logs -->
 
@@ -1080,7 +1086,7 @@ setInterval(sm_fetchSysH,60000);
   var CLEAR="<%=luci.dispatcher.build_url('admin/statusmon/attack/clear')%>";
   var LOGS="<%=luci.dispatcher.build_url('admin/statusmon/attack/logs')%>";
   var TOKEN="<%=token%>";
-  var PAGE={atk:1,log:1,sys:1}, PS=10, D=null, EV=[], SYS=[], LOGKIND="pppoe";
+  var PAGE={atk:1,log:1}, PS=10, D=null, EV=[], SYS=[], LOGKIND="pppoe", LASTKIND="";
 
   function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]})}
   function fmtTs(ts){if(!ts)return"-";var d=new Date(ts*1000);function p(n){return n<10?"0"+n:n}return (d.getMonth()+1)+"/"+p(d.getDate())+" "+p(d.getHours())+":"+p(d.getMinutes())}
@@ -1153,13 +1159,17 @@ setInterval(sm_fetchSysH,60000);
     return ts+"  "+svc+"  "+res+"  "+host+"  "+(e.user||"");
   }
   function renderSys(data){
-    if(data){SYS=data.events||[];var m=document.getElementById("sm-log-meta");if(m)m.textContent="共 "+(data.total||SYS.length)+" 条"}
+    if(data){SYS=data.events||[];var m=document.getElementById("sm-log-meta");if(m)m.textContent="共 "+(data.total||SYS.length)+" 条 · 10 秒自动刷新"}
     var el=document.getElementById("sm-log-body");
-    if(!SYS.length){el.textContent="暂无记录";drawPager("sm-log-pager","sys",{total:0,page:1,pages:1});return}
-    var src=SYS.slice().reverse();
-    var pg=pageOf(src,"sys",12);
-    el.textContent=pg.rows.map(fmtSysLine).join("\n");
-    drawPager("sm-log-pager","sys",pg);
+    if(!SYS.length){el.textContent="暂无记录";return}
+    // 服务端按时间正序返回。贴近底部时自动跟随最新，向上翻看历史时保持当前滚动位置
+    var atBottom=(LASTKIND!==LOGKIND)||(el.scrollHeight-el.scrollTop-el.clientHeight<40);
+    var keep=el.scrollTop;
+    var text=SYS.map(fmtSysLine).join("\n");
+    LASTKIND=LOGKIND;
+    if(el.textContent===text)return;
+    el.textContent=text;
+    el.scrollTop=atBottom?el.scrollHeight:keep;
   }
   function loadSys(){
     return fetch(LOGS+"?kind="+encodeURIComponent(LOGKIND)+"&token="+encodeURIComponent(TOKEN||""),{credentials:"same-origin",cache:"no-store"})
@@ -1204,7 +1214,7 @@ setInterval(sm_fetchSysH,60000);
     if(pg){
       var key=pg.getAttribute("data-atkpage");
       PAGE[key]=(PAGE[key]||1)+parseInt(pg.getAttribute("data-d"),10);
-      if(key==="log")renderLog();else if(key==="sys")renderSys();else renderAtk();
+      if(key==="log")renderLog();else renderAtk();
     }
   });
   var add=document.getElementById("sm-atk-add");
@@ -1214,7 +1224,7 @@ setInterval(sm_fetchSysH,60000);
   var clrLog=document.getElementById("sm-atk-clr-log");
   if(clrLog)clrLog.addEventListener("click",function(){clearData("log")});
   var kindSel=document.getElementById("sm-log-kind");
-  if(kindSel)kindSel.addEventListener("change",function(){LOGKIND=kindSel.value;PAGE.sys=1;loadSys()});
+  if(kindSel)kindSel.addEventListener("change",function(){LOGKIND=kindSel.value;loadSys()});
 
   var tabs=document.querySelectorAll("#sm-tabs .sm-tab");
   Array.prototype.forEach.call(tabs,function(btn){
