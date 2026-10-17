@@ -6,7 +6,7 @@ ImmortalWrt / OpenWrt 插件：IPTV 代理、影视中心、状态监控、网�
 
 | 包名 | 版本 | 架构 | 说明 |
 |------|------|------|------|
-| `iptv-auth` | 2.3.35-r0 | noarch | 鉴权、M3U/EPG；554 回看/时移代理由独立 C 守护进程 `iptv-replayd`（静态 musl，x86_64/aarch64）；缓冲池 24MB、UDP 接收 4MB；纯标准库 HTTP，无 pip/requests 依赖 |
+| `iptv-auth` | 2.3.36-r0 | noarch | 鉴权、M3U/EPG；554 回看/时移代理由独立 C 守护进程 `iptv-replayd`（静态 musl，x86_64/aarch64）；缓冲池 24MB、UDP 接收 4MB；纯标准库 HTTP，无 pip/requests 依赖 |
 | `luci-app-mediahub` | 1.5.7-r0 | x86_64 | 影视中心（CMS + AList + ffmpeg） |
 | `luci-app-statusmon` | 4.40 | noarch | 状态监控；常驻采样器固定节奏采样（更准更省）；「系统性能」单面板（系统/CPU/内存 合成一张面板，含占用环 + CPU/内存曲线）与「温度」模块（CPU 封装/硬盘，3h/24h 可切换）；客户端分页；PPPoE 流量跨重拨累计；「安全」标签：登录爆破来源记录（永久保留、可清除）、攻击日志（永久保留、可清空）与手动拉黑；「日志」标签：PPPoE/DHCP/LuCI 登录/SSH 登录四类下拉查看（原安全监测已并入）；已移除 WAN 端口探测日志，不再刷屏系统日志 |
 | `luci-app-netqueue` | 1.0.20-r0 | noarch | 网络优化：转发、CPU 模式/睿频、NAT、DHCP、DNS、静态 IP、过期 ARP 清理 |
@@ -23,7 +23,7 @@ cp my-openwrt.rsa.pub /etc/apk/keys/
 chmod 644 /etc/apk/keys/my-openwrt.rsa.pub
 
 # IPTV 代理
-apk add iptv-auth-2.3.35-r0.apk
+apk add iptv-auth-2.3.36-r0.apk
 
 # 影视中心
 apk add luci-app-mediahub-1.5.7-r0.apk
@@ -49,7 +49,7 @@ apk add --allow-untrusted xxx.apk
 
 ```bash
 # IPTV 代理
-opkg install iptv-auth_2.3.35-r0_x86_64.ipk
+opkg install iptv-auth_2.3.36-r0_x86_64.ipk
 
 # 状态监控
 opkg install luci-app-statusmon_4.40_x86_64.ipk
@@ -93,6 +93,7 @@ bash packaging/build-apks.sh
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| 2.3.36 | 2026-10-17 | 修复频道列表被截断：门户个别频道缺少 `ChannelFCCIP`/`ChannelFCCPort` 时，旧的全文 `findall` + `zip` 会丢掉其后的所有频道；现按 `addChannel` 逐条解析并对缺失字段补空。节目单明文与 gzip 同遍写盘，省去写完约 5MB 再整份读回压缩。活跃日志只读尾部 512KB，长日志下追加不再整份载入。`status.json` 改为临时文件原子替换，LuCI 轮询不会读到半个 JSON。响应文本解码结果缓存；UCI 数值项填错时回退默认值，定时间隔下限 1 小时。预编译热点正则并合并重复的 M3U FCC/回看地址拼装；新增离线单元测试与真实门户响应回归校验 |
 | 2.3.35 | 2026-10-16 | 修复外网回看偶发失败：上游门户拒绝 playseek 窗口 `end` 落在未来的请求（RTSP 562），`iptv-replayd` 现将 `programend` 收敛到当前时刻前 2 秒，消除 rtp2httpd `(e)` 占位符落在“现在”边界导致的抖动；握手期间上游返回非 2xx 不再误判为握手完成而进入转发。回看转发优化：握手缓冲区在进入转发前释放、S→C 方向复用入口线程（每会话约省 656KB 内存与一个线程）。控制面优化：EPG/台标抓取并发（`fetch_workers`，默认 4，上限 16）、IPTV HTTP 长连接复用（并设 `TCP_NODELAY`，避免小请求叠加延迟 ACK 造成停顿）。rtp2httpd 参数页新增「最大客户端数」（`-m`，默认 5，可调 1~256），可自行提升同时观看并发上限 |
 | 2.3.34 | 2026-10-16 | 554 回看/时移代理拆为独立 C 守护进程 `iptv-replayd`（无 Python、去 GIL，静态 musl x86_64/aarch64；init.d 按 `uname -m` 选二进制，升级走 post-upgrade）；C 端读 `/etc/TZ` 修正静态 musl 日志时区（本机 `/etc/localtime` 悬空会回退 UTC）；控制面仅落盘运行时状态（源站 IP 空值时保留上次值） |
 | 2.3.33 | 2026-10-15 | HTTP(S) 改用 Python 标准库 urllib，去掉 requests/pip 依赖（依赖改 ca-bundle） |

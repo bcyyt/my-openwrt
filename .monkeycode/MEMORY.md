@@ -72,7 +72,7 @@ Entries discovered by the Agent during task execution should follow this format:
 - Context: Discovered by Agent while adding the resident sysmon sampler
 - Category: Build Methods
 - Instructions:
-  - Build only statusmon (avoid repacking other same-version plugins): `sed -n "1,96p;191,269p" packaging/build-apks.sh | sed "s|^ROOT=.*|ROOT=/workspace|" | bash`. Lines 1-96 are the mkpkg/mkipk helper definitions; the statusmon range must cover the whole 状态监控 section (to the line before `# ---------- 网络优化`). Re-check the range after editing build-apks.sh.
+  - Build only selected packages (avoids repacking other same-version plugins): `./packaging/build-apks.sh iptv-auth` (several names = subset, no args = all; filter helper `want()` near the top). Verify a built APK payload without installing on the router: create stub packages for its deps (`apk mkpkg -I name:<dep>`), then `apk add --root /tmp/verify --allow-untrusted --initdb --force-non-repository --no-scripts /tmp/stubs/*.apk <pkg>.apk` and `cmp` the extracted file against the repo source.
   - `apk` runs `post-upgrade` (not `post-install`) on upgrades. mkpkg must register both: `-s post-install:<script> -s post-upgrade:<script>`, otherwise install-time init enable/start never fires on upgrade.
 - Project Knowledge (Operations & Deployment):
   - statusmon system metrics are sampled by a procd-managed daemon `/etc/init.d/statusmon-sampler` (`/usr/bin/statusmon-sampler`, default 2s) writing `/tmp/statusmon-snap`; the CGI prefers this snapshot and falls back to inline sampling when missing/stale (>12s).
@@ -130,3 +130,23 @@ Entries discovered by the Agent during task execution should follow this format:
   - Portal concurrency sweet spot: ~4-8 workers. `fetch_workers>=12` collapses (per-account throttling), so keep the default at 4 (config `iptv-auth.main.fetch_workers`, clamped to 1..16).
   - The concurrent-stream ceiling is `rtp2httpd --maxclients` (`-m`, upstream default 5), NOT `-w` (worker processes). Extra concurrent stream requests get `503 Service Unavailable` (rtp2httpd's own HTML body). Verified globally enforced: `-m 5` -> 5x200/5x503 on 10 concurrent; `-m 20` -> 10x200/0x503. It is now exposed in the LuCI config page and UCI as `iptv-auth.main.rtp2h_maxclients` (init.d passes `-m`, falls back to 5). This ceiling is unrelated to `iptv-replayd`.
   - `dmesg | grep 562` false-positives: the `statusmon-attack` firewall log prints source ports (`SPT=56232` etc.). Count real RTSP 562 only in `/var/log/iptv-auth/iptv-auth.log`.
+
+[IPTV portal same-name channels are NOT duplicates]
+- Date: 2026-10-17
+- Context: Discovered by Agent while investigating a report that subscribing to `http://ak.bcyyt.top:23234/playlist.m3u` shows "源1/源2" for some channels
+- Category: Troubleshooting & Debugging
+- Instructions:
+  - The portal `frameset_builder.jsp` legitimately returns several channels with the SAME `ChannelName` but different `igmp://` group addresses and RTSP ids (raw 317 entries -> 13 same-name names; 11 survive the PIP/keyword filters, e.g. `CCTV5高清`, `生活时尚`, and 9 `*卫视4K`). These are intentional separate streams (e.g. an HD vs a 4K feed), and BOTH must be kept. Do NOT dedup by channel name in `fetch_channels` -- doing so drops valid sources.
+  - rtp2httpd (`src/m3u.c` `find_unique_service_name`) disambiguates a repeated service name by appending `/2`; players (Ku9 etc.) group entries by `tvg-name`, so the two same-named entries render as "源1/源2". That is the expected multi-source display, not a bug.
+  - Both streams were verified playable via `http://127.0.0.1:23234/rtp/<igmp>`; the first-listed stream of each pair is the higher-bitrate one (~28 MB/6s vs ~18.5 MB/6s for the 4K pairs). Lookup of the same-name set: scan the raw portal text for `ChannelName=` duplicates.
+
+[IPTV replay position jump is client-driven, not server state]
+- Date: 2026-10-17
+- Context: Discovered by Agent while investigating "replay sometimes jumps to an earlier watched position then back"
+- Category: Troubleshooting & Debugging
+- Instructions:
+  - The catchup chain is fully stateless: `iptv-replayd` keeps no playback position, it only rewrites `playseek` into `programbegin/programend` (clamping a future end to now-2); rtp2httpd creates a fresh service/upstream per request. Verify by grepping `/var/log/iptv-auth/iptv-auth.log` for `代理: 回看 <ch> | <begin>~<end>`: each switch of position is a separate client request.
+  - Diagnose a reported jump by (1) listing the client's playseek sequence, (2) checking the program boundary in `/www/PL.xml` (attributes are `channel="<tvg-id>" start="..." stop="..."`), and (3) capturing two positions and comparing the first video PTS (90 kHz) to the requested delta. A GOP-align offset of ~2 s (content starts slightly before the requested second) is normal.
+  - A real server-side jump would show a backward PTS discontinuity inside ONE connection. Alternating -0.02 s deltas are normal B-frame reordering; allow for them when checking.
+  - In the observed case, Ku9 restores an old resume point and then re-requests the actual position (e.g. `19:30:00` then 4 s later `19:50:41`), which is client resume/seek behavior. Do not add server-side seek state or clamping of backward seeks to "fix" it.
+  - At the natural end of a catchup program the upstream RTSP server sends `ANNOUNCE` ("stream may be ending") and closes. The player (Ku9) then immediately re-requests the SAME catchup URL from the program start (observed: 90-min program finished 11:34:01, identical `playseek=...` re-request at 11:34:01, live URL opened at 11:34:48). That replay-from-start window is what looks like "jumps back to an already watched position, then returns to normal". rtp2httpd/replayd are stateless here; the retry is client-initiated. Confirm by matching the `catchup?playseek=` line in `logread` with the `代理: 回看` line in the auth log. A server-side workaround (treating a just-ended range as live) would break legitimate catchup of recently ended programs, so treat this as player behavior.

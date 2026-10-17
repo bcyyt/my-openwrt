@@ -9,7 +9,7 @@
   4. 定时循环刷新频道和节目单
   5. 输出状态 JSON 供 LuCI 读取
 """
-import os, sys, re, json, time, gzip, socket, subprocess, datetime, threading, select, ssl, fcntl, queue
+import os, sys, re, json, time, gzip, socket, subprocess, datetime, threading, ssl, fcntl, queue
 import http.client, http.cookiejar, urllib.request, urllib.parse, urllib.error
 from urllib.parse import quote
 from datetime import timedelta
@@ -18,6 +18,7 @@ M3U_PATH = '/www/Lan.m3u'
 REPLAY_M3U_PATH = '/www/LanReplay.m3u'     # 回看专用播放列表
 WAN_M3U_PATH = '/www/WanPlay.m3u'          # 外网融合版（直播+回看）
 WAN_REPLAY_M3U_PATH = '/www/WanReplay.m3u' # 外网纯回看版
+LEGACY_M3U_PATH = '/www/IPTV.m3u'          # 旧版播放列表名，生成后清理
 EPG_PATH = '/www/PL.xml'
 EPG_GZ_PATH = '/www/PL.xml.gz'
 LOG_DIR = '/var/log/iptv-auth'
@@ -41,6 +42,43 @@ _log_lock = threading.Lock()   # 日志线程锁：任务线程与定时器线�
 IPTV_RT_TABLE = '100'
 IPTV_RT_PREF_SRC = '10000'
 IPTV_RT_PREF_OIF = '10001'
+
+# 预编译热点正则：频道属性、EPG 节目、回看频道号、响应字符集
+_CH_ATTR_KEYS = ('ChannelURL', 'ChannelSDP', 'ChannelFCCIP', 'ChannelFCCPort')
+_RE_CH_ATTRS = {k: re.compile(k + r'="([^"]*)"') for k in _CH_ATTR_KEYS}
+_RE_CHANNEL_CODE = re.compile(r"jsSetChannelInfo\('[\w]+','[\w]+','[\w]+','[\w]+','([\w]+)'")
+_RE_EPG_PROGRAM = re.compile(
+    r'(?:prevuename|prevueName)":"(.*?)".*?'
+    r'(?:begintime|beginTime)":"(.*?)".*?'
+    r'(?:endtime|endTime)":"(.*?)"', re.DOTALL)
+_RE_CATCHUP_ID = re.compile(r'rtsp://[\d.]+:\d+/live/(.+?)\.sdp')
+_RE_CHARSET = re.compile(r'charset=([\w-]+)', re.I)
+_EPG_TITLE_TRANS = str.maketrans({'<': '《', '>': '》'})
+
+
+def _catchup_channel_id(rtsp_url):
+    """从 RTSP 直播地址取频道号（回看路径最后一段）"""
+    m = _RE_CATCHUP_ID.search(rtsp_url or '')
+    return m.group(1) if m else ''
+
+def _read_tail_lines(path, max_lines, max_bytes=512 * 1024):
+    """只读取日志尾部若干字节再切行，避免每次追加都整份读入长日志。
+    从中间截断时丢弃首个残行；返回行均以换行结尾。"""
+    with open(path, 'rb') as f:
+        f.seek(0, os.SEEK_END)
+        size = f.tell()
+        start = max(0, size - max_bytes)
+        f.seek(start)
+        data = f.read()
+    lines = data.decode('utf-8', 'replace').splitlines(keepends=True)
+    if start > 0 and lines:
+        lines = lines[1:]
+    if len(lines) > max_lines:
+        lines = lines[-max_lines:]
+    if lines and not lines[-1].endswith('\n'):
+        lines[-1] += '\n'
+    return lines
+
 
 def log(msg, error=False):
     """日志：控制台 + 活跃日志(最近500条) + 按天历史日志(持久化)
@@ -69,13 +107,11 @@ def log(msg, error=False):
             except OSError:
                 lock_fd = None
             try:
-                lines = []
                 try:
                     # errors='replace'：历史损坏字节用替代符读入，避免 UnicodeDecodeError 中断
-                    with open(LOG_FILE, 'r', encoding='utf-8', errors='replace') as f:
-                        lines = f.readlines()
+                    lines = _read_tail_lines(LOG_FILE, MAX_LOG_LINES)
                 except FileNotFoundError:
-                    pass
+                    lines = []
                 lines.append(line + '\n')
                 if len(lines) > MAX_LOG_LINES:
                     lines = lines[-MAX_LOG_LINES:]
@@ -111,12 +147,22 @@ def save_status(**kwargs):
     """保存状态 JSON 供 LuCI 读取"""
     try:
         os.makedirs(LOG_DIR, exist_ok=True)
-        with open(STATUS_FILE, 'w', encoding='utf-8') as f:
+        # 原子替换：LuCI 轮询时不会读到写了一半的 JSON
+        tmp = STATUS_FILE + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
             json.dump(kwargs, f, ensure_ascii=False)
+        os.replace(tmp, STATUS_FILE)
     except Exception:
         pass
 
 # ===================== UCI 配置读取 =====================
+def _cfg_int(val, default):
+    """UCI 数值项容错：填错时退回默认值，避免整个配置加载失败"""
+    try:
+        return int(str(val).strip())
+    except (TypeError, ValueError):
+        return default
+
 def _iface_src_ip(iface):
     if not iface:
         return ''
@@ -214,9 +260,9 @@ def load_config():
             },
             'filter_pip': g('filter_pip', '1') == '1',
             'filter_keywords': [k.strip() for k in g('filter_keywords', '').split(',') if k.strip()],
-            'interval': int(g('interval', '10') or '10'),
+            'interval': max(1, _cfg_int(g('interval', '10'), 10)),
             'epg_enabled': g('epg_enabled', '1') == '1',
-            'fetch_workers': int(g('fetch_workers', '4') or '4'),
+            'fetch_workers': _cfg_int(g('fetch_workers', '4'), 4),
             'rtp2h_workers': g('rtp2h_workers', '4'),
             'rtp2h_rcvbuf': g('rtp2h_rcvbuf', '4194304'),
             'rtp2h_bufpool': g('rtp2h_bufpool', '16384'),
@@ -328,22 +374,32 @@ class _Response:
         self.status_code = status_code
         self.content = content
         self.headers = headers
+        self._text = None
     @property
     def text(self):
+        # 解码结果缓存：同一响应常被 .text 多次访问（如先判空再解析）
+        if self._text is not None:
+            return self._text
         enc = ''
         try:
-            m = re.search(r'charset=([\w-]+)', self.headers.get('Content-Type', '') or '', re.I)
+            m = _RE_CHARSET.search(self.headers.get('Content-Type', '') or '')
             if m: enc = m.group(1)
         except Exception:
             enc = ''
         if enc:
-            try: return self.content.decode(enc, 'replace')
-            except LookupError: pass
+            try:
+                self._text = self.content.decode(enc, 'replace')
+                return self._text
+            except LookupError:
+                pass
         # 无 charset：依次尝试 UTF-8 / GBK / BIG5（IPTV 页面可能是 GBK）
         for e in ('utf-8', 'gbk', 'big5'):
-            try: return self.content.decode(e)
+            try:
+                self._text = self.content.decode(e)
+                return self._text
             except UnicodeDecodeError: continue
-        return self.content.decode('utf-8', 'replace')
+        self._text = self.content.decode('utf-8', 'replace')
+        return self._text
     def json(self):
         return json.loads(self.text)
 
@@ -752,6 +808,25 @@ def download_logos(channels):
         log(f"台标下载: 新增 {counters['downloaded']}, 跳过 {counters['skipped']}, 失败 {counters['failed']}")
 
 # ===================== 频道抓取 ======================
+def _parse_channel_rows(text):
+    """按 addChannel(...) 逐条解析频道属性，返回 (name, url, sdp, fccip, fccport) 列表。
+
+    门户把每个频道的全部属性放在一条 addChannel(...) 里。逐条解析而不是对
+    全文做 5 次 findall 再 zip：后者在某个频道缺少 ChannelFCCIP/ChannelFCCPort
+    时会因 zip 取最短而丢掉后面所有频道。以 ChannelName 为分界，缺失字段补空串。"""
+    rows = []
+    for part in text.split('ChannelName="')[1:]:
+        name, sep, rest = part.partition('"')
+        if not sep:
+            name, rest = part, ''
+        row = [name]
+        for key in _CH_ATTR_KEYS:
+            m = _RE_CH_ATTRS[key].search(rest)
+            row.append(m.group(1) if m else '')
+        rows.append(tuple(row))
+    return rows
+
+
 def fetch_channels(session):
     global rtsp_source_ip
     iptv_server = config['IPTVServer']
@@ -764,24 +839,20 @@ def fetch_channels(session):
     except Exception as e:
         log(f"获取频道页面失败: {e}", error=True)
         return []
-    channel_names = re.findall(r'ChannelName="(.*?)"', text)
-    channel_urls = re.findall(r'ChannelURL="(.*?)"', text)
-    channelsdp = re.findall(r'ChannelSDP="(.*?)"', text)
-    fcc_ips = re.findall(r'ChannelFCCIP="(.*?)"', text)
-    fcc_ports = re.findall(r'ChannelFCCPort="(.*?)"', text)
+    rows = _parse_channel_rows(text)
     # 频道编码：jsSetChannelInfo 第 5 个参数，EPG 查询必需（不能用频道名）
-    channel_codes = re.findall(r"jsSetChannelInfo\('[\w]+','[\w]+','[\w]+','[\w]+','([\w]+)'", text)
-    if len(channel_codes) != len(channel_names):
-        log(f"频道编码数量不匹配 (code={len(channel_codes)}, name={len(channel_names)})，以频道名为准对齐", error=True)
-        if len(channel_codes) < len(channel_names):
-            channel_codes += [''] * (len(channel_names) - len(channel_codes))
+    channel_codes = _RE_CHANNEL_CODE.findall(text)
+    if len(channel_codes) != len(rows):
+        log(f"频道编码数量不匹配 (code={len(channel_codes)}, name={len(rows)})，以频道名为准对齐", error=True)
+        if len(channel_codes) < len(rows):
+            channel_codes += [''] * (len(rows) - len(channel_codes))
         else:
-            channel_codes = channel_codes[:len(channel_names)]
+            channel_codes = channel_codes[:len(rows)]
     filter_pip = config.get('filter_pip', True)
     filter_kw = config.get('filter_keywords', [])
     channels = []
     index = 1
-    for code, name, url, sdp, fccip, fccport in zip(channel_codes, channel_names, channel_urls, channelsdp, fcc_ips, fcc_ports):
+    for code, (name, url, sdp, fccip, fccport) in zip(channel_codes, rows):
         if filter_pip and 'PIP' in name: continue
         if any(kw in name for kw in filter_kw): continue
         igmp = re.search(r'igmp://([^\s|]+)', url)
@@ -824,6 +895,19 @@ def get_lan_ip():
         return '127.0.0.1'
 
 # ===================== M3U 生成（rtp2httpd 格式）=====================
+def _fcc_suffix(fccip, fccport):
+    """组播地址后的 FCC 参数；两字段都有效才携带"""
+    if fccip and fccport and str(fccip).strip() and str(fccport).strip():
+        return f"/?fcc={fccip}:{fccport}"
+    return ''
+
+
+def _catchup_source(host, live_port, replay_host, replay_port, ch_id):
+    """回看地址模板；playseek 占位符原样保留给播放器替换"""
+    return (f"http://{host}:{live_port}/rtsp/{replay_host}:{replay_port}/PLTV/{ch_id}.smil"
+            f"?playseek=${{(b)yyyyMMddHHmmss}}-${{(e)yyyyMMddHHmmss}}")
+
+
 def generate_m3u(channels):
     lan = get_lan_ip()
     replay_port = config['ReplayPort']
@@ -834,14 +918,11 @@ def generate_m3u(channels):
     with open(M3U_PATH, 'w', encoding='utf-8') as f:
         f.write(f'#EXTM3U x-tvg-url="http://{lan}/PL.xml.gz"\n')
         for idx, code, name, group, rtspurl, igmpurl, fccip, fccport in channels:
-            if fccip and fccport and str(fccip).strip() and str(fccport).strip():
-                rtpurl = f"rtp://{igmpurl}/?fcc={fccip}:{fccport}"
-            else:
-                rtpurl = f"rtp://{igmpurl}"
+            rtpurl = f"rtp://{igmpurl}{_fcc_suffix(fccip, fccport)}"
             logo = get_logo_url(name, lan)
-            m = re.search(r'rtsp://[\d.]+:\d+/live/(.+?)\.sdp', rtspurl)
-            if m:
-                catchup = f"http://{replay_host}:{live_port}/rtsp/{replay_host}:{replay_port}/PLTV/{m.group(1)}.smil?playseek=${{(b)yyyyMMddHHmmss}}-${{(e)yyyyMMddHHmmss}}"
+            ch_id = _catchup_channel_id(rtspurl)
+            if ch_id:
+                catchup = _catchup_source(replay_host, live_port, replay_host, replay_port, ch_id)
                 f.write(f'#EXTINF:-1 tvg-id="{idx}" tvg-name="{name}" tvg-logo="{logo}" group-title="{group}" '
                        f'catchup="default" catchup-source="{catchup}", {name}\n')
             else:
@@ -849,7 +930,7 @@ def generate_m3u(channels):
             f.write(f'{rtpurl}\n')
     log(f"M3U 已生成: {M3U_PATH} ({len(channels)} 频道)")
     try:
-        os.remove('/www/IPTV.m3u')
+        os.remove(LEGACY_M3U_PATH)
     except OSError:
         pass
 
@@ -858,10 +939,9 @@ def generate_m3u(channels):
         f.write(f'#EXTM3U x-tvg-url="http://{lan}/PL.xml.gz"\n')
         replay_count = 0
         for idx, code, name, group, rtspurl, igmpurl, fccip, fccport in channels:
-            m = re.search(r'rtsp://[\d.]+:\d+/live/(.+?)\.sdp', rtspurl)
-            if not m:
+            ch_id = _catchup_channel_id(rtspurl)
+            if not ch_id:
                 continue
-            ch_id = m.group(1)
             logo = get_logo_url(name, lan)
             live_url = f"rtsp://{replay_host}:{replay_port}/PLTV/{ch_id}.smil"
             f.write(f'#EXTINF:-1 tvg-id="{idx}" tvg-name="{name}" tvg-logo="{logo}" group-title="回看", {name}\n')
@@ -885,14 +965,11 @@ def generate_m3u(channels):
             f.write(f'#EXTM3U x-tvg-url="{wan_epg}"\n')
             wan_count = 0
             for idx, code, name, group, rtspurl, igmpurl, fccip, fccport in channels:
-                if fccip and fccport and str(fccip).strip() and str(fccport).strip():
-                    rtpurl = f"http://{wan_domain}:{live_port}/rtp/{igmpurl}/?fcc={fccip}:{fccport}"
-                else:
-                    rtpurl = f"http://{wan_domain}:{live_port}/rtp/{igmpurl}"
+                rtpurl = f"http://{wan_domain}:{live_port}/rtp/{igmpurl}{_fcc_suffix(fccip, fccport)}"
                 logo = get_logo_url(name, wan_domain)
-                m = re.search(r'rtsp://[\d.]+:\d+/live/(.+?)\.sdp', rtspurl)
-                if m:
-                    catchup = f"http://{wan_domain}:{live_port}/rtsp/{replay_host}:{replay_port}/PLTV/{m.group(1)}.smil?playseek=${{(b)yyyyMMddHHmmss}}-${{(e)yyyyMMddHHmmss}}"
+                ch_id = _catchup_channel_id(rtspurl)
+                if ch_id:
+                    catchup = _catchup_source(wan_domain, live_port, replay_host, replay_port, ch_id)
                     f.write(f'#EXTINF:-1 tvg-id="{idx}" tvg-name="{name}" tvg-logo="{logo}" group-title="{group}" '
                            f'catchup="default" catchup-source="{catchup}", {name}\n')
                 else:
@@ -907,10 +984,9 @@ def generate_m3u(channels):
             f.write(f'#EXTM3U x-tvg-url="{wan_epg}"\n')
             wan_replay_count = 0
             for idx, code, name, group, rtspurl, igmpurl, fccip, fccport in channels:
-                m = re.search(r'rtsp://[\d.]+:\d+/live/(.+?)\.sdp', rtspurl)
-                if not m:
+                ch_id = _catchup_channel_id(rtspurl)
+                if not ch_id:
                     continue
-                ch_id = m.group(1)
                 logo = get_logo_url(name, wan_domain)
                 live_url = f"rtsp://{wan_domain}:{replay_port}/PLTV/{ch_id}.smil"
                 f.write(f'#EXTINF:-1 tvg-id="{idx}" tvg-name="{name}" tvg-logo="{logo}" group-title="回看", {name}\n')
@@ -1044,12 +1120,8 @@ def parse_day_data(text):
     """解析节目单（formatdayplaydata：JSON 风格 prevueName/beginTime/endTime）"""
     programs = []
     try:
-        clean_text = re.findall(
-            r'(prevuename|prevueName)":"(.*?)".*?(begintime|beginTime)":"(.*?)".*?(endtime|endTime)":"(.*?)"',
-            text, re.DOTALL)
-        trantab = str.maketrans({'<': '《', '>': '》'})
-        for _, playname, _, starttime_str, _, endtime_str in clean_text:
-            playname = playname.translate(trantab)
+        for playname, starttime_str, endtime_str in _RE_EPG_PROGRAM.findall(text):
+            playname = playname.translate(_EPG_TITLE_TRANS)
             start_dt = end_dt = None
             for fmt in ("%Y.%m.%d %H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y/%m/%d %H:%M:%S"):
                 try:
@@ -1071,18 +1143,19 @@ def generate_epg_xml(playlistdata):
         if not text: return ""
         return text.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;").replace('"',"&quot;").replace("'","&apos;")
     try:
-        with open(EPG_PATH, 'w', encoding='utf-8') as f:
-            f.write('<?xml version="1.0" encoding="UTF-8"?>\n<tv info-name="四川电信EPG">\n')
+        # 明文与 gzip 同遍写盘：省掉写完 5MB 再整份读回压缩的开销
+        with open(EPG_PATH, 'w', encoding='utf-8') as f, gzip.open(EPG_GZ_PATH, 'wb') as gz:
+            def w(s):
+                f.write(s)
+                gz.write(s.encode('utf-8'))
+            w('<?xml version="1.0" encoding="UTF-8"?>\n<tv info-name="四川电信EPG">\n')
             for index, name, days in playlistdata:
-                f.write(f'    <channel id="{index}">\n        <display-name lang="zh">{xml_escape(name)}</display-name>\n    </channel>\n')
+                w(f'    <channel id="{index}">\n        <display-name lang="zh">{xml_escape(name)}</display-name>\n    </channel>\n')
                 for day_data in days:
                     for start, playname, end in day_data:
-                        f.write(f'    <programme channel="{index}" start="{start}" stop="{end}">\n')
-                        f.write(f'        <title lang="zh">{xml_escape(playname)}</title>\n    </programme>\n')
-            f.write('</tv>')
-        with open(EPG_PATH, 'r', encoding='utf-8') as f_in:
-            with gzip.open(EPG_GZ_PATH, 'wb') as f_out:
-                f_out.write(f_in.read().encode('utf-8'))
+                        w(f'    <programme channel="{index}" start="{start}" stop="{end}">\n')
+                        w(f'        <title lang="zh">{xml_escape(playname)}</title>\n    </programme>\n')
+            w('</tv>')
         log(f"节目单已生成: {EPG_PATH}")
     except Exception as e:
         log(f"节目单生成失败: {e}", error=True)

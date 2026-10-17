@@ -1,7 +1,7 @@
 {
-  "version": "2.3.35-r0",
-  "date": "2026-10-16",
-  "changelog": "修复外网回看偶发失败：上游门户拒绝 playseek 窗口 end 落在未来的请求（RTSP 562），replayd 现将 programend 收敛到当前时刻前 2 秒；握手期间上游非 2xx 不再误判为完成。回看转发优化：握手缓冲区提前释放、S→C 复用入口线程（每会话省约 656KB 内存与一个线程）、运行时状态单次读盘、listen backlog 提升。控制面优化：EPG/台标抓取并发（fetch_workers）、IPTV HTTP 长连接复用（并关闭 Nagle 避免延迟 ACK 停顿）。rtp2httpd 参数页新增「最大客户端数」（-m，默认 5，可调 1~256），可自行提升同时观看并发上限。",
-  "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth-2.3.35-r0.apk",
-  "ipk_url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth_2.3.35-r0_x86_64.ipk"
+  "version": "2.3.36-r0",
+  "date": "2026-10-17",
+  "changelog": "修复频道列表被截断：门户个别频道缺少 FCC 字段时，旧的全文 findall + zip 会丢掉其后的所有频道，现按 addChannel 逐条解析并对缺失字段补空。节目单明文与 gzip 同遍写盘，省去写完约 5MB 再整份读回压缩。活跃日志改为只读尾部 512KB，长日志下追加不再整份载入。status.json 改为临时文件原子替换，LuCI 轮询不会读到半个 JSON。响应文本解码结果缓存；UCI 数值项填错时回退默认值，定时间隔下限 1 小时。预编译热点正则并合并重复的 M3U FCC/回看地址拼装；新增离线单元测试与真实门户响应回归校验。",
+  "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth-2.3.36-r0.apk",
+  "ipk_url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth_2.3.36-r0_x86_64.ipk"
 }

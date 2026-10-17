@@ -12,7 +12,7 @@ APK="${APK:-/tmp/apk-tools/build/src/apk}"
 SIGN_KEY="$KEYS/my-openwrt.rsa"
 PUB_KEY="$KEYS/my-openwrt.rsa.pub"
 
-IPTV_VER="${IPTV_VER:-2.3.35-r0}"
+IPTV_VER="${IPTV_VER:-2.3.36-r0}"
 REPLAYD_VER="${REPLAYD_VER:-1.0.2}"
 MEDIA_VER="${MEDIA_VER:-1.5.7-r0}"
 STATUS_VER="${STATUS_VER:-4.40}"
@@ -20,6 +20,14 @@ NETQ_VER="${NETQ_VER:-1.0.20-r0}"
 SYSKEEP_VER="${SYSKEEP_VER:-1.0.18-r0}"
 DATE_STR="$(date +%Y-%m-%d)"
 OTA_URL_BASE="https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages"
+
+# 可选包过滤：./build-apks.sh iptv-auth [luci-app-...]，不带参数时构建全部
+TARGETS="${*:-all}"
+want() {
+	[ "$TARGETS" = all ] && return 0
+	case " $TARGETS " in *" $1 "*) return 0 ;; esac
+	return 1
+}
 
 if [ ! -x "$APK" ]; then
 	echo "ERROR: apk-tools binary not found at $APK" >&2
@@ -96,8 +104,10 @@ EOF
 }
 
 # ---------- IPTV 代理 ----------
+if want iptv-auth; then
 IPTV_ROOT="$(mktemp -d /tmp/pkg-iptv.XXXXXX)"
-trap 'rm -rf "$IPTV_ROOT" "$MEDIA_ROOT" "$STATUS_ROOT" "$NETQ_ROOT" "$SYSKEEP_ROOT"' EXIT
+# 只构建部分包时其余 *_ROOT 未赋值，set -u 下需带默认值
+trap 'rm -rf "${IPTV_ROOT:-}" "${MEDIA_ROOT:-}" "${STATUS_ROOT:-}" "${NETQ_ROOT:-}" "${SYSKEEP_ROOT:-}"' EXIT
 
 install -d "$IPTV_ROOT/etc/config" "$IPTV_ROOT/etc/init.d" "$IPTV_ROOT/etc/uci-defaults" \
 	"$IPTV_ROOT/etc/hotplug.d/iface" \
@@ -161,13 +171,15 @@ cat > "$OUT/iptv-auth/version.json" <<EOF
 {
   "version": "${IPTV_VER}",
   "date": "${DATE_STR}",
-  "changelog": "修复外网回看偶发失败：上游门户拒绝 playseek 窗口 end 落在未来的请求（RTSP 562），replayd 现将 programend 收敛到当前时刻前 2 秒；握手期间上游非 2xx 不再误判为完成。回看转发优化：握手缓冲区提前释放、S→C 复用入口线程（每会话省约 656KB 内存与一个线程）、运行时状态单次读盘、listen backlog 提升。控制面优化：EPG/台标抓取并发（fetch_workers）、IPTV HTTP 长连接复用（并关闭 Nagle 避免延迟 ACK 停顿）。rtp2httpd 参数页新增「最大客户端数」（-m，默认 5，可调 1~256），可自行提升同时观看并发上限。",
+  "changelog": "修复频道列表被截断：门户个别频道缺少 FCC 字段时，旧的全文 findall + zip 会丢掉其后的所有频道，现按 addChannel 逐条解析并对缺失字段补空。节目单明文与 gzip 同遍写盘，省去写完约 5MB 再整份读回压缩。活跃日志改为只读尾部 512KB，长日志下追加不再整份载入。status.json 改为临时文件原子替换，LuCI 轮询不会读到半个 JSON。响应文本解码结果缓存；UCI 数值项填错时回退默认值，定时间隔下限 1 小时。预编译热点正则并合并重复的 M3U FCC/回看地址拼装；新增离线单元测试与真实门户响应回归校验。",
   "url": "${OTA_URL_BASE}/iptv-auth/iptv-auth-${IPTV_VER}.apk",
   "ipk_url": "${OTA_URL_BASE}/iptv-auth/iptv-auth_${IPTV_VER}_${IPK_ARCH}.ipk"
 }
 EOF
+fi
 
 # ---------- 影视中心 ----------
+if want luci-app-mediahub; then
 MEDIA_ROOT="$(mktemp -d /tmp/pkg-media.XXXXXX)"
 install -d "$MEDIA_ROOT/etc/config" "$MEDIA_ROOT/etc/init.d" "$MEDIA_ROOT/etc/uci-defaults" \
 	"$MEDIA_ROOT/usr/bin" \
@@ -201,8 +213,10 @@ mkpkg \
 	luci-app-mediahub MIT "https://github.com/bcyyt/my-openwrt" \
 	"$MEDIA_ROOT" "$MEDIA_APK" \
 	-s "post-install:$PACK/luci-app-mediahub/post-install.sh"
+fi
 
 # ---------- 状态监控（内嵌 filemanager + 中文语言包） ----------
+if want luci-app-statusmon; then
 STATUS_ROOT="$(mktemp -d /tmp/pkg-status.XXXXXX)"
 install -d "$STATUS_ROOT/etc/config" \
 	"$STATUS_ROOT/etc/init.d" \
@@ -281,8 +295,10 @@ mkipk \
 	"$STATUS_ROOT" "$STATUS_IPK" \
 	"$PACK/luci-app-statusmon/post-install.sh" \
 	/etc/config/statusmon
+fi
 
 # ---------- 网络优化 ----------
+if want luci-app-netqueue; then
 NETQ_ROOT="$(mktemp -d /tmp/pkg-netq.XXXXXX)"
 install -d "$NETQ_ROOT/etc/config" "$NETQ_ROOT/etc/init.d" "$NETQ_ROOT/etc/uci-defaults" \
 	"$NETQ_ROOT/usr/bin" \
@@ -316,8 +332,10 @@ mkipk \
 	"$NETQ_ROOT" "$NETQ_IPK" \
 	"$PACK/luci-app-netqueue/post-install.sh" \
 	/etc/config/netqueue
+fi
 
 # ---------- 保留升级 ----------
+if want luci-app-syskeep; then
 SYSKEEP_ROOT="$(mktemp -d /tmp/pkg-syskeep.XXXXXX)"
 install -d "$SYSKEEP_ROOT/etc/init.d" "$SYSKEEP_ROOT/etc/uci-defaults" "$SYSKEEP_ROOT/etc/syskeep" \
 	"$SYSKEEP_ROOT/usr/bin" \
@@ -356,6 +374,7 @@ mkipk \
 	"$PACK/luci-app-syskeep/post-install.sh" \
 	/etc/syskeep/custom-apks.txt \
 	/etc/syskeep/datadir.sh
+fi
 
 echo
 echo "==== packages ===="
