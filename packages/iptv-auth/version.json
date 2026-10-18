@@ -1,0 +1,7 @@
+{
+  "version": "2.3.42-r0",
+  "date": "2026-10-18",
+  "changelog": "内网 Lan.m3u 改为 HTTP 直播地址：每条频道写成 http://<路由器内网IP>:<live_port>/rtp/<组播地址>，由 rtp2httpd 代理组播，电视和盒子无需支持 IGMP，也不再依赖能直接加入组播的网络环境。FCC 参数与回看地址保持不变；外网 WanPlay.m3u 与纯回看列表不受影响。",
+  "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth-2.3.42-r0.apk",
+  "ipk_url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth_2.3.42-r0_x86_64.ipk"
+}
