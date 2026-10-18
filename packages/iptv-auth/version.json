@@ -1,7 +1,7 @@
 {
-  "version": "2.3.42-r0",
+  "version": "2.3.43-r0",
   "date": "2026-10-18",
-  "changelog": "内网 Lan.m3u 改为 HTTP 直播地址：每条频道写成 http://<路由器内网IP>:<live_port>/rtp/<组播地址>，由 rtp2httpd 代理组播，电视和盒子无需支持 IGMP，也不再依赖能直接加入组播的网络环境。FCC 参数与回看地址保持不变；外网 WanPlay.m3u 与纯回看列表不受影响。",
-  "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth-2.3.42-r0.apk",
-  "ipk_url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth_2.3.42-r0_x86_64.ipk"
+  "changelog": "门户同名频道按机顶盒 js 侧名称校正：门户 addChannel 的 ChannelName 偶尔与实际频道不符（如 239.93.5.78:8462 标为 CCTV5高清，jsSetChannelInfo 为 CCTV-5+高清），现仅在出现同名频道时用 js 名称区分，并归一 CCTV-5+ 写法，台标可继续命中 CCTV5+。不重复的频道保持门户原名。",
+  "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth-2.3.43-r0.apk",
+  "ipk_url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth_2.3.43-r0_x86_64.ipk"
 }
