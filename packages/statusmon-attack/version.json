@@ -1,0 +1,7 @@
+{
+  "version": "4.43",
+  "date": "2026-10-19",
+  "changelog": "statusmon-attack：登录爆破/DHCP/PPPoE 采集改为静态 musl C 守护进程，跟随 logread -f 增量解析，仅在状态变化时写盘。",
+  "url_x86_64": "statusmon-attack-4.43-x86_64",
+  "url_aarch64": "statusmon-attack-4.43-aarch64"
+}
