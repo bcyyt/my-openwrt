@@ -1,7 +1,13 @@
 {
-  "version": "2.3.47-r0",
+  "version": "2.3.48-r0",
   "date": "2026-10-19",
-  "changelog": "修复换 OpenWrt 后 BusyBox ip 无法下发 oif 策略：官方源有 ip-full 则安装，恢复 from + oif eth2 lookup 100；没有则改用 to <门户/FCC IP> lookup 100。",
-  "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth-2.3.47-r0.apk",
-  "ipk_url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth_2.3.47-r0_x86_64.ipk"
+  "changelog": "客户端列表只统计 rtp/udp/回看媒体连接，rtp2httpd 监控页不再算直播客户端；实时日志记录直播开始/切换/停止。OTA 升级说明展示最近 4 个版本。",
+  "changelogs": [
+    {"version": "2.3.48-r0", "date": "2026-10-19", "text": "客户端列表只统计 rtp/udp/回看媒体连接，rtp2httpd 监控页不再算直播客户端；实时日志记录直播开始/切换/停止。OTA 升级说明展示最近 4 个版本。"},
+    {"version": "2.3.47-r0", "date": "2026-10-19", "text": "修复换 OpenWrt 后 BusyBox ip 无法下发 oif 策略：官方源有 ip-full 则安装，恢复 from + oif eth2 lookup 100；没有则改用 to 门户/FCC IP lookup 100。"},
+    {"version": "2.3.44-r0", "date": "2026-10-19", "text": "修复 UDP 接收缓冲被反复压回 4MB：rmem_max 只增不减；rtp2h_rcvbuf 按 net.core.rmem_max / 2 推导。"},
+    {"version": "2.3.43-r0", "date": "2026-10-18", "text": "门户同名频道按机顶盒 js 侧名称校正；仅在出现同名时用 jsSetChannelInfo 区分，并把 CCTV-5+ 归一为 CCTV5+。"}
+  ],
+  "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth-2.3.48-r0.apk",
+  "ipk_url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth_2.3.48-r0_x86_64.ipk"
 }
