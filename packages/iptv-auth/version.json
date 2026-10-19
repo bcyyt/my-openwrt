@@ -1,7 +1,7 @@
 {
-  "version": "2.3.44-r0",
+  "version": "2.3.47-r0",
   "date": "2026-10-19",
-  "changelog": "修复 UDP 接收缓冲被反复压回 4MB：启动自检不再无条件写入 rmem_max=8MB，改为从当前值和所有 sysctl 配置中取最大值，只增不减；rtp2h_rcvbuf 按 net.core.rmem_max / 2 推导，内核加倍后正好用满上限。安装脚本同步移除写死 8MB 的设置。",
-  "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth-2.3.44-r0.apk",
-  "ipk_url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth_2.3.44-r0_x86_64.ipk"
+  "changelog": "修复换 OpenWrt 后 BusyBox ip 无法下发 oif 策略：官方源有 ip-full 则安装，恢复 from + oif eth2 lookup 100；没有则改用 to <门户/FCC IP> lookup 100。",
+  "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth-2.3.47-r0.apk",
+  "ipk_url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth_2.3.47-r0_x86_64.ipk"
 }
