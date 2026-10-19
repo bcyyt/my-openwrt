@@ -1,7 +1,7 @@
 {
-  "version": "2.3.43-r0",
-  "date": "2026-10-18",
-  "changelog": "门户同名频道按机顶盒 js 侧名称校正：门户 addChannel 的 ChannelName 偶尔与实际频道不符（如 239.93.5.78:8462 标为 CCTV5高清，jsSetChannelInfo 为 CCTV-5+高清），现仅在出现同名频道时用 js 名称区分，并归一 CCTV-5+ 写法，台标可继续命中 CCTV5+。不重复的频道保持门户原名。",
-  "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth-2.3.43-r0.apk",
-  "ipk_url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth_2.3.43-r0_x86_64.ipk"
+  "version": "2.3.44-r0",
+  "date": "2026-10-19",
+  "changelog": "修复 UDP 接收缓冲被反复压回 4MB：启动自检不再无条件写入 rmem_max=8MB，改为从当前值和所有 sysctl 配置中取最大值，只增不减；rtp2h_rcvbuf 按 net.core.rmem_max / 2 推导，内核加倍后正好用满上限。安装脚本同步移除写死 8MB 的设置。",
+  "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth-2.3.44-r0.apk",
+  "ipk_url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth_2.3.44-r0_x86_64.ipk"
 }
