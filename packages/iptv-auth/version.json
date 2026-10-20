@@ -1,13 +1,13 @@
 {
-  "version": "2.3.52-r0",
+  "version": "2.3.53-r0",
   "date": "2026-10-20",
-  "changelog": "【2.3.52-r0】2026-10-20\n直播与回看的开始/切换/停止写入实时日志，并显示频道名。识别 rtp2httpd 服务名路径（/分组/频道名）和 /rtp/ 组播地址，解析公网 IPv6，回看覆盖 catchup/rtsp/554。不依赖状态页开着。\n\n【2.3.49-r0】2026-10-20\n状态页增加「更新日志」按钮，点击查看最近四版说明；安装完成后仍可打开。\n\n【2.3.48-r0】2026-10-19\n客户端列表只统计 /rtp/、/udp/ 与回看媒体连接，rtp2httpd 监控页 /status 不再算直播客户端；实时日志记录直播开始/切换/停止（同 IP 同频道去重）。\n\n【2.3.47-r0】2026-10-19\n修复 BusyBox ip 无法下发 oif 策略：有 ip-full 则装并走 oif；否则用 to <门户/FCC IP> lookup 100。",
+  "changelog": "【2.3.53-r0】2026-10-20\n观看检测把 IPv6 统一成压缩形式，logread 与 tcp6 能对上同一连接；连接不变时跳过 logread，热路径优先读 /proc 并缓存 M3U 与本机地址；554 连接只用回看 URL 解析频道名；状态页优先读 watchers.json。\n\n【2.3.52-r0】2026-10-20\n直播与回看的开始/切换/停止写入实时日志，并显示频道名。识别 rtp2httpd 服务名路径（/分组/频道名）和 /rtp/ 组播地址，解析公网 IPv6，回看覆盖 catchup/rtsp/554。不依赖状态页开着。\n\n【2.3.49-r0】2026-10-20\n状态页增加「更新日志」按钮，点击查看最近四版说明；安装完成后仍可打开。\n\n【2.3.48-r0】2026-10-19\n客户端列表只统计 /rtp/、/udp/ 与回看媒体连接，rtp2httpd 监控页 /status 不再算直播客户端；实时日志记录直播开始/切换/停止（同 IP 同频道去重）。",
   "changelogs": [
+    {"version": "2.3.53-r0", "date": "2026-10-20", "text": "观看检测把 IPv6 统一成压缩形式，logread 与 tcp6 能对上同一连接；连接不变时跳过 logread，热路径优先读 /proc 并缓存 M3U 与本机地址；554 连接只用回看 URL 解析频道名；状态页优先读 watchers.json。"},
     {"version": "2.3.52-r0", "date": "2026-10-20", "text": "直播与回看的开始/切换/停止写入实时日志，并显示频道名。识别 rtp2httpd 服务名路径（/分组/频道名）和 /rtp/ 组播地址，解析公网 IPv6，回看覆盖 catchup/rtsp/554。不依赖状态页开着。"},
     {"version": "2.3.49-r0", "date": "2026-10-20", "text": "状态页增加「更新日志」按钮，点击查看最近四版说明；安装完成后仍可打开。"},
-    {"version": "2.3.48-r0", "date": "2026-10-19", "text": "客户端列表只统计 /rtp/、/udp/ 与回看媒体连接，rtp2httpd 监控页 /status 不再算直播客户端；实时日志记录直播开始/切换/停止（同 IP 同频道去重）。"},
-    {"version": "2.3.47-r0", "date": "2026-10-19", "text": "修复 BusyBox ip 无法下发 oif 策略：有 ip-full 则装并走 oif；否则用 to <门户/FCC IP> lookup 100。"}
+    {"version": "2.3.48-r0", "date": "2026-10-19", "text": "客户端列表只统计 /rtp/、/udp/ 与回看媒体连接，rtp2httpd 监控页 /status 不再算直播客户端；实时日志记录直播开始/切换/停止（同 IP 同频道去重）。"}
   ],
-  "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth-2.3.52-r0.apk",
-  "ipk_url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth_2.3.52-r0_x86_64.ipk"
+  "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth-2.3.53-r0.apk",
+  "ipk_url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth_2.3.53-r0_x86_64.ipk"
 }
