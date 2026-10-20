@@ -1,13 +1,13 @@
 {
-  "version": "2.3.48-r0",
-  "date": "2026-10-19",
-  "changelog": "【2.3.48-r0】2026-10-19\n客户端列表只统计 /rtp/、/udp/ 与回看媒体连接，rtp2httpd 监控页 /status 不再算直播客户端；实时日志记录直播开始/切换/停止（同 IP 同频道去重）。\n\n【2.3.47-r0】2026-10-19\n修复换 OpenWrt 后 BusyBox ip 无法下发 oif 策略：官方源有 ip-full 则安装，恢复 from 上游IP + oif eth2 lookup 100；没有则改用 to 门户/FCC IP lookup 100，FCC 信令走 table 100 via 10.103.208.1。\n\n【2.3.44-r0】2026-10-19\n修复 UDP 接收缓冲被反复压回 4MB：启动自检不再无条件写入 rmem_max=8MB，改为从当前值和所有 sysctl 配置中取最大值，只增不减；rtp2h_rcvbuf 按 net.core.rmem_max / 2 推导，内核加倍后正好用满上限。安装脚本同步移除写死 8MB 的设置。\n\n【2.3.43-r0】2026-10-18\n门户同名频道按机顶盒 js 侧名称校正：addChannel 的 ChannelName 偶尔与实际频道不符（如 239.93.5.78:8462 标为 CCTV5高清，jsSetChannelInfo 为 CCTV-5+高清），现在只在出现同名频道时用 js 名称区分，并把 CCTV-5+ 归一为 CCTV5+，台标继续命中 CCTV5+。不重复的频道保持门户原名。",
+  "version": "2.3.49-r0",
+  "date": "2026-10-20",
+  "changelog": "【2.3.49-r0】2026-10-20\n状态页增加「更新日志」按钮，点击查看最近四版说明；安装完成后仍可打开。\n\n【2.3.48-r0】2026-10-19\n客户端列表只统计 /rtp/、/udp/ 与回看媒体连接，rtp2httpd 监控页 /status 不再算直播客户端；实时日志记录直播开始/切换/停止（同 IP 同频道去重）。\n\n【2.3.47-r0】2026-10-19\n修复换 OpenWrt 后 BusyBox ip 无法下发 oif 策略：官方源有 ip-full 则安装，恢复 from 上游IP + oif eth2 lookup 100；没有则改用 to 门户/FCC IP lookup 100，FCC 信令走 table 100 via 10.103.208.1。\n\n【2.3.44-r0】2026-10-19\n修复 UDP 接收缓冲被反复压回 4MB：启动自检不再无条件写入 rmem_max=8MB，改为从当前值和所有 sysctl 配置中取最大值，只增不减；rtp2h_rcvbuf 按 net.core.rmem_max / 2 推导，内核加倍后正好用满上限。安装脚本同步移除写死 8MB 的设置。",
   "changelogs": [
+    {"version": "2.3.49-r0", "date": "2026-10-20", "text": "状态页增加「更新日志」按钮，点击查看最近四版说明；安装完成后仍可打开。"},
     {"version": "2.3.48-r0", "date": "2026-10-19", "text": "客户端列表只统计 /rtp/、/udp/ 与回看媒体连接，rtp2httpd 监控页 /status 不再算直播客户端；实时日志记录直播开始/切换/停止（同 IP 同频道去重）。"},
     {"version": "2.3.47-r0", "date": "2026-10-19", "text": "修复换 OpenWrt 后 BusyBox ip 无法下发 oif 策略：官方源有 ip-full 则安装，恢复 from 上游IP + oif eth2 lookup 100；没有则改用 to 门户/FCC IP lookup 100，FCC 信令走 table 100 via 10.103.208.1。"},
-    {"version": "2.3.44-r0", "date": "2026-10-19", "text": "修复 UDP 接收缓冲被反复压回 4MB：启动自检不再无条件写入 rmem_max=8MB，改为从当前值和所有 sysctl 配置中取最大值，只增不减；rtp2h_rcvbuf 按 net.core.rmem_max / 2 推导，内核加倍后正好用满上限。安装脚本同步移除写死 8MB 的设置。"},
-    {"version": "2.3.43-r0", "date": "2026-10-18", "text": "门户同名频道按机顶盒 js 侧名称校正：addChannel 的 ChannelName 偶尔与实际频道不符（如 239.93.5.78:8462 标为 CCTV5高清，jsSetChannelInfo 为 CCTV-5+高清），现在只在出现同名频道时用 js 名称区分，并把 CCTV-5+ 归一为 CCTV5+，台标继续命中 CCTV5+。不重复的频道保持门户原名。"}
+    {"version": "2.3.44-r0", "date": "2026-10-19", "text": "修复 UDP 接收缓冲被反复压回 4MB：启动自检不再无条件写入 rmem_max=8MB，改为从当前值和所有 sysctl 配置中取最大值，只增不减；rtp2h_rcvbuf 按 net.core.rmem_max / 2 推导，内核加倍后正好用满上限。安装脚本同步移除写死 8MB 的设置。"}
   ],
-  "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth-2.3.48-r0.apk",
-  "ipk_url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth_2.3.48-r0_x86_64.ipk"
+  "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth-2.3.49-r0.apk",
+  "ipk_url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth_2.3.49-r0_x86_64.ipk"
 }
