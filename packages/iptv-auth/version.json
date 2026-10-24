@@ -1,8 +1,13 @@
 {
-  "version": "2.3.59-r0",
+  "version": "2.3.60-r0",
   "date": "2026-10-24",
-  "changelog": "【2.3.59-r0】2026-10-24\n新增 rtp2httpd 访问令牌（r2h-token）：配置页可随机生成或填写令牌，直播与回看地址自动附带 r2h-token，状态页与内嵌 rtp2httpd 页面同步带上；留空保持原行为。补充 SCTV6、求索频道台标映射。\n\n【2.3.58-r0】2026-10-23\n状态页标题栏新增 iptv-replayd 版本徽章（读取包内 iptv-replayd.version）。回看代理新增 -V/--version，启动日志打印版本。iptv-replayd 1.0.8：酷9时移暂停后重新点播从上次播放点续播，不改 rtp2httpd，记点保留 30 分钟。\n\n【2.3.56-r0】2026-10-23\n状态页增加「抽检一路」：走本机 rtp2httpd 拉前几 KB，不重启服务。直播 M3U 写入 catchup-days（默认 7，可配 1–30）。门户下发 ChannelFECPort 时透传 &fec=端口。\n\n【2.3.55-r0】2026-10-21\n节目单改为增量：定时任务只拉今天和明天，历史天走本地缓存；完整 8 天最多 12 小时一次或手动执行。EPG 改后台抓取，不再堵住鉴权和 M3U。同一轮把频道×日期摊平并发，总在途请求封顶 8。",
+  "changelog": "【2.3.60-r0】2026-10-24\n播放列表入口收敛：外网融合列表改用 rtp2httpd 的 http://<域名>:<live_port>/playlist.m3u，按请求 Host 生成绝对地址，内外网同一个 URL，令牌自动附加。内网直播源移出 /www，改到 /etc/iptv-auth/Lan.m3u 仅供 rtp2httpd 读取；2000 端口只保留内网回看 LanReplay.m3u 与外网回看 WanReplay.m3u，不再直供带令牌的直播列表。升级时自动清理 /www/Lan.m3u 与 /www/WanPlay.m3u。\n\n【2.3.59-r0】2026-10-24\n新增 rtp2httpd 访问令牌（r2h-token）：配置页可随机生成或填写令牌，直播与回看地址自动附带 r2h-token，状态页与内嵌 rtp2httpd 页面同步带上；留空保持原行为。补充 SCTV6、求索频道台标映射。\n\n【2.3.58-r0】2026-10-23\n状态页标题栏新增 iptv-replayd 版本徽章（读取包内 iptv-replayd.version）。回看代理新增 -V/--version，启动日志打印版本。iptv-replayd 1.0.8：酷9时移暂停后重新点播从上次播放点续播，不改 rtp2httpd，记点保留 30 分钟。\n\n【2.3.56-r0】2026-10-23\n状态页增加「抽检一路」：走本机 rtp2httpd 拉前几 KB，不重启服务。直播 M3U 写入 catchup-days（默认 7，可配 1–30）。门户下发 ChannelFECPort 时透传 &fec=端口。",
   "changelogs": [
+    {
+      "version": "2.3.60-r0",
+      "date": "2026-10-24",
+      "text": "播放列表入口收敛：外网融合列表改用 rtp2httpd 的 http://<域名>:<live_port>/playlist.m3u，按请求 Host 生成绝对地址，内外网同一个 URL，令牌自动附加。内网直播源移出 /www，改到 /etc/iptv-auth/Lan.m3u 仅供 rtp2httpd 读取；2000 端口只保留内网回看 LanReplay.m3u 与外网回看 WanReplay.m3u，不再直供带令牌的直播列表。升级时自动清理 /www/Lan.m3u 与 /www/WanPlay.m3u。"
+    },
     {
       "version": "2.3.59-r0",
       "date": "2026-10-24",
@@ -17,13 +22,8 @@
       "version": "2.3.56-r0",
       "date": "2026-10-23",
       "text": "状态页增加「抽检一路」：走本机 rtp2httpd 拉前几 KB，不重启服务。直播 M3U 写入 catchup-days（默认 7，可配 1–30）。门户下发 ChannelFECPort 时透传 &fec=端口。"
-    },
-    {
-      "version": "2.3.55-r0",
-      "date": "2026-10-21",
-      "text": "节目单改为增量：定时任务只拉今天和明天，历史天走本地缓存；完整 8 天最多 12 小时一次或手动执行。EPG 改后台抓取，不再堵住鉴权和 M3U。同一轮把频道×日期摊平并发，总在途请求封顶 8。"
     }
   ],
-  "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth-2.3.59-r0.apk",
-  "ipk_url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth_2.3.59-r0_x86_64.ipk"
+  "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth-2.3.60-r0.apk",
+  "ipk_url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth_2.3.60-r0_x86_64.ipk"
 }
