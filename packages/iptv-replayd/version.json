@@ -1,7 +1,7 @@
 {
-  "version": "1.0.2",
-  "date": "2026-10-16",
-  "changelog": "iptv-replayd：独立 C 回看 RTSP 代理（无 Python 依赖），静态 musl；1.0.2 将 playseek programend 收敛到当前时刻前 2 秒（修复上游对未来窗口返回 562 导致的回看失败），转发阶段提前释放握手缓冲区并复用入口线程转发 S→C，运行时状态单次读盘、listen backlog 提升。",
-  "url_x86_64": "iptv-replayd-1.0.2-x86_64",
-  "url_aarch64": "iptv-replayd-1.0.2-aarch64"
+  "version": "1.0.8",
+  "date": "2026-10-23",
+  "changelog": "iptv-replayd：独立 C 回看 RTSP 代理（无 Python 依赖），静态 musl；1.0.8 酷9暂停后重连时从上次播放点续播（不改 rtp2httpd；记点保留 30 分钟）；1.0.2 将 programend 收敛到当前时刻前 2 秒。",
+  "url_x86_64": "iptv-replayd-1.0.8-x86_64",
+  "url_aarch64": "iptv-replayd-1.0.8-aarch64"
 }

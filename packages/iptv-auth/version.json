@@ -1,6 +1,6 @@
 {
-  "version": "2.3.56-r0",
-  "date": "2026-10-23",
+  "version": "2.3.59-r0",
+  "date": "2026-10-24",
   "changelog": "【2.3.56-r0】2026-10-23\n状态页增加「抽检一路」：走本机 rtp2httpd 拉前几 KB，不重启服务。直播 M3U 写入 catchup-days（默认 7，可配 1–30）。门户下发 ChannelFECPort 时透传 &fec=端口。\n\n【2.3.55-r0】2026-10-21\n节目单改为增量：定时任务只拉今天和明天，历史天走本地缓存；完整 8 天最多 12 小时一次或手动执行。EPG 改后台抓取，不再堵住鉴权和 M3U。同一轮把频道×日期摊平并发，总在途请求封顶 8。\n\n【2.3.54-r0】2026-10-20\n补充频道改为每次到点全量扫描地址段：无新增则核对已有频道（含手工）；有新增则识别并加入。配置页可填扫描间隔，并提供立即扫描。\n\n【2.3.53-r0】2026-10-20\n观看检测把 IPv6 统一成压缩形式，logread 与 tcp6 能对上同一连接；连接不变时跳过 logread，热路径优先读 /proc 并缓存 M3U 与本机地址；554 连接只用回看 URL 解析频道名；状态页优先读 watchers.json。",
   "changelogs": [
     {"version": "2.3.56-r0", "date": "2026-10-23", "text": "状态页增加「抽检一路」：走本机 rtp2httpd 拉前几 KB，不重启服务。直播 M3U 写入 catchup-days（默认 7，可配 1–30）。门户下发 ChannelFECPort 时透传 &fec=端口。"},
@@ -8,6 +8,6 @@
     {"version": "2.3.54-r0", "date": "2026-10-20", "text": "补充频道改为每次到点全量扫描地址段：无新增则核对已有频道（含手工）；有新增则识别并加入。配置页可填扫描间隔，并提供立即扫描。"},
     {"version": "2.3.53-r0", "date": "2026-10-20", "text": "观看检测把 IPv6 统一成压缩形式，logread 与 tcp6 能对上同一连接；连接不变时跳过 logread，热路径优先读 /proc 并缓存 M3U 与本机地址；554 连接只用回看 URL 解析频道名；状态页优先读 watchers.json。"},
   ],
-  "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth-2.3.56-r0.apk",
-  "ipk_url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth_2.3.56-r0_x86_64.ipk"
+  "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth-2.3.59-r0.apk",
+  "ipk_url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth_2.3.59-r0_x86_64.ipk"
 }
