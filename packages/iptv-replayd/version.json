@@ -1,7 +1,7 @@
 {
-  "version": "1.0.10",
+  "version": "1.0.11",
   "date": "2026-10-25",
-  "changelog": "iptv-replayd：独立 C 回看 RTSP 代理（无 Python 依赖），静态 musl；1.0.10 修 OOM 路径的指针丢失/越界与握手改写链路 NULL 解引用、listen/accept 错误处理（瞬态错误退避重试，洪水下不再 crash-loop）、playseek 归一化改用 epoch 比较且 end 收敛到 now-2、请求落在直播边缘时回退直播；1.0.9 按 Content-Length 读满整条 RTSP 消息（修外网分片握手卡死）、PLAY 200 尾随首帧不再丢失、keepalive 75s/15s×3 与转发 1 小时兜底超时清理死连接、并发会话上限 128、时移记点只累计流动时长（≤10s 间隔）；1.0.8 酷9暂停后重连时从上次播放点续播；1.0.2 将 programend 收敛到当前时刻前 2 秒。",
-  "url_x86_64": "iptv-replayd-1.0.10-x86_64",
-  "url_aarch64": "iptv-replayd-1.0.10-aarch64"
+  "changelog": "iptv-replayd：独立 C 回看 RTSP 代理（无 Python 依赖），静态 musl；1.0.11 把回退直播扩展到“末端距 now<=10s 且窗口<=60s”的短窗口，避免边缘 EOF 与重连；1.0.10 修 OOM 路径的指针丢失/越界与握手改写链路 NULL 解引用、listen/accept 错误处理（瞬态错误退避重试，洪水下不再 crash-loop）、playseek 归一化改用 epoch 比较且 end 收敛到 now-2、请求落在直播边缘时回退直播；1.0.9 按 Content-Length 读满整条 RTSP 消息（修外网分片握手卡死）、PLAY 200 尾随首帧不再丢失、keepalive 75s/15s×3 与转发 1 小时兜底超时清理死连接、并发会话上限 128、时移记点只累计流动时长（≤10s 间隔）；1.0.8 酷9暂停后重连时从上次播放点续播；1.0.2 将 programend 收敛到当前时刻前 2 秒。",
+  "url_x86_64": "iptv-replayd-1.0.11-x86_64",
+  "url_aarch64": "iptv-replayd-1.0.11-aarch64"
 }
