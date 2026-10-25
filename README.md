@@ -14,7 +14,6 @@
 - `packages/ffmpeg-mini/`：内置精简 ffmpeg 构建产物
 - `packages/iptv-replayd/`：回看代理二进制
 - `packages/keys/my-openwrt.rsa.pub`：APK 签名公钥
-- `packages/logos/`：频道台标 PNG，播放列表 `tvg-logo` 指向此处
 
 OTA 地址保持 `https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/...`，
 路由器无需改动。发布新版本时从私有仓库执行 `packaging/publish-ota.sh` 同步本目录。

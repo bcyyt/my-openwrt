@@ -1,7 +1,7 @@
 {
-  "version": "1.0.14",
+  "version": "1.0.15",
   "date": "2026-10-25",
-  "changelog": "iptv-replayd：独立 C 回看 RTSP 代理（无 Python 依赖），静态 musl；1.0.14 新增时移持续播放：上游以 1-2 秒切片推送并以 RTSP ANNOUNCE 结束，代理在会话内吞掉 ANNOUNCE 并即时缝合下一片（按 playseek 重走门户 302 取新签名 CDN 地址再握手），对客户端保持单条 RTSP 连接，不再因切片结束而中断。",
-  "url_x86_64": "iptv-replayd-1.0.14-x86_64",
-  "url_aarch64": "iptv-replayd-1.0.14-aarch64"
+  "changelog": "iptv-replayd：独立 C 回看 RTSP 代理（无 Python 依赖），静态 musl；1.0.15 回退到 1.0.2 直转基线，去掉切片缝合，新增暂停续播：记录每个会话最后成功发送的内容位置，播放器暂停后再次请求同一回看窗口时从记录点继续；同时识别 rtp2httpd Range Seek 模式下的 Range: clock= 头，按 clock 记录与改写续播点。",
+  "url_x86_64": "iptv-replayd-1.0.15-x86_64",
+  "url_aarch64": "iptv-replayd-1.0.15-aarch64"
 }

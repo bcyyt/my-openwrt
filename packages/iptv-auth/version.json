@@ -1,17 +1,12 @@
 {
-  "version": "2.3.63-r0",
+  "version": "2.3.64-r0",
   "date": "2026-10-25",
-  "changelog": "【2.3.63-r0】2026-10-25\n回看代理 iptv-replayd 升级到 1.0.14：新增时移持续播放。上游回看以 1-2 秒切片推送并以 RTSP ANNOUNCE 结束，代理在会话内吞掉结束通知并即时预握手下一片（按 playseek 重走门户 302 取新签名 CDN 地址后再握手），对播放器保持单条 RTSP 连接，长时移不再每秒断流重连；当次切片握手失败会重试并在连续失败后正常收尾。\n\n【2.3.62-r0】2026-10-25\n状态页快速访问重排：内网融合列表与外网融合播放列表相邻展示，回看列表紧随其后；所有入口新增一键复制按钮，可直接复制带令牌的播放列表地址，非 HTTPS 环境自动走 execCommand 兜底。频道台标改走公开仓 HTTPS（gh-proxy 加速 raw.githubusercontent.com），内外网同一 tvg-logo。安装脚本修正 uhttpd 多值 listen_http，IPv4 与 IPv6 同时生效。\n\n【2.3.61-r0】2026-10-24\n2000 端口收敛为 IPTV 静态入口：只提供台标、EPG 与回看列表，剥离 LuCI 处理链，管理页改由仅内网可达的 uhttpd 实例（80 端口）提供，不再随 2000 一起暴露。配置页填写外网域名后，台标与回看 EPG 生成为 http://<域名>:2000/...，留空则回落到内网 IP。\n\n【2.3.60-r0】2026-10-24\n播放列表入口收敛：外网融合列表改用 rtp2httpd 的 http://<域名>:<live_port>/playlist.m3u，按请求 Host 生成绝对地址，内外网同一个 URL，令牌自动附加。内网直播源移出 /www，改到 /etc/iptv-auth/Lan.m3u 仅供 rtp2httpd 读取；2000 端口只保留内网回看 LanReplay.m3u 与外网回看 WanReplay.m3u，不再直供带令牌的直播列表。升级时自动清理 /www/Lan.m3u 与 /www/WanPlay.m3u。",
+  "changelog": "【2.3.64-r0】2026-10-25\n回看改为 rtp2httpd Range Seek：回看地址自动携带 r2h-seek-mode=range(UTC%2B8/10800)，由 rtp2httpd 直接以 Range: clock= 向上游取流，去掉 programend 边界，时移到直播沿不再到点断流重连；起始时间超出 3 小时窗口时自动回退原有 playseek 透传。回看代理 iptv-replayd 回到 1.0.2 直转基线（移除切片缝合），并重新实现暂停续播：按最后成功发送的内容位置记录续播点，暂停后再次请求同一窗口从记录点继续，Range Seek 模式下按 clock 记录与改写。\n\n【2.3.61-r0】2026-10-24\n2000 端口收敛为 IPTV 静态入口：只提供台标、EPG 与回看列表，剥离 LuCI 处理链，管理页改由仅内网可达的 uhttpd 实例（80 端口）提供，不再随 2000 一起暴露。配置页填写外网域名后，台标与回看 EPG 生成为 http://<域名>:2000/...，留空则回落到内网 IP。\n\n【2.3.60-r0】2026-10-24\n播放列表入口收敛：外网融合列表改用 rtp2httpd 的 http://<域名>:<live_port>/playlist.m3u，按请求 Host 生成绝对地址，内外网同一个 URL，令牌自动附加。内网直播源移出 /www，改到 /etc/iptv-auth/Lan.m3u 仅供 rtp2httpd 读取；2000 端口只保留内网回看 LanReplay.m3u 与外网回看 WanReplay.m3u，不再直供带令牌的直播列表。升级时自动清理 /www/Lan.m3u 与 /www/WanPlay.m3u。\n\n【2.3.59-r0】2026-10-24\n新增 rtp2httpd 访问令牌（r2h-token）：配置页可随机生成或填写令牌，直播与回看地址自动附带 r2h-token，状态页与内嵌 rtp2httpd 页面同步带上；留空保持原行为。补充 SCTV6、求索频道台标映射。",
   "changelogs": [
     {
-      "version": "2.3.63-r0",
+      "version": "2.3.64-r0",
       "date": "2026-10-25",
-      "text": "回看代理 iptv-replayd 升级到 1.0.14：新增时移持续播放。上游回看以 1-2 秒切片推送并以 RTSP ANNOUNCE 结束，代理在会话内吞掉结束通知并即时预握手下一片（按 playseek 重走门户 302 取新签名 CDN 地址后再握手），对播放器保持单条 RTSP 连接，长时移不再每秒断流重连；当次切片握手失败会重试并在连续失败后正常收尾。"
-    },
-    {
-      "version": "2.3.62-r0",
-      "date": "2026-10-25",
-      "text": "状态页快速访问重排：内网融合列表与外网融合播放列表相邻展示，回看列表紧随其后；所有入口新增一键复制按钮，可直接复制带令牌的播放列表地址，非 HTTPS 环境自动走 execCommand 兜底。频道台标改走公开仓 HTTPS（gh-proxy 加速 raw.githubusercontent.com），内外网同一 tvg-logo。安装脚本修正 uhttpd 多值 listen_http，IPv4 与 IPv6 同时生效。"
+      "text": "回看改为 rtp2httpd Range Seek：回看地址自动携带 r2h-seek-mode=range(UTC%2B8/10800)，由 rtp2httpd 直接以 Range: clock= 向上游取流，去掉 programend 边界，时移到直播沿不再到点断流重连；起始时间超出 3 小时窗口时自动回退原有 playseek 透传。回看代理 iptv-replayd 回到 1.0.2 直转基线（移除切片缝合），并重新实现暂停续播：按最后成功发送的内容位置记录续播点，暂停后再次请求同一窗口从记录点继续，Range Seek 模式下按 clock 记录与改写。"
     },
     {
       "version": "2.3.61-r0",
@@ -22,8 +17,13 @@
       "version": "2.3.60-r0",
       "date": "2026-10-24",
       "text": "播放列表入口收敛：外网融合列表改用 rtp2httpd 的 http://<域名>:<live_port>/playlist.m3u，按请求 Host 生成绝对地址，内外网同一个 URL，令牌自动附加。内网直播源移出 /www，改到 /etc/iptv-auth/Lan.m3u 仅供 rtp2httpd 读取；2000 端口只保留内网回看 LanReplay.m3u 与外网回看 WanReplay.m3u，不再直供带令牌的直播列表。升级时自动清理 /www/Lan.m3u 与 /www/WanPlay.m3u。"
+    },
+    {
+      "version": "2.3.59-r0",
+      "date": "2026-10-24",
+      "text": "新增 rtp2httpd 访问令牌（r2h-token）：配置页可随机生成或填写令牌，直播与回看地址自动附带 r2h-token，状态页与内嵌 rtp2httpd 页面同步带上；留空保持原行为。补充 SCTV6、求索频道台标映射。"
     }
   ],
-  "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth-2.3.63-r0.apk",
-  "ipk_url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth_2.3.63-r0_x86_64.ipk"
+  "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth-2.3.64-r0.apk",
+  "ipk_url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth_2.3.64-r0_x86_64.ipk"
 }
