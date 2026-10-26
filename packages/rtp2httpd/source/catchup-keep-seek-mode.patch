@@ -1,0 +1,80 @@
+--- a/src/m3u.c
++++ b/src/m3u.c
+@@ -613,6 +613,61 @@
+   return strdup(result);
+ }
+ 
++/* rtp2httpd's own control params are consumed while parsing a service, so an
++ * exported catchup-source would otherwise lose them and the receiving instance
++ * would fall back to plain playseek passthrough (stream stops at the window
++ * end instead of continuing into live). Keep the whitelisted ones in the
++ * generated URL so the exported playlist is self-describing. */
++static const char *const catchup_control_param_names[] = {"r2h-seek-mode", "r2h-seek-offset", "r2h-ifname"};
++
++static void append_catchup_control_params(const char *url, char *query, size_t query_size) {
++  const char *qmark;
++
++  if (!url || !query || query_size == 0)
++    return;
++  qmark = strchr(url, '?');
++  if (!qmark)
++    return;
++
++  for (size_t i = 0; i < sizeof(catchup_control_param_names) / sizeof(catchup_control_param_names[0]); i++) {
++    const char *name = catchup_control_param_names[i];
++    size_t name_len = strlen(name);
++    const char *p = qmark + 1;
++    const char *value;
++    const char *end;
++    size_t value_len;
++    size_t used;
++
++    while ((p = strstr(p, name)) != NULL) {
++      if (p[name_len] == '=' && (p == qmark + 1 || p[-1] == '&'))
++        break;
++      p += name_len;
++    }
++    if (!p)
++      continue;
++
++    value = p + name_len + 1;
++    end = strchr(value, '&');
++    value_len = end ? (size_t)(end - value) : strlen(value);
++    if (value_len == 0)
++      continue;
++
++    used = strlen(query);
++    if (used + name_len + value_len + 3 >= query_size) {
++      logger(LOG_WARN, "Catchup query too long to preserve %s", name);
++      continue;
++    }
++    query[used++] = '&';
++    memcpy(query + used, name, name_len);
++    used += name_len;
++    query[used++] = '=';
++    memcpy(query + used, value, value_len);
++    used += value_len;
++    query[used] = '\0';
++    logger(LOG_DEBUG, "Preserved %s in exported catchup-source", name);
++  }
++}
++
+ static char *extract_catchup_template_query(const char *url) {
+   url_template_analysis_t analysis;
+   const char *begin_value;
+@@ -639,6 +694,7 @@
+       logger(LOG_WARN, "Catchup template query exceeds buffer size");
+       return NULL;
+     }
++    append_catchup_control_params(url, query, sizeof(query));
+     return strdup(query);
+   }
+ 
+@@ -647,6 +703,7 @@
+     return NULL;
+   }
+ 
++  append_catchup_control_params(url, query, sizeof(query));
+   return strdup(query);
+ }
+ 
