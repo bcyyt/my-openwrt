@@ -1,8 +1,13 @@
 {
-  "version": "2.3.62-r4",
+  "version": "2.3.62-r5",
   "date": "2026-10-26",
-  "changelog": "【2.3.62-r4】2026-10-26\n配置页把回看无缝能力明确为 RTSP Range Seek 开关：字段名改为「RTSP Range Seek（回看无缝并入直播）」，关闭后回看地址不再带 r2h-seek-mode，按播放器结束时间播完断开；打开后维持 range(UTC+8/窗口) 起播并无缝并入直播。仅界面文案调整，行为与 2.3.62-r3 一致。\n\n【2.3.62-r3】2026-10-26\n回看无缝并入直播：catchup-source 追加 r2h-seek-mode=range(UTC%2B8/6900)，rtp2httpd 改用 RTSP Range clock 起播，追平直播边缘后在同一条连接里续播，不再到点断流；起点超出窗口时自动退回 playseek 透传（与旧行为一致）。新增配置项 catchup_seamless（默认开）与 catchup_seek_window（默认 6900 秒，上游实测约 2 小时）。配置页新增「回看（Time-Shift）」分区，可开关与调整窗口，保存后自动重启生效。同步自编译 rtp2httpd 3.17.2-r1：导出 playlist.m3u 时保留 r2h-seek-mode，回看地址自带参数。\n\n【2.3.62-r2】2026-10-25\niptv-replayd 升级到 1.0.9：握手按 Content-Length 读满整条 RTSP 消息，修复外网/弱网下 TCP 分片导致回看握手卡死；PLAY 200 尾随的首个媒体分片原样补发，含 NUL 字节也不再丢；keepalive 75s 探测 + 转发 1 小时兜底超时，死连接约 2 分钟清理；并发会话上限 128；时移记点只累计数据流动时长（间隔 ≤10s），暂停不再把续播点推前。\n\n【2.3.62-r1】2026-10-25\n回看窗口改由客户端自带：直播 M3U 不再写 catchup-days=\"7\"，只保留 catchup=\"default\" 与 catchup-source，避免把 7 天窗口强推给播放器。升级时自动删除 iptv-auth.main.catchup_days，配置页移除「回看天数」。",
+  "changelog": "【2.3.62-r5】2026-10-26\n修复 rtp2httpd 更新相关的版本号处理：配置页传入 v3.17.2-r1 这类带修订号的版本时，后台只接受纯数字点号，报「版本号格式非法」；现允许数字开头、含字母/点/连字符的版本串（最长 32 位），仍拒绝空格与特殊字符。同时配置页、状态页与更新脚本的版本解析改为保留 -rN 后缀，已安装版本不再显示成 3.17.2；版本比较也纳入修订号，只有基础版本相同时才按 r 序号判断新旧。\n\n【2.3.62-r4】2026-10-26\n配置页把回看无缝能力明确为 RTSP Range Seek 开关：字段名改为「RTSP Range Seek（回看无缝并入直播）」，关闭后回看地址不再带 r2h-seek-mode，按播放器结束时间播完断开；打开后维持 range(UTC+8/窗口) 起播并无缝并入直播。仅界面文案调整，行为与 2.3.62-r3 一致。\n\n【2.3.62-r3】2026-10-26\n回看无缝并入直播：catchup-source 追加 r2h-seek-mode=range(UTC%2B8/6900)，rtp2httpd 改用 RTSP Range clock 起播，追平直播边缘后在同一条连接里续播，不再到点断流；起点超出窗口时自动退回 playseek 透传（与旧行为一致）。新增配置项 catchup_seamless（默认开）与 catchup_seek_window（默认 6900 秒，上游实测约 2 小时）。配置页新增「回看（Time-Shift）」分区，可开关与调整窗口，保存后自动重启生效。同步自编译 rtp2httpd 3.17.2-r1：导出 playlist.m3u 时保留 r2h-seek-mode，回看地址自带参数。\n\n【2.3.62-r2】2026-10-25\niptv-replayd 升级到 1.0.9：握手按 Content-Length 读满整条 RTSP 消息，修复外网/弱网下 TCP 分片导致回看握手卡死；PLAY 200 尾随的首个媒体分片原样补发，含 NUL 字节也不再丢；keepalive 75s 探测 + 转发 1 小时兜底超时，死连接约 2 分钟清理；并发会话上限 128；时移记点只累计数据流动时长（间隔 ≤10s），暂停不再把续播点推前。",
   "changelogs": [
+    {
+      "version": "2.3.62-r5",
+      "date": "2026-10-26",
+      "text": "修复 rtp2httpd 更新相关的版本号处理：配置页传入 v3.17.2-r1 这类带修订号的版本时，后台只接受纯数字点号，报「版本号格式非法」；现允许数字开头、含字母/点/连字符的版本串（最长 32 位），仍拒绝空格与特殊字符。同时配置页、状态页与更新脚本的版本解析改为保留 -rN 后缀，已安装版本不再显示成 3.17.2；版本比较也纳入修订号，只有基础版本相同时才按 r 序号判断新旧。"
+    },
     {
       "version": "2.3.62-r4",
       "date": "2026-10-26",
@@ -17,13 +22,8 @@
       "version": "2.3.62-r2",
       "date": "2026-10-25",
       "text": "iptv-replayd 升级到 1.0.9：握手按 Content-Length 读满整条 RTSP 消息，修复外网/弱网下 TCP 分片导致回看握手卡死；PLAY 200 尾随的首个媒体分片原样补发，含 NUL 字节也不再丢；keepalive 75s 探测 + 转发 1 小时兜底超时，死连接约 2 分钟清理；并发会话上限 128；时移记点只累计数据流动时长（间隔 ≤10s），暂停不再把续播点推前。"
-    },
-    {
-      "version": "2.3.62-r1",
-      "date": "2026-10-25",
-      "text": "回看窗口改由客户端自带：直播 M3U 不再写 catchup-days=\"7\"，只保留 catchup=\"default\" 与 catchup-source，避免把 7 天窗口强推给播放器。升级时自动删除 iptv-auth.main.catchup_days，配置页移除「回看天数」。"
     }
   ],
-  "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth-2.3.62-r4.apk",
-  "ipk_url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth_2.3.62-r4_x86_64.ipk"
+  "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth-2.3.62-r5.apk",
+  "ipk_url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth_2.3.62-r5_x86_64.ipk"
 }
