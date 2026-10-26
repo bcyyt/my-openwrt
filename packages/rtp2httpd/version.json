@@ -1,7 +1,7 @@
 {
-  "version": "3.17.2",
-  "date": "2026-10-11",
-  "changelog": "自编译：BUFFER_POOL_INITIAL_SIZE=1024，EXPAND_SIZE=1024。",
-  "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/rtp2httpd/rtp2httpd-3.17.2-x86_64",
-  "url_aarch64": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/rtp2httpd/rtp2httpd-3.17.2-aarch64"
+  "version": "3.17.2-r1",
+  "date": "2026-10-26",
+  "changelog": "自编译：BUFFER_POOL_INITIAL_SIZE=1024，EXPAND_SIZE=1024；导出 playlist.m3u 时保留 r2h-seek-mode / r2h-seek-offset / r2h-ifname，回看地址自带 Range Seek 参数，不再依赖服务内部状态。",
+  "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/rtp2httpd/rtp2httpd-3.17.2-r1-x86_64",
+  "url_aarch64": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/rtp2httpd/rtp2httpd-3.17.2-r1-aarch64"
 }
