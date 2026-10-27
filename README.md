@@ -46,5 +46,5 @@ musl libc（MIT，<https://musl.libc.org/>）提供静态运行库；cross-tools
 （<https://github.com/cross-tools/musl-cross>）提供交叉工具链；OpenWrt、ImmortalWrt
 社区提供运行环境与文档；LuCI 项目（Apache-2.0）提供 Web 框架。
 
-OTA 地址保持 `https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/...`，
+OTA 地址保持 `https://raw.atomgit.com/u012318058/my-openwrt/raw/main/packages/...`，
 路由器无需改动。发布新版本时从私有仓库执行 `packaging/publish-ota.sh` 同步本目录。

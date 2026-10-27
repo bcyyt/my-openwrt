@@ -1,8 +1,13 @@
 {
-  "version": "2.3.63-r1",
+  "version": "2.3.63-r2",
   "date": "2026-10-27",
-  "changelog": "【2.3.63-r1】2026-10-27\n修复实时日志与客户端列表把同名多源频道的频道名显示成数字：rtp2httpd 对重复服务名追加 /2、/3 序号（形如 /超高清4K/北京卫视4K/2），观看检测取 URL 最后一段时拿到「2」；现识别末尾纯数字段为多源序号，回退到上一段作为频道名（北京卫视4K、深圳卫视4K 等不再显示为数字）。\n\n【2.3.63-r0】2026-10-27\n修复 OTA 检测不到同基版本小修订的问题：路由器端版本比较此前只比 major.minor.patch、忽略 -rN，导致 2.3.62-r5/r6/r7/r8 之间互相判定为「已是最新」（r5 的说明只修到 rtp2httpd 那条链路）。现 controller 的 is_newer、iptv-auth.py 的日志比较、状态页 ver_gt 全部纳入 -rN 修订号，基础版本相同再比 r 序号；同时把基础版本抬到 2.3.63 以突破旧版逻辑（否则旧路由器永远检测不到本次修复）。本版含 iptv-replayd 1.0.22：活跃日志改为 O_APPEND 追加（仅超 48KB 才读-截断-重写），字符串缓冲扩容失败不再丢指针。\n\n【2.3.62-r8】2026-10-27\n回看代理 iptv-replayd 升级 1.0.22：活跃日志改为 O_APPEND 追加，只有文件超过 48KB 才做一次读-截断-重写（原来每条日志都读写整个文件，客户端频繁重连时每连接约 10 条日志被放大成 MB 级 I/O），日志 flock 锁 fd 进程内常驻，省去每条 open/close；字符串缓冲扩容失败时保持原缓冲有效并跳过本次写入，不再丢失指针或越界写。行为与 1.0.21 一致，仅降低日志 I/O 与提升健壮性。\n\n【2.3.62-r7】2026-10-27\n全新安装更稳：rtp2httpd 缺失且首次下载失败（没网、镜像不通、架构不在 x86_64/aarch64）时，不再让整个服务起不来，只是跳过直播代理并记日志，鉴权、EPG、回看代理照常启动；补齐二进制后重启服务或在配置页手动更新即可。OTA 与更新脚本不再硬依赖 curl，统一走 /usr/lib/iptv-auth/fetch.sh，依次尝试 curl、uclient-fetch、wget，OpenWrt 默认环境没有 curl 时 12 小时一次的更新检测和配置页「更新 rtp2httpd」按钮也能正常工作。",
+  "changelog": "【2.3.63-r2】2026-10-27\nOTA 与台标更新源切换到 AtomGit 公开仓（raw.atomgit.com/u012318058/my-openwrt/raw/main），不再依赖 GitHub 直连；因 AtomGit 无需镜像前缀，取消「下载镜像前缀」选项（配置页/状态页/CBI 均移除）。rtp2httpd 上游官方源检测仍保留 GitHub（stackia/rtp2httpd）。\n\n【2.3.63-r1】2026-10-27\n修复实时日志与客户端列表把同名多源频道的频道名显示成数字：rtp2httpd 对重复服务名追加 /2、/3 序号（形如 /超高清4K/北京卫视4K/2），观看检测取 URL 最后一段时拿到「2」；现识别末尾纯数字段为多源序号，回退到上一段作为频道名（北京卫视4K、深圳卫视4K 等不再显示为数字）。\n\n【2.3.63-r0】2026-10-27\n修复 OTA 检测不到同基版本小修订的问题：路由器端版本比较此前只比 major.minor.patch、忽略 -rN，导致 2.3.62-r5/r6/r7/r8 之间互相判定为「已是最新」（r5 的说明只修到 rtp2httpd 那条链路）。现 controller 的 is_newer、iptv-auth.py 的日志比较、状态页 ver_gt 全部纳入 -rN 修订号，基础版本相同再比 r 序号；同时把基础版本抬到 2.3.63 以突破旧版逻辑（否则旧路由器永远检测不到本次修复）。本版含 iptv-replayd 1.0.22：活跃日志改为 O_APPEND 追加（仅超 48KB 才读-截断-重写），字符串缓冲扩容失败不再丢指针。\n\n【2.3.62-r8】2026-10-27\n回看代理 iptv-replayd 升级 1.0.22：活跃日志改为 O_APPEND 追加，只有文件超过 48KB 才做一次读-截断-重写（原来每条日志都读写整个文件，客户端频繁重连时每连接约 10 条日志被放大成 MB 级 I/O），日志 flock 锁 fd 进程内常驻，省去每条 open/close；字符串缓冲扩容失败时保持原缓冲有效并跳过本次写入，不再丢失指针或越界写。行为与 1.0.21 一致，仅降低日志 I/O 与提升健壮性。",
   "changelogs": [
+    {
+      "version": "2.3.63-r2",
+      "date": "2026-10-27",
+      "text": "OTA 与台标更新源切换到 AtomGit 公开仓（raw.atomgit.com/u012318058/my-openwrt/raw/main），不再依赖 GitHub 直连；因 AtomGit 无需镜像前缀，取消「下载镜像前缀」选项（配置页/状态页/CBI 均移除）。rtp2httpd 上游官方源检测仍保留 GitHub（stackia/rtp2httpd）。"
+    },
     {
       "version": "2.3.63-r1",
       "date": "2026-10-27",
@@ -17,13 +22,8 @@
       "version": "2.3.62-r8",
       "date": "2026-10-27",
       "text": "回看代理 iptv-replayd 升级 1.0.22：活跃日志改为 O_APPEND 追加，只有文件超过 48KB 才做一次读-截断-重写（原来每条日志都读写整个文件，客户端频繁重连时每连接约 10 条日志被放大成 MB 级 I/O），日志 flock 锁 fd 进程内常驻，省去每条 open/close；字符串缓冲扩容失败时保持原缓冲有效并跳过本次写入，不再丢失指针或越界写。行为与 1.0.21 一致，仅降低日志 I/O 与提升健壮性。"
-    },
-    {
-      "version": "2.3.62-r7",
-      "date": "2026-10-27",
-      "text": "全新安装更稳：rtp2httpd 缺失且首次下载失败（没网、镜像不通、架构不在 x86_64/aarch64）时，不再让整个服务起不来，只是跳过直播代理并记日志，鉴权、EPG、回看代理照常启动；补齐二进制后重启服务或在配置页手动更新即可。OTA 与更新脚本不再硬依赖 curl，统一走 /usr/lib/iptv-auth/fetch.sh，依次尝试 curl、uclient-fetch、wget，OpenWrt 默认环境没有 curl 时 12 小时一次的更新检测和配置页「更新 rtp2httpd」按钮也能正常工作。"
     }
   ],
-  "url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth-2.3.63-r1.apk",
-  "ipk_url": "https://raw.githubusercontent.com/bcyyt/my-openwrt/main/packages/iptv-auth/iptv-auth_2.3.63-r1_x86_64.ipk"
+  "url": "https://raw.atomgit.com/u012318058/my-openwrt/raw/main/packages/iptv-auth/iptv-auth-2.3.63-r2.apk",
+  "ipk_url": "https://raw.atomgit.com/u012318058/my-openwrt/raw/main/packages/iptv-auth/iptv-auth_2.3.63-r2_x86_64.ipk"
 }
