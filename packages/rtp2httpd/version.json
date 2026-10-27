@@ -3,8 +3,8 @@
   "date": "2026-10-26",
   "changelog": "自编译：BUFFER_POOL_INITIAL_SIZE=1024，EXPAND_SIZE=1024；导出 playlist.m3u 时保留 r2h-seek-mode / r2h-seek-offset / r2h-ifname；客户端半关闭不主动断流，TCP_USER_TIMEOUT 600s。GPL-2.0，修改后完整源码见同目录 source/。",
   "license": "GPL-2.0",
-  "notice": "https://raw.atomgit.com/u012318058/my-openwrt/raw/main/packages/rtp2httpd/NOTICE.md",
-  "source": "https://raw.atomgit.com/u012318058/my-openwrt/raw/main/packages/rtp2httpd/source/SOURCE.md",
-  "url": "https://raw.atomgit.com/u012318058/my-openwrt/raw/main/packages/rtp2httpd/rtp2httpd-3.17.2-r1-x86_64",
-  "url_aarch64": "https://raw.atomgit.com/u012318058/my-openwrt/raw/main/packages/rtp2httpd/rtp2httpd-3.17.2-r1-aarch64"
+  "notice": "https://atomgit.com/api/v5/repos/u012318058/my-openwrt/raw/packages/rtp2httpd/NOTICE.md",
+  "source": "https://atomgit.com/api/v5/repos/u012318058/my-openwrt/raw/packages/rtp2httpd/source/SOURCE.md",
+  "url": "https://atomgit.com/api/v5/repos/u012318058/my-openwrt/raw/packages/rtp2httpd/rtp2httpd-3.17.2-r1-x86_64",
+  "url_aarch64": "https://atomgit.com/api/v5/repos/u012318058/my-openwrt/raw/packages/rtp2httpd/rtp2httpd-3.17.2-r1-aarch64"
 }
