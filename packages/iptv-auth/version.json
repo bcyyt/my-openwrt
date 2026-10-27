@@ -1,8 +1,13 @@
 {
-  "version": "2.3.63-r6",
+  "version": "2.3.63-r7",
   "date": "2026-10-27",
-  "changelog": "【2.3.63-r6】2026-10-28\nOTA、台标、rtp2httpd 更新源切换到 Gitee 公开仓网页 raw（https://gitee.com/bcyyt/my-openwrt/raw/main/packages/...）。实测 json/png/apk 均可直接下载；安装后 ota_url 与台标/rtp2httpd 清单均指向 Gitee。\n\n【2.3.63-r5】2026-10-28\n修复「检查更新」报 Unexpected token '<'（不是有效 JSON）：r2~r4 移除了镜像前缀，但 check_ota_update / do_ota_update 仍调用已删除的 ota_mirror()/ota_with_mirror()，Lua 运行时报错导致接口返回 HTML 错误页；现已改为直接使用 version.json 里的 url/ipk_url（直连 AtomGit API raw）。\n\n【2.3.63-r4】2026-10-27\n修正含空格频道名的台标 404：如 CCTV16 4K 的台标文件名含空格（CCTV16 4K.png），AtomGit API raw 对 %20 路径不稳（返回 404），台标更新不下来。现 clean_channel_name 统一去除空格（CCTV16 4K → CCTV164K），台标文件同步重命名为 CCTV164K.png。\n\n【2.3.63-r3】2026-10-27\n修正 AtomGit 下载地址：网页 raw（raw.atomgit.com/.../raw/main）对 apk 等二进制返回 403「暂不支持预览」，导致 OTA 下到错误页、apk 校验失败（file format is invalid）；改用 AtomGit API raw（atomgit.com/api/v5/repos/u012318058/my-openwrt/raw/...），实测 apk/json/png 均 200。",
+  "changelog": "【2.3.63-r7】2026-10-28\n修复「检查更新 / 更新 rtp2httpd」提示 JSON 无效：Gitee raw 会 302 到 raw.giteeusercontent.com，LuCI 里 curl 未跟跳转拿到的是 HTML。现 curl 增加 -L 跟随跳转。\n\n【2.3.63-r6】2026-10-28\nOTA、台标、rtp2httpd 更新源切换到 Gitee 公开仓网页 raw（https://gitee.com/bcyyt/my-openwrt/raw/main/packages/...）。实测 json/png/apk 均可直接下载；安装后 ota_url 与台标/rtp2httpd 清单均指向 Gitee。\n\n【2.3.63-r5】2026-10-28\n修复「检查更新」报 Unexpected token '<'（不是有效 JSON）：r2~r4 移除了镜像前缀，但 check_ota_update / do_ota_update 仍调用已删除的 ota_mirror()/ota_with_mirror()，Lua 运行时报错导致接口返回 HTML 错误页；现已改为直接使用 version.json 里的 url/ipk_url（直连 AtomGit API raw）。\n\n【2.3.63-r4】2026-10-27\n修正含空格频道名的台标 404：如 CCTV16 4K 的台标文件名含空格（CCTV16 4K.png），AtomGit API raw 对 %20 路径不稳（返回 404），台标更新不下来。现 clean_channel_name 统一去除空格（CCTV16 4K → CCTV164K），台标文件同步重命名为 CCTV164K.png。",
   "changelogs": [
+    {
+      "version": "2.3.63-r7",
+      "date": "2026-10-28",
+      "text": "修复「检查更新 / 更新 rtp2httpd」提示 JSON 无效：Gitee raw 会 302 到 raw.giteeusercontent.com，LuCI 里 curl 未跟跳转拿到的是 HTML。现 curl 增加 -L 跟随跳转。"
+    },
     {
       "version": "2.3.63-r6",
       "date": "2026-10-28",
@@ -17,13 +22,8 @@
       "version": "2.3.63-r4",
       "date": "2026-10-27",
       "text": "修正含空格频道名的台标 404：如 CCTV16 4K 的台标文件名含空格（CCTV16 4K.png），AtomGit API raw 对 %20 路径不稳（返回 404），台标更新不下来。现 clean_channel_name 统一去除空格（CCTV16 4K → CCTV164K），台标文件同步重命名为 CCTV164K.png。"
-    },
-    {
-      "version": "2.3.63-r3",
-      "date": "2026-10-27",
-      "text": "修正 AtomGit 下载地址：网页 raw（raw.atomgit.com/.../raw/main）对 apk 等二进制返回 403「暂不支持预览」，导致 OTA 下到错误页、apk 校验失败（file format is invalid）；改用 AtomGit API raw（atomgit.com/api/v5/repos/u012318058/my-openwrt/raw/...），实测 apk/json/png 均 200。"
     }
   ],
-  "url": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth-2.3.63-r6.apk",
-  "ipk_url": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth_2.3.63-r6_x86_64.ipk"
+  "url": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth-2.3.63-r7.apk",
+  "ipk_url": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth_2.3.63-r7_x86_64.ipk"
 }
