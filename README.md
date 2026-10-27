@@ -7,8 +7,7 @@
 
 - `packages/iptv-auth/`：IPTV 代理 APK/IPK 与 `version.json`
 - `packages/luci-app-mediahub/`：影视中心 APK
-- `packages/luci-app-statusmon/`：状态监控 APK/IPK
-- `packages/luci-app-fwmanager/`：防火墙管理 APK/IPK（含安全采集器）
+- `packages/luci-app-statusfw/`：状态与防火墙 APK/IPK（性能监控 + 防火墙/安全采集器）
 - `packages/luci-app-netqueue/`：网络优化 APK/IPK
 - `packages/luci-app-syskeep/`：保留升级 APK/IPK
 - `packages/rtp2httpd/`：自编译 rtp2httpd 二进制与 `version.json`
@@ -16,7 +15,8 @@
   - `source/`：对应修改后源码（上游 tar.gz + 补丁 + 构建脚本 + 校验值）
 - `packages/ffmpeg-mini/`：内置精简 ffmpeg 构建产物
 - `packages/iptv-replayd/`：回看代理二进制
-- `packages/keys/my-openwrt.rsa.pub`：APK 签名公钥
+- `packages/keys/my-openwrt.rsa.pub`：当前 APK 签名公钥
+- `packages/keys/my-openwrt-legacy.rsa.pub`：轮换前公钥（校验旧制品）
 - `packages/logos/`：频道台标 PNG，播放列表 `tvg-logo` 指向此处
 
 ## 第三方组件与许可：rtp2httpd（修改版，GPL-2.0）
