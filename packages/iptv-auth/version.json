@@ -1,29 +1,29 @@
 {
-  "version": "2.3.63-r7",
+  "version": "2.3.64",
   "date": "2026-10-27",
-  "changelog": "【2.3.63-r7】2026-10-28\n修复「检查更新 / 更新 rtp2httpd」提示 JSON 无效：Gitee raw 会 302 到 raw.giteeusercontent.com，LuCI 里 curl 未跟跳转拿到的是 HTML。现 curl 增加 -L 跟随跳转。\n\n【2.3.63-r6】2026-10-28\nOTA、台标、rtp2httpd 更新源切换到 Gitee 公开仓网页 raw（https://gitee.com/bcyyt/my-openwrt/raw/main/packages/...）。实测 json/png/apk 均可直接下载；安装后 ota_url 与台标/rtp2httpd 清单均指向 Gitee。\n\n【2.3.63-r5】2026-10-28\n修复「检查更新」报 Unexpected token '<'（不是有效 JSON）：r2~r4 移除了镜像前缀，但 check_ota_update / do_ota_update 仍调用已删除的 ota_mirror()/ota_with_mirror()，Lua 运行时报错导致接口返回 HTML 错误页；现已改为直接使用 version.json 里的 url/ipk_url（直连 AtomGit API raw）。\n\n【2.3.63-r4】2026-10-27\n修正含空格频道名的台标 404：如 CCTV16 4K 的台标文件名含空格（CCTV16 4K.png），AtomGit API raw 对 %20 路径不稳（返回 404），台标更新不下来。现 clean_channel_name 统一去除空格（CCTV16 4K → CCTV164K），台标文件同步重命名为 CCTV164K.png。",
+  "changelog": "【2.3.64】2026-10-28\n版本号调整为 2.3.64。含 Gitee OTA/台标/rtp2httpd 更新源，以及 LuCI curl 跟随 302，修复检查更新与 rtp2httpd 检测拿到 HTML 后报 JSON 无效。\n\n【2.3.63-r7】2026-10-28\n修复「检查更新 / 更新 rtp2httpd」提示 JSON 无效：Gitee raw 会 302 到 raw.giteeusercontent.com，LuCI 里 curl 未跟跳转拿到的是 HTML。现 curl 增加 -L 跟随跳转。\n\n【2.3.63-r0】2026-10-27\n修复 OTA 检测不到同基版本小修订的问题：路由器端版本比较此前只比 major.minor.patch、忽略 -rN，导致 2.3.62-r5/r6/r7/r8 之间互相判定为「已是最新」（r5 的说明只修到 rtp2httpd 那条链路）。现 controller 的 is_newer、iptv-auth.py 的日志比较、状态页 ver_gt 全部纳入 -rN 修订号，基础版本相同再比 r 序号；同时把基础版本抬到 2.3.63 以突破旧版逻辑（否则旧路由器永远检测不到本次修复）。本版含 iptv-replayd 1.0.22：活跃日志改为 O_APPEND 追加（仅超 48KB 才读-截断-重写），字符串缓冲扩容失败不再丢指针。\n\n【2.3.62-r8】2026-10-27\n回看代理 iptv-replayd 升级 1.0.22：活跃日志改为 O_APPEND 追加，只有文件超过 48KB 才做一次读-截断-重写（原来每条日志都读写整个文件，客户端频繁重连时每连接约 10 条日志被放大成 MB 级 I/O），日志 flock 锁 fd 进程内常驻，省去每条 open/close；字符串缓冲扩容失败时保持原缓冲有效并跳过本次写入，不再丢失指针或越界写。行为与 1.0.21 一致，仅降低日志 I/O 与提升健壮性。",
   "changelogs": [
+    {
+      "version": "2.3.64",
+      "date": "2026-10-28",
+      "text": "版本号调整为 2.3.64。含 Gitee OTA/台标/rtp2httpd 更新源，以及 LuCI curl 跟随 302，修复检查更新与 rtp2httpd 检测拿到 HTML 后报 JSON 无效。"
+    },
     {
       "version": "2.3.63-r7",
       "date": "2026-10-28",
       "text": "修复「检查更新 / 更新 rtp2httpd」提示 JSON 无效：Gitee raw 会 302 到 raw.giteeusercontent.com，LuCI 里 curl 未跟跳转拿到的是 HTML。现 curl 增加 -L 跟随跳转。"
     },
     {
-      "version": "2.3.63-r6",
-      "date": "2026-10-28",
-      "text": "OTA、台标、rtp2httpd 更新源切换到 Gitee 公开仓网页 raw（https://gitee.com/bcyyt/my-openwrt/raw/main/packages/...）。实测 json/png/apk 均可直接下载；安装后 ota_url 与台标/rtp2httpd 清单均指向 Gitee。"
-    },
-    {
-      "version": "2.3.63-r5",
-      "date": "2026-10-28",
-      "text": "修复「检查更新」报 Unexpected token '<'（不是有效 JSON）：r2~r4 移除了镜像前缀，但 check_ota_update / do_ota_update 仍调用已删除的 ota_mirror()/ota_with_mirror()，Lua 运行时报错导致接口返回 HTML 错误页；现已改为直接使用 version.json 里的 url/ipk_url（直连 AtomGit API raw）。"
-    },
-    {
-      "version": "2.3.63-r4",
+      "version": "2.3.63-r0",
       "date": "2026-10-27",
-      "text": "修正含空格频道名的台标 404：如 CCTV16 4K 的台标文件名含空格（CCTV16 4K.png），AtomGit API raw 对 %20 路径不稳（返回 404），台标更新不下来。现 clean_channel_name 统一去除空格（CCTV16 4K → CCTV164K），台标文件同步重命名为 CCTV164K.png。"
+      "text": "修复 OTA 检测不到同基版本小修订的问题：路由器端版本比较此前只比 major.minor.patch、忽略 -rN，导致 2.3.62-r5/r6/r7/r8 之间互相判定为「已是最新」（r5 的说明只修到 rtp2httpd 那条链路）。现 controller 的 is_newer、iptv-auth.py 的日志比较、状态页 ver_gt 全部纳入 -rN 修订号，基础版本相同再比 r 序号；同时把基础版本抬到 2.3.63 以突破旧版逻辑（否则旧路由器永远检测不到本次修复）。本版含 iptv-replayd 1.0.22：活跃日志改为 O_APPEND 追加（仅超 48KB 才读-截断-重写），字符串缓冲扩容失败不再丢指针。"
+    },
+    {
+      "version": "2.3.62-r8",
+      "date": "2026-10-27",
+      "text": "回看代理 iptv-replayd 升级 1.0.22：活跃日志改为 O_APPEND 追加，只有文件超过 48KB 才做一次读-截断-重写（原来每条日志都读写整个文件，客户端频繁重连时每连接约 10 条日志被放大成 MB 级 I/O），日志 flock 锁 fd 进程内常驻，省去每条 open/close；字符串缓冲扩容失败时保持原缓冲有效并跳过本次写入，不再丢失指针或越界写。行为与 1.0.21 一致，仅降低日志 I/O 与提升健壮性。"
     }
   ],
-  "url": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth-2.3.63-r7.apk",
-  "ipk_url": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth_2.3.63-r7_x86_64.ipk"
+  "url": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth-2.3.64.apk",
+  "ipk_url": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth_2.3.64_x86_64.ipk"
 }
