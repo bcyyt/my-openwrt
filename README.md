@@ -8,6 +8,7 @@
 - `packages/iptv-auth/`：IPTV 代理 APK/IPK 与 `version.json`
 - `packages/luci-app-mediahub/`：影视中心 APK
 - `packages/luci-app-statusmon/`：状态监控 APK/IPK
+- `packages/luci-app-fwmanager/`：防火墙管理 APK/IPK（含安全采集器）
 - `packages/luci-app-netqueue/`：网络优化 APK/IPK
 - `packages/luci-app-syskeep/`：保留升级 APK/IPK
 - `packages/rtp2httpd/`：自编译 rtp2httpd 二进制与 `version.json`
