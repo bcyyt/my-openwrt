@@ -1,8 +1,13 @@
 {
-  "version": "2.3.63-r4",
+  "version": "2.3.63-r5",
   "date": "2026-10-28",
-  "changelog": "【2.3.63-r4】2026-10-27\n修正含空格频道名的台标 404：如 CCTV16 4K 的台标文件名含空格（CCTV16 4K.png），AtomGit API raw 对 %20 路径不稳（返回 404），台标更新不下来。现 clean_channel_name 统一去除空格（CCTV16 4K → CCTV164K），台标文件同步重命名为 CCTV164K.png。\n\n【2.3.63-r3】2026-10-27\n修正 AtomGit 下载地址：网页 raw（raw.atomgit.com/.../raw/main）对 apk 等二进制返回 403「暂不支持预览」，导致 OTA 下到错误页、apk 校验失败（file format is invalid）；改用 AtomGit API raw（atomgit.com/api/v5/repos/u012318058/my-openwrt/raw/...），实测 apk/json/png 均 200。\n\n【2.3.63-r2】2026-10-27\nOTA 与台标更新源切换到 AtomGit 公开仓（raw.atomgit.com/u012318058/my-openwrt/raw/main），不再依赖 GitHub 直连；因 AtomGit 无需镜像前缀，取消「下载镜像前缀」选项（配置页/状态页/CBI 均移除）。rtp2httpd 上游官方源检测仍保留 GitHub（stackia/rtp2httpd）。\n\n【2.3.63-r1】2026-10-27\n修复实时日志与客户端列表把同名多源频道的频道名显示成数字：rtp2httpd 对重复服务名追加 /2、/3 序号（形如 /超高清4K/北京卫视4K/2），观看检测取 URL 最后一段时拿到「2」；现识别末尾纯数字段为多源序号，回退到上一段作为频道名（北京卫视4K、深圳卫视4K 等不再显示为数字）。",
+  "changelog": "【2.3.63-r5】2026-10-28\n修复「检查更新」报 Unexpected token '<'（不是有效 JSON）：r2~r4 移除了镜像前缀，但 check_ota_update / do_ota_update 仍调用已删除的 ota_mirror()/ota_with_mirror()，Lua 运行时报错导致接口返回 HTML 错误页；现已改为直接使用 version.json 里的 url/ipk_url（直连 AtomGit API raw）。\n\n【2.3.63-r4】2026-10-27\n修正含空格频道名的台标 404：如 CCTV16 4K 的台标文件名含空格（CCTV16 4K.png），AtomGit API raw 对 %20 路径不稳（返回 404），台标更新不下来。现 clean_channel_name 统一去除空格（CCTV16 4K → CCTV164K），台标文件同步重命名为 CCTV164K.png。\n\n【2.3.63-r3】2026-10-27\n修正 AtomGit 下载地址：网页 raw（raw.atomgit.com/.../raw/main）对 apk 等二进制返回 403「暂不支持预览」，导致 OTA 下到错误页、apk 校验失败（file format is invalid）；改用 AtomGit API raw（atomgit.com/api/v5/repos/u012318058/my-openwrt/raw/...），实测 apk/json/png 均 200。\n\n【2.3.63-r2】2026-10-27\nOTA 与台标更新源切换到 AtomGit 公开仓（raw.atomgit.com/u012318058/my-openwrt/raw/main），不再依赖 GitHub 直连；因 AtomGit 无需镜像前缀，取消「下载镜像前缀」选项（配置页/状态页/CBI 均移除）。rtp2httpd 上游官方源检测仍保留 GitHub（stackia/rtp2httpd）。",
   "changelogs": [
+    {
+      "version": "2.3.63-r5",
+      "date": "2026-10-28",
+      "text": "修复「检查更新」报 Unexpected token '<'（不是有效 JSON）：r2~r4 移除了镜像前缀，但 check_ota_update / do_ota_update 仍调用已删除的 ota_mirror()/ota_with_mirror()，Lua 运行时报错导致接口返回 HTML 错误页；现已改为直接使用 version.json 里的 url/ipk_url（直连 AtomGit API raw）。"
+    },
     {
       "version": "2.3.63-r4",
       "date": "2026-10-27",
@@ -17,13 +22,8 @@
       "version": "2.3.63-r2",
       "date": "2026-10-27",
       "text": "OTA 与台标更新源切换到 AtomGit 公开仓（raw.atomgit.com/u012318058/my-openwrt/raw/main），不再依赖 GitHub 直连；因 AtomGit 无需镜像前缀，取消「下载镜像前缀」选项（配置页/状态页/CBI 均移除）。rtp2httpd 上游官方源检测仍保留 GitHub（stackia/rtp2httpd）。"
-    },
-    {
-      "version": "2.3.63-r1",
-      "date": "2026-10-27",
-      "text": "修复实时日志与客户端列表把同名多源频道的频道名显示成数字：rtp2httpd 对重复服务名追加 /2、/3 序号（形如 /超高清4K/北京卫视4K/2），观看检测取 URL 最后一段时拿到「2」；现识别末尾纯数字段为多源序号，回退到上一段作为频道名（北京卫视4K、深圳卫视4K 等不再显示为数字）。"
     }
   ],
-  "url": "https://atomgit.com/api/v5/repos/u012318058/my-openwrt/raw/packages/iptv-auth/iptv-auth-2.3.63-r4.apk",
-  "ipk_url": "https://atomgit.com/api/v5/repos/u012318058/my-openwrt/raw/packages/iptv-auth/iptv-auth_2.3.63-r4_x86_64.ipk"
+  "url": "https://atomgit.com/api/v5/repos/u012318058/my-openwrt/raw/packages/iptv-auth/iptv-auth-2.3.63-r5.apk",
+  "ipk_url": "https://atomgit.com/api/v5/repos/u012318058/my-openwrt/raw/packages/iptv-auth/iptv-auth_2.3.63-r5_x86_64.ipk"
 }
