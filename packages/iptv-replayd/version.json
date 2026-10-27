@@ -1,7 +1,7 @@
 {
-  "version": "1.0.21",
-  "date": "2026-10-26",
-  "changelog": "iptv-replayd：独立 C 回看 RTSP 代理（无 Python 依赖），静态 musl；1.0.21 修首轮内部 DESCRIBE 后上游直接关闭仍误进入转发（空转到 keepalive 超时才回收）、S→C 转发线程改用 512KB 栈、getsockname 失败时原样回传响应（不再写出 rtsp://:554 空主机 URL）；1.0.9 按 Content-Length 读满整条 RTSP 消息（修外网分片握手卡死）、PLAY 200 尾随首帧不再丢失、keepalive 75s/15s×3 与转发 1 小时兜底超时清理死连接、并发会话上限 128、时移记点只累计流动时长（≤10s 间隔）；1.0.8 酷9暂停后重连时从上次播放点续播；1.0.2 将 programend 收敛到当前时刻前 2 秒。",
-  "url_x86_64": "iptv-replayd-1.0.21-x86_64",
-  "url_aarch64": "iptv-replayd-1.0.21-aarch64"
+  "version": "1.0.22",
+  "date": "2026-10-27",
+  "changelog": "iptv-replayd：独立 C 回看 RTSP 代理（无 Python 依赖），静态 musl；1.0.22 活跃日志改为 O_APPEND 追加、仅超 48KB 才做一次读-截断-重写（削减每连接约 10 条日志的全文件读写），日志 flock 锁 fd 进程内常驻，sb_need realloc 失败时保持原缓冲有效（不再丢指针/越界写）；1.0.21 修首轮内部 DESCRIBE 后上游直接关闭仍误进入转发（空转到 keepalive 超时才回收）、S→C 转发线程改用 512KB 栈、getsockname 失败时原样回传响应（不再写出 rtsp://:554 空主机 URL）；1.0.9 按 Content-Length 读满整条 RTSP 消息（修外网分片握手卡死）、PLAY 200 尾随首帧不再丢失、keepalive 75s/15s×3 与转发 1 小时兜底超时清理死连接、并发会话上限 128、时移记点只累计流动时长（≤10s 间隔）；1.0.8 酷9暂停后重连时从上次播放点续播；1.0.2 将 programend 收敛到当前时刻前 2 秒。",
+  "url_x86_64": "iptv-replayd-1.0.22-x86_64",
+  "url_aarch64": "iptv-replayd-1.0.22-aarch64"
 }
