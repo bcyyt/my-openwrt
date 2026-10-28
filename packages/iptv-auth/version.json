@@ -1,29 +1,29 @@
 {
-  "version": "2.3.65-r5",
+  "version": "2.3.65-r6",
   "date": "2026-10-28",
-  "changelog": "【2.3.65-r5】2026-10-28\n配置页增加 M3U 台标路径：仓库路径或本地路径，保存后重生成播放列表。\n\n【2.3.65-r1】2026-10-28\nOTA、台标、rtp2httpd 更新源改为 Gitee 公开仓网页 raw。LuCI curl 跟随 302，避免把 HTML 当 JSON。升级后强制把 UCI ota_url 写成 Gitee，并清掉旧的 update_mirror，避免 gh-proxy 拼到 Gitee 地址前面导致 APK 下成 HTML。init.d 在 rtp2httpd 缺失时改为从 Gitee 下载。LuCI 状态页/配置页说明改为 Gitee 直连。\n\n【2.3.63-r7】2026-10-28\n修复「检查更新 / 更新 rtp2httpd」提示 JSON 无效：Gitee raw 会 302 到 raw.giteeusercontent.com，LuCI 里 curl 未跟跳转拿到的是 HTML。现 curl 增加 -L 跟随跳转。\n\n【2.3.63-r0】2026-10-27\n修复 OTA 检测不到同基版本小修订的问题：路由器端版本比较此前只比 major.minor.patch、忽略 -rN，导致 2.3.62-r5/r6/r7/r8 之间互相判定为「已是最新」（r5 的说明只修到 rtp2httpd 那条链路）。现 controller 的 is_newer、iptv-auth.py 的日志比较、状态页 ver_gt 全部纳入 -rN 修订号，基础版本相同再比 r 序号；同时把基础版本抬到 2.3.63 以突破旧版逻辑（否则旧路由器永远检测不到本次修复）。本版含 iptv-replayd 1.0.22：活跃日志改为 O_APPEND 追加（仅超 48KB 才读-截断-重写），字符串缓冲扩容失败不再丢指针。",
+  "changelog": "【2.3.65-r6】2026-10-28\n配置页增加 M3U 台标路径（仓库或本地）。OTA、台标、rtp2httpd 更新源改为 Gitee 公开仓网页 raw；LuCI curl 跟随 302；升级强制写回 ota_url 并清掉旧 update_mirror。OTA 脚本与 LuCI 不再读镜像前缀/gh-proxy，删除未使用死代码。版本比较纳入 -rN。含 iptv-replayd 1.0.22。\n\n【2.3.62-r8】2026-10-27\n回看代理 iptv-replayd 升级 1.0.22：活跃日志改为 O_APPEND 追加，只有文件超过 48KB 才做一次读-截断-重写（原来每条日志都读写整个文件，客户端频繁重连时每连接约 10 条日志被放大成 MB 级 I/O），日志 flock 锁 fd 进程内常驻，省去每条 open/close；字符串缓冲扩容失败时保持原缓冲有效并跳过本次写入，不再丢失指针或越界写。行为与 1.0.21 一致，仅降低日志 I/O 与提升健壮性。\n\n【2.3.62-r7】2026-10-27\n全新安装更稳：rtp2httpd 缺失且首次下载失败（没网、镜像不通、架构不在 x86_64/aarch64）时，不再让整个服务起不来，只是跳过直播代理并记日志，鉴权、EPG、回看代理照常启动；补齐二进制后重启服务或在配置页手动更新即可。OTA 与更新脚本不再硬依赖 curl，统一走 /usr/lib/iptv-auth/fetch.sh，依次尝试 curl、uclient-fetch、wget，OpenWrt 默认环境没有 curl 时 12 小时一次的更新检测和配置页「更新 rtp2httpd」按钮也能正常工作。\n\n【2.3.62-r6】2026-10-26\n回看代理 iptv-replayd 升级 1.0.21：首轮内部 DESCRIBE 后上游直接关闭时不再误进入转发（原会带着死连接空转到 keepalive 超时约 120 秒）、S→C 转发线程改用 512KB 栈（128 并发下虚拟内存大幅下降）、取不到本端地址时原样回传响应（不再写出 rtsp://:554 空主机 URL）。配置页保存改为单次 UCI 读写（原来每个字段 fork 一次 uci，共 35 次），并按改动类型决定动作：改了端口/线程/令牌等启动参数才重启服务，只改鉴权/过滤/回看等播放列表相关项改为后台重生成列表，只改调度间隔则仅重载配置，不再为了改一个镜像前缀打断正在播放的直播/回看。保存时新增服务端数值范围校验，与页面校验一致，防止绕过前端写入非法端口导致服务起不来。历史日志查看改为只读文件尾部 512KB，不再整份读入内存。删除无调用点的 instance_running 死代码。",
   "changelogs": [
     {
-      "version": "2.3.65-r5",
+      "version": "2.3.65-r6",
       "date": "2026-10-28",
-      "text": "配置页增加 M3U 台标路径：仓库路径或本地路径，保存后重生成播放列表。"
+      "text": "配置页增加 M3U 台标路径（仓库或本地）。OTA、台标、rtp2httpd 更新源改为 Gitee 公开仓网页 raw；LuCI curl 跟随 302；升级强制写回 ota_url 并清掉旧 update_mirror。OTA 脚本与 LuCI 不再读镜像前缀/gh-proxy，删除未使用死代码。版本比较纳入 -rN。含 iptv-replayd 1.0.22。"
     },
     {
-      "version": "2.3.65-r1",
-      "date": "2026-10-28",
-      "text": "OTA、台标、rtp2httpd 更新源改为 Gitee 公开仓网页 raw。LuCI curl 跟随 302，避免把 HTML 当 JSON。升级后强制把 UCI ota_url 写成 Gitee，并清掉旧的 update_mirror，避免 gh-proxy 拼到 Gitee 地址前面导致 APK 下成 HTML。init.d 在 rtp2httpd 缺失时改为从 Gitee 下载。LuCI 状态页/配置页说明改为 Gitee 直连。"
-    },
-    {
-      "version": "2.3.63-r7",
-      "date": "2026-10-28",
-      "text": "修复「检查更新 / 更新 rtp2httpd」提示 JSON 无效：Gitee raw 会 302 到 raw.giteeusercontent.com，LuCI 里 curl 未跟跳转拿到的是 HTML。现 curl 增加 -L 跟随跳转。"
-    },
-    {
-      "version": "2.3.63-r0",
+      "version": "2.3.62-r8",
       "date": "2026-10-27",
-      "text": "修复 OTA 检测不到同基版本小修订的问题：路由器端版本比较此前只比 major.minor.patch、忽略 -rN，导致 2.3.62-r5/r6/r7/r8 之间互相判定为「已是最新」（r5 的说明只修到 rtp2httpd 那条链路）。现 controller 的 is_newer、iptv-auth.py 的日志比较、状态页 ver_gt 全部纳入 -rN 修订号，基础版本相同再比 r 序号；同时把基础版本抬到 2.3.63 以突破旧版逻辑（否则旧路由器永远检测不到本次修复）。本版含 iptv-replayd 1.0.22：活跃日志改为 O_APPEND 追加（仅超 48KB 才读-截断-重写），字符串缓冲扩容失败不再丢指针。"
+      "text": "回看代理 iptv-replayd 升级 1.0.22：活跃日志改为 O_APPEND 追加，只有文件超过 48KB 才做一次读-截断-重写（原来每条日志都读写整个文件，客户端频繁重连时每连接约 10 条日志被放大成 MB 级 I/O），日志 flock 锁 fd 进程内常驻，省去每条 open/close；字符串缓冲扩容失败时保持原缓冲有效并跳过本次写入，不再丢失指针或越界写。行为与 1.0.21 一致，仅降低日志 I/O 与提升健壮性。"
+    },
+    {
+      "version": "2.3.62-r7",
+      "date": "2026-10-27",
+      "text": "全新安装更稳：rtp2httpd 缺失且首次下载失败（没网、镜像不通、架构不在 x86_64/aarch64）时，不再让整个服务起不来，只是跳过直播代理并记日志，鉴权、EPG、回看代理照常启动；补齐二进制后重启服务或在配置页手动更新即可。OTA 与更新脚本不再硬依赖 curl，统一走 /usr/lib/iptv-auth/fetch.sh，依次尝试 curl、uclient-fetch、wget，OpenWrt 默认环境没有 curl 时 12 小时一次的更新检测和配置页「更新 rtp2httpd」按钮也能正常工作。"
+    },
+    {
+      "version": "2.3.62-r6",
+      "date": "2026-10-26",
+      "text": "回看代理 iptv-replayd 升级 1.0.21：首轮内部 DESCRIBE 后上游直接关闭时不再误进入转发（原会带着死连接空转到 keepalive 超时约 120 秒）、S→C 转发线程改用 512KB 栈（128 并发下虚拟内存大幅下降）、取不到本端地址时原样回传响应（不再写出 rtsp://:554 空主机 URL）。配置页保存改为单次 UCI 读写（原来每个字段 fork 一次 uci，共 35 次），并按改动类型决定动作：改了端口/线程/令牌等启动参数才重启服务，只改鉴权/过滤/回看等播放列表相关项改为后台重生成列表，只改调度间隔则仅重载配置，不再为了改一个镜像前缀打断正在播放的直播/回看。保存时新增服务端数值范围校验，与页面校验一致，防止绕过前端写入非法端口导致服务起不来。历史日志查看改为只读文件尾部 512KB，不再整份读入内存。删除无调用点的 instance_running 死代码。"
     }
   ],
-  "url": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth-2.3.65-r5.apk",
-  "ipk_url": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth_2.3.65-r5_x86_64.ipk"
+  "url": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth-2.3.65-r6.apk",
+  "ipk_url": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth_2.3.65-r6_x86_64.ipk"
 }
