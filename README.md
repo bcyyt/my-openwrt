@@ -53,6 +53,6 @@ OTA 地址为 `https://gitee.com/bcyyt/my-openwrt/raw/main/packages/...`。
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
-| 2.3.65-r2 | 2026-10-28 | 当前包。M3U 台标路径可切换仓库/本地；台标 24h 哈希刷新；sync-logos.sh 推 Gitee 公开仓 |
+| 2.3.65-r3 | 2026-10-28 | 当前包。M3U 台标路径可切换仓库/本地；每次鉴权拉台标；可选出站推 Gitee（默认关） |
 | 2.3.65-r1 | 2026-10-28 | OTA/台标/rtp2httpd 走 Gitee 网页 raw；LuCI curl 跟随 302；升级强制写回 Gitee `ota_url` 并清掉 `update_mirror`；rtp2httpd 缺失时从 Gitee 下载 |
 | 2.3.63-r7 | 2026-10-28 | LuCI `curl -sL` 跟随 Gitee 302，修复「version.json 格式无效」 |
