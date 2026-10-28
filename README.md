@@ -53,5 +53,6 @@ OTA 地址为 `https://gitee.com/bcyyt/my-openwrt/raw/main/packages/...`。
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
-| 2.3.64 | 2026-10-28 | 当前包。OTA/台标/rtp2httpd 走 Gitee 网页 raw；LuCI curl 跟随 302，修复检查更新与 rtp2httpd 检测把 HTML 当 JSON |
+| 2.3.65 | 2026-10-28 | 当前包。升级强制写回 Gitee `ota_url` 并清掉 `update_mirror`；rtp2httpd 缺失时从 Gitee 下载；LuCI 说明改为 Gitee 直连 |
+| 2.3.64 | 2026-10-28 | OTA/台标/rtp2httpd 走 Gitee 网页 raw；LuCI curl 跟随 302，修复检查更新与 rtp2httpd 检测把 HTML 当 JSON |
 | 2.3.63-r7 | 2026-10-28 | LuCI `curl -sL` 跟随 Gitee 302，修复「version.json 格式无效」 |
