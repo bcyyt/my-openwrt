@@ -48,3 +48,10 @@ musl libc（MIT，<https://musl.libc.org/>）提供静态运行库；cross-tools
 
 OTA 地址为 `https://gitee.com/bcyyt/my-openwrt/raw/main/packages/...`。
 发布新版本时从私有仓库执行 `packaging/publish-ota.sh` 同步 GitHub 公开仓，并同步同一目录到 Gitee 公开仓 `bcyyt/my-openwrt`。
+
+## iptv-auth 近期版本
+
+| 版本 | 日期 | 说明 |
+|------|------|------|
+| 2.3.64 | 2026-10-28 | 当前包。OTA/台标/rtp2httpd 走 Gitee 网页 raw；LuCI curl 跟随 302，修复检查更新与 rtp2httpd 检测把 HTML 当 JSON |
+| 2.3.63-r7 | 2026-10-28 | LuCI `curl -sL` 跟随 Gitee 302，修复「version.json 格式无效」 |
