@@ -1,7 +1,7 @@
 {
-  "version": "1.0.0",
-  "date": "2026-10-27",
-  "changelog": "fwmanager-attack：由 statusmon-attack 迁出，登录爆破/DHCP/PPPoE 采集独立使用 /var/lib/fwmanager-attack 与 fwmanager.attack 配置。",
-  "url_x86_64": "fwmanager-attack-1.0.0-x86_64",
-  "url_aarch64": "fwmanager-attack-1.0.0-aarch64"
+  "version": "1.0.1",
+  "date": "2026-10-28",
+  "changelog": "1.0.1：overlay 攻击日志改为 jsonl 追加，snapshot 去掉事件嵌套扫描。",
+  "url_x86_64": "fwmanager-attack-1.0.1-x86_64",
+  "url_aarch64": "fwmanager-attack-1.0.1-aarch64"
 }
