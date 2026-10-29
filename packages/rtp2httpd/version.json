@@ -1,10 +1,10 @@
 {
-  "version": "3.17.2-r2",
+  "version": "3.17.2-r3",
   "date": "2026-10-29",
   "changelog": "自编译：BUFFER_POOL_INITIAL_SIZE=1024，EXPAND_SIZE=1024；导出 playlist.m3u 时保留 r2h-seek-mode / r2h-seek-offset / r2h-ifname；客户端半关闭不主动断流，TCP_USER_TIMEOUT 600s；--rewrite-logo-host 按请求 Host 改写 tvg-logo 主机名并保留端口。GPL-2.0，修改后完整源码见同目录 source/。",
   "license": "GPL-2.0",
   "notice": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/rtp2httpd/NOTICE.md",
   "source": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/rtp2httpd/source/SOURCE.md",
-  "url": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/rtp2httpd/rtp2httpd-3.17.2-r2-x86_64",
-  "url_aarch64": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/rtp2httpd/rtp2httpd-3.17.2-r2-aarch64"
+  "url": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/rtp2httpd/rtp2httpd-3.17.2-r3-x86_64",
+  "url_aarch64": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/rtp2httpd/rtp2httpd-3.17.2-r3-aarch64"
 }

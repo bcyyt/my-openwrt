@@ -1,6 +1,6 @@
-# rtp2httpd 3.17.2 (3.17.2-r2) 对应源码
+# rtp2httpd 3.17.2 (3.17.2-r3) 对应源码
 
-本目录是 my-openwrt 分发的 rtp2httpd 3.17.2-r2 二进制的完整对应源码材料。
+本目录是 my-openwrt 分发的 rtp2httpd 3.17.2-r3 二进制的完整对应源码材料。
 
 ## 上游源码
 
@@ -27,8 +27,8 @@ cd rtp2httpd-3.17.2
 for p in buffer-pool-1024 catchup-keep-seek-mode client-hup-and-timeout logo-rewrite-host; do
     patch -p1 < /path/to/$p.patch
 done
-RELEASE_VERSION=3.17.2-r2 TOOLCHAIN_PREFIX=x86_64-unknown-linux-musl bash scripts/build-static.sh
-RELEASE_VERSION=3.17.2-r2 TOOLCHAIN_PREFIX=aarch64-unknown-linux-musl bash scripts/build-static.sh
+RELEASE_VERSION=3.17.2-r3 TOOLCHAIN_PREFIX=x86_64-unknown-linux-musl bash scripts/build-static.sh
+RELEASE_VERSION=3.17.2-r3 TOOLCHAIN_PREFIX=aarch64-unknown-linux-musl bash scripts/build-static.sh
 ```
 
 产物位于 `build-<prefix>-static/dist/usr/bin/rtp2httpd`。
@@ -37,8 +37,8 @@ RELEASE_VERSION=3.17.2-r2 TOOLCHAIN_PREFIX=aarch64-unknown-linux-musl bash scrip
 
 | 文件 | md5 | sha256 |
 |------|-----|--------|
-| rtp2httpd-3.17.2-r2-x86_64 | `0611f08cb55f1ec7a21eba6a1a9bb021` | `c34bc9a126a63018d1372b2f07dbbdd5680cdd0d8673bbb4e354d899d0a0021d` |
-| rtp2httpd-3.17.2-r2-aarch64 | `ca8a235dc21565d47968d2037719f7a0` | `b5e137ec4c616f3688f62837f029ee82706929f1b220909ce17f88d910c46110` |
+| rtp2httpd-3.17.2-r3-x86_64 | `91566803d9f6492e56c787680bb4aeb2` | `ada3a9816b03eb538f258f30019919514bae9fc85be56bdd0ba93a11c54eb3a4` |
+| rtp2httpd-3.17.2-r3-aarch64 | `00372243603aead7301a7d631ea3624b` | `6989f1eb786eb9bf5f827ee7d11960b8c9619f9b31205f933527eb3179178acf` |
 
 用上述源码与补丁从零重建 x86_64 产物，与上表 md5 逐字节一致。
 
