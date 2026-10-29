@@ -1,6 +1,6 @@
 # rtp2httpd 修改版：著作权、许可证与致谢
 
-本目录分发的 `rtp2httpd-3.17.2-r1-x86_64`、`rtp2httpd-3.17.2-r1-aarch64` 是
+本目录分发的 `rtp2httpd-3.17.2-r2-x86_64`、`rtp2httpd-3.17.2-r2-aarch64` 是
 rtp2httpd 3.17.2 的修改版，由 bcyyt 为 my-openwrt 项目构建并分发。
 rtp2httpd 以 GNU General Public License v2.0 发布，许可全文见同目录 `LICENSE`。
 
@@ -12,7 +12,7 @@ rtp2httpd 以 GNU General Public License v2.0 发布，许可全文见同目录 
 - 现代化重构与维护：Stackie Jia <jsq2627@gmail.com>
 - 本修改版修改部分的著作权：Copyright (C) 2026 bcyyt <bcyyt@users.noreply.github.com>
 
-## 修改内容（3.17.2-r1）
+## 修改内容（3.17.2-r2）
 
 1. `src/buffer_pool.h`：`BUFFER_POOL_INITIAL_SIZE`、`BUFFER_POOL_EXPAND_SIZE` 由 128 调整为 1024。
 2. `src/m3u.c`：新增 `append_catchup_control_params()`，导出 `playlist.m3u` 时保留
@@ -20,6 +20,9 @@ rtp2httpd 以 GNU General Public License v2.0 发布，许可全文见同目录 
 3. `src/connection.c`：`CONNECTION_TCP_USER_TIMEOUT_MS` 由 10000 调整为 600000。
 4. `src/worker.c`：仅在 `POLLER_HUP` 时断开客户端，忽略 `POLLER_RDHUP`
    （客户端发送 GET 后关闭写半边属正常行为）；连接错误日志由 DEBUG 调整为 INFO。
+5. `src/configuration.c` / `src/m3u.c`：新增 `--rewrite-logo-host`。生成 `playlist.m3u`
+   时把 `tvg-logo="http(s)://.../logo/..."` 的主机名改成请求 Host（去掉端口），
+   台标端口与 `/logo/` 路径保持不变。
 
 改动以补丁形式保存，未修改的文件与上游 v3.17.2 一致。
 
@@ -33,13 +36,14 @@ rtp2httpd 以 GNU General Public License v2.0 发布，许可全文见同目录 
 | `buffer-pool-1024.patch` | 缓冲区池容量调整 |
 | `catchup-keep-seek-mode.patch` | 导出播放列表保留回看控制参数 |
 | `client-hup-and-timeout.patch` | 客户端半关闭与 TCP 超时调整 |
+| `logo-rewrite-host.patch` | 按请求 Host 改写 tvg-logo 主机名 |
 | `build.sh` | 构建脚本（下载、打补丁、双架构静态编译） |
 | `SOURCE.md` | 源码归档 sha256、补丁顺序、构建命令与产物校验值 |
 
 重新构建：
 
 ```bash
-bash packaging/rtp2httpd/build.sh 3.17.2 3.17.2-r1
+bash packaging/rtp2httpd/build.sh 3.17.2 3.17.2-r2
 ```
 
 ## 致谢

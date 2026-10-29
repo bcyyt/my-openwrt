@@ -1,7 +1,7 @@
 #!/bin/bash
 # Build patched rtp2httpd static musl binaries for x86_64 and aarch64.
 # Usage: packaging/rtp2httpd/build.sh [upstream-version] [release-version]
-# Example: packaging/rtp2httpd/build.sh 3.17.2 3.17.2-r1
+# Example: packaging/rtp2httpd/build.sh 3.17.2 3.17.2-r2
 
 set -euo pipefail
 
@@ -11,6 +11,7 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 PATCH="$ROOT/packaging/rtp2httpd/buffer-pool-1024.patch"
 SEEK_PATCH="$ROOT/packaging/rtp2httpd/catchup-keep-seek-mode.patch"
 HUP_PATCH="$ROOT/packaging/rtp2httpd/client-hup-and-timeout.patch"
+LOGO_PATCH="$ROOT/packaging/rtp2httpd/logo-rewrite-host.patch"
 OUT="$ROOT/packages/rtp2httpd"
 OTA_BASE="https://gitee.com/bcyyt/my-openwrt/raw/main/packages/rtp2httpd"
 WORK="/tmp/opencode/rtp2httpd-build/${VER}"
@@ -40,6 +41,10 @@ if grep -q 'CONNECTION_TCP_USER_TIMEOUT_MS 10000' "$SRC/src/connection.c"; then
 	patch -p1 -d "$SRC" < "$HUP_PATCH"
 fi
 grep -q 'CONNECTION_TCP_USER_TIMEOUT_MS 600000' "$SRC/src/connection.c"
+if ! grep -q 'rewrite_logo_host' "$SRC/src/configuration.h"; then
+	patch -p1 -d "$SRC" < "$LOGO_PATCH"
+fi
+grep -q 'rewrite_logo_host' "$SRC/src/configuration.h"
 
 build_one() {
 	local prefix="$1" suffix="$2"
@@ -50,7 +55,7 @@ build_one() {
 	)
 	local bin="$SRC/build-${prefix}-static/dist/usr/bin/rtp2httpd"
 	install -m 755 "$bin" "$OUT/rtp2httpd-${REL}-${suffix}"
-	file "$OUT/rtp2httpd-${REL}-${suffix}"
+	ls -l "$OUT/rtp2httpd-${REL}-${suffix}"
 }
 
 build_one "x86_64-unknown-linux-musl" "x86_64"
@@ -61,7 +66,7 @@ mkdir -p "$SRC_OUT"
 if [ -f "$WORK/src.tar.gz" ]; then
 	cp -f "$WORK/src.tar.gz" "$SRC_OUT/upstream-rtp2httpd-${VER}.tar.gz"
 fi
-cp -f "$PATCH" "$SEEK_PATCH" "$HUP_PATCH" "$SRC_OUT/"
+cp -f "$PATCH" "$SEEK_PATCH" "$HUP_PATCH" "$LOGO_PATCH" "$SRC_OUT/"
 cp -f "$ROOT/packaging/rtp2httpd/build.sh" "$SRC_OUT/build.sh"
 if [ -f "$SRC_OUT/upstream-rtp2httpd-${VER}.tar.gz" ]; then
 	SRC_SHA="$(sha256sum "$SRC_OUT/upstream-rtp2httpd-${VER}.tar.gz" | awk '{print $1}')"
@@ -79,7 +84,7 @@ cat > "$OUT/version.json" <<EOF
 {
   "version": "${REL}",
   "date": "${DATE_STR}",
-  "changelog": "自编译：BUFFER_POOL_INITIAL_SIZE=1024，EXPAND_SIZE=1024；导出 playlist.m3u 时保留 r2h-seek-mode / r2h-seek-offset / r2h-ifname；客户端半关闭不主动断流，TCP_USER_TIMEOUT 600s。GPL-2.0，修改后完整源码见同目录 source/。",
+  "changelog": "自编译：BUFFER_POOL_INITIAL_SIZE=1024，EXPAND_SIZE=1024；导出 playlist.m3u 时保留 r2h-seek-mode / r2h-seek-offset / r2h-ifname；客户端半关闭不主动断流，TCP_USER_TIMEOUT 600s；--rewrite-logo-host 按请求 Host 改写 tvg-logo 主机名并保留端口。GPL-2.0，修改后完整源码见同目录 source/。",
   "license": "GPL-2.0",
   "notice": "${OTA_BASE}/NOTICE.md",
   "source": "${OTA_BASE}/source/SOURCE.md",

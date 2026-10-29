@@ -1,6 +1,6 @@
-# rtp2httpd 3.17.2 (3.17.2-r1) 对应源码
+# rtp2httpd 3.17.2 (3.17.2-r2) 对应源码
 
-本目录是 my-openwrt 分发的 rtp2httpd 3.17.2-r1 二进制的完整对应源码材料。
+本目录是 my-openwrt 分发的 rtp2httpd 3.17.2-r2 二进制的完整对应源码材料。
 
 ## 上游源码
 
@@ -13,6 +13,7 @@
 1. `buffer-pool-1024.patch`：缓冲区池初始/扩展大小 128 → 1024
 2. `catchup-keep-seek-mode.patch`：导出 playlist.m3u 保留 `r2h-seek-mode` / `r2h-seek-offset` / `r2h-ifname`
 3. `client-hup-and-timeout.patch`：仅在 HUP 时断开客户端；`TCP_USER_TIMEOUT` 10s → 600s
+4. `logo-rewrite-host.patch`：`--rewrite-logo-host` 按请求 Host 改写 `tvg-logo` 主机名，保留端口与 `/logo/` 路径
 
 ## 构建
 
@@ -23,11 +24,11 @@
 mkdir -p /tmp/r2h && cd /tmp/r2h
 tar -xzf /path/to/upstream-rtp2httpd-3.17.2.tar.gz
 cd rtp2httpd-3.17.2
-for p in buffer-pool-1024 catchup-keep-seek-mode client-hup-and-timeout; do
+for p in buffer-pool-1024 catchup-keep-seek-mode client-hup-and-timeout logo-rewrite-host; do
     patch -p1 < /path/to/$p.patch
 done
-RELEASE_VERSION=3.17.2-r1 TOOLCHAIN_PREFIX=x86_64-unknown-linux-musl bash scripts/build-static.sh
-RELEASE_VERSION=3.17.2-r1 TOOLCHAIN_PREFIX=aarch64-unknown-linux-musl bash scripts/build-static.sh
+RELEASE_VERSION=3.17.2-r2 TOOLCHAIN_PREFIX=x86_64-unknown-linux-musl bash scripts/build-static.sh
+RELEASE_VERSION=3.17.2-r2 TOOLCHAIN_PREFIX=aarch64-unknown-linux-musl bash scripts/build-static.sh
 ```
 
 产物位于 `build-<prefix>-static/dist/usr/bin/rtp2httpd`。
@@ -36,8 +37,8 @@ RELEASE_VERSION=3.17.2-r1 TOOLCHAIN_PREFIX=aarch64-unknown-linux-musl bash scrip
 
 | 文件 | md5 | sha256 |
 |------|-----|--------|
-| rtp2httpd-3.17.2-r1-x86_64 | `cf571ceee5e88ef5f41c594a038becd7` | `43e9257b61bf05ceec11ec3ec63efe45ef706f9e6a072ecb7ceefae6ddc2766b` |
-| rtp2httpd-3.17.2-r1-aarch64 | `33cc351aaee4f6f601f6d9331b8f4bdf` | `1c8c5dc00ca494ac6701693111d5c72194c792d4603f98e525f8037bf1501c77` |
+| rtp2httpd-3.17.2-r2-x86_64 | `0611f08cb55f1ec7a21eba6a1a9bb021` | `c34bc9a126a63018d1372b2f07dbbdd5680cdd0d8673bbb4e354d899d0a0021d` |
+| rtp2httpd-3.17.2-r2-aarch64 | `ca8a235dc21565d47968d2037719f7a0` | `b5e137ec4c616f3688f62837f029ee82706929f1b220909ce17f88d910c46110` |
 
 用上述源码与补丁从零重建 x86_64 产物，与上表 md5 逐字节一致。
 

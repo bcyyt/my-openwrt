@@ -1,0 +1,295 @@
+--- a/src/configuration.h
++++ b/src/configuration.h
+@@ -54,6 +54,7 @@
+   char *hostname;  /* Server hostname for URL generation (NULL=auto) */
+   int xff;         /* Enable X-Forwarded-For header recognize (0=no, 1=yes) */
+   char *r2h_token; /* Authentication token for HTTP requests (NULL=disabled) */
++  int rewrite_logo_host; /* Rewrite tvg-logo host to request Host, keep logo port */
+ 
+   /* Worker and performance settings */
+   int workers;              /* Number of worker threads (SO_REUSEPORT sharded), default 1 */
+--- a/src/configuration.c
++++ b/src/configuration.c
+@@ -56,6 +56,7 @@
+ int cmd_access_log_set = 0;
+ int cmd_log_format_set = 0;
+ int cmd_pid_file_set = 0;
++int cmd_rewrite_logo_host_set = 0;
+ 
+ enum section_e { SEC_NONE = 0, SEC_BIND, SEC_SERVICES, SEC_GLOBAL };
+ 
+@@ -64,7 +65,8 @@
+   OPT_USE_RELATIVE_PATH_IN_M3U,
+   OPT_ACCESS_LOG,
+   OPT_LOG_FORMAT,
+-  OPT_PID_FILE
++  OPT_PID_FILE,
++  OPT_REWRITE_LOGO_HOST
+ };
+ 
+ /* M3U parsing state variables */
+@@ -625,6 +627,12 @@
+     return;
+   }
+ 
++  if (strcasecmp("rewrite-logo-host", param) == 0) {
++    if (set_if_not_cmd_override(cmd_rewrite_logo_host_set, "rewrite-logo-host"))
++      config.rewrite_logo_host = parse_bool(value);
++    return;
++  }
++
+   if (strcasecmp("status-page-path", param) == 0) {
+     if (set_if_not_cmd_override(cmd_status_page_path_set, "status-page-path"))
+       set_status_page_path_value(value);
+@@ -1141,6 +1149,8 @@
+     config.udp_rcvbuf_size = 512 * 1024; /* 512KB default */
+   if (!cmd_xff_set)
+     config.xff = 0;
++  if (!cmd_rewrite_logo_host_set)
++    config.rewrite_logo_host = 0;
+   if (!cmd_video_snapshot_set)
+     config.video_snapshot = 0;
+   if (!cmd_mcast_rejoin_interval_set)
+@@ -1311,6 +1321,7 @@
+           "resources (default: none)\n"
+           "\t   --use-relative-path-in-m3u  Use root-relative URLs in generated "
+           "and rewritten M3U playlists (default: off)\n"
++          "\t   --rewrite-logo-host  Rewrite tvg-logo host to request Host, keep logo port (default: off)\n"
+           "\t-M --external-m3u <url>  External M3U playlist URL (file://, http://, "
+           "https://)\n"
+           "\t-I --external-m3u-update-interval <seconds>  Auto-update interval "
+@@ -1407,6 +1418,7 @@
+                                     {"access-log", required_argument, 0, OPT_ACCESS_LOG},
+                                     {"log-format", required_argument, 0, OPT_LOG_FORMAT},
+                                     {"pid-file", required_argument, 0, OPT_PID_FILE},
++                                    {"rewrite-logo-host", no_argument, 0, OPT_REWRITE_LOGO_HOST},
+                                     {0, 0, 0, 0}};
+ 
+   const char short_opts[] = "v:qhUm:w:b:B:c:l:P:H:XT:i:f:t:r:y:R:F:A:s:p:M:I:SCg:N:u:O:";
+@@ -1536,6 +1548,11 @@
+       cmd_use_relative_path_in_m3u_set = 1;
+       logger(LOG_INFO, "Using root-relative URLs in M3U playlists");
+       break;
++    case OPT_REWRITE_LOGO_HOST:
++      config.rewrite_logo_host = 1;
++      cmd_rewrite_logo_host_set = 1;
++      logger(LOG_INFO, "Rewriting tvg-logo host to request Host");
++      break;
+     case 'i':
+       strncpy(config.upstream_interface, optarg, IFNAMSIZ - 1);
+       cmd_upstream_interface_set = 1;
+--- a/src/m3u.c
++++ b/src/m3u.c
+@@ -1508,6 +1508,191 @@
+   return m3u_cache.transformed_m3u;
+ }
+ 
++static int extract_hostname_from_host_header(const char *host_header, char *out, size_t out_size) {
++  size_t n;
++  const char *colon;
++
++  if (!host_header || !host_header[0] || !out || out_size < 2)
++    return -1;
++
++  if (host_header[0] == '[') {
++    const char *end = strchr(host_header, ']');
++    if (!end)
++      return -1;
++    n = (size_t)(end - host_header + 1);
++  } else {
++    colon = strchr(host_header, ':');
++    if (colon && strchr(colon + 1, ':') == NULL)
++      n = (size_t)(colon - host_header);
++    else
++      n = strlen(host_header);
++  }
++  if (n == 0 || n >= out_size)
++    return -1;
++  memcpy(out, host_header, n);
++  out[n] = '\0';
++  return 0;
++}
++
++/* Replace tvg-logo="http(s)://OLD[:port]/logo/..." host with request hostname; keep port and path. */
++static char *m3u_rewrite_logo_hosts(char *playlist, const char *host_header) {
++  char new_host[256];
++  const char *src;
++  char *dst;
++  size_t cap;
++  size_t used = 0;
++  char *out;
++
++  if (!playlist || extract_hostname_from_host_header(host_header, new_host, sizeof(new_host)) != 0)
++    return NULL;
++
++  cap = strlen(playlist) + 1 + 256;
++  out = malloc(cap);
++  if (!out)
++    return NULL;
++  dst = out;
++  src = playlist;
++
++  while (*src) {
++    const char *attr = strstr(src, "tvg-logo=\"");
++    const char *url;
++    const char *host_start;
++    const char *host_end;
++    const char *p;
++    size_t prefix_len;
++    size_t host_len;
++    size_t need;
++
++    if (!attr) {
++      size_t rest = strlen(src);
++      need = used + rest + 1;
++      if (need > cap) {
++        char *grown = realloc(out, need);
++        if (!grown) {
++          free(out);
++          return NULL;
++        }
++        out = grown;
++        dst = out + used;
++        cap = need;
++      }
++      memcpy(dst, src, rest + 1);
++      return out;
++    }
++
++    prefix_len = (size_t)(attr - src) + 10; /* include tvg-logo=" */
++    url = attr + 10;
++    if (strncmp(url, "http://", 7) == 0)
++      p = url + 7;
++    else if (strncmp(url, "https://", 8) == 0)
++      p = url + 8;
++    else {
++      /* copy through this attr and continue */
++      size_t skip = prefix_len;
++      need = used + skip + 1;
++      if (need > cap) {
++        char *grown = realloc(out, cap * 2);
++        if (!grown) {
++          free(out);
++          return NULL;
++        }
++        out = grown;
++        dst = out + used;
++        cap *= 2;
++      }
++      memcpy(dst, src, skip);
++      dst += skip;
++      used += skip;
++      src += skip;
++      continue;
++    }
++
++    host_start = p;
++    if (*p == '[') {
++      const char *br = strchr(p, ']');
++      if (!br) {
++        size_t skip = prefix_len;
++        need = used + skip + 1;
++        if (need > cap) {
++          char *grown = realloc(out, cap * 2);
++          if (!grown) {
++            free(out);
++            return NULL;
++          }
++          out = grown;
++          dst = out + used;
++          cap *= 2;
++        }
++        memcpy(dst, src, skip);
++        dst += skip;
++        used += skip;
++        src += skip;
++        continue;
++      }
++      host_end = br + 1;
++      p = host_end;
++    } else {
++      while (*p && *p != ':' && *p != '/' && *p != '"')
++        p++;
++      host_end = p;
++    }
++    if (*p == ':') {
++      p++;
++      while (*p && *p != '/' && *p != '"')
++        p++;
++    }
++    if (strncmp(p, "/logo/", 6) != 0) {
++      size_t skip = prefix_len;
++      need = used + skip + 1;
++      if (need > cap) {
++        char *grown = realloc(out, cap * 2);
++        if (!grown) {
++          free(out);
++          return NULL;
++        }
++        out = grown;
++        dst = out + used;
++        cap *= 2;
++      }
++      memcpy(dst, src, skip);
++      dst += skip;
++      used += skip;
++      src += skip;
++      continue;
++    }
++
++    host_len = strlen(new_host);
++    need = used + prefix_len + (size_t)(host_start - url) + host_len + 1;
++    if (need > cap) {
++      size_t ncap = cap * 2;
++      char *grown;
++      while (ncap < need)
++        ncap *= 2;
++      grown = realloc(out, ncap);
++      if (!grown) {
++        free(out);
++        return NULL;
++      }
++      out = grown;
++      dst = out + used;
++      cap = ncap;
++    }
++    memcpy(dst, src, prefix_len);
++    dst += prefix_len;
++    used += prefix_len;
++    memcpy(dst, url, (size_t)(host_start - url));
++    dst += (size_t)(host_start - url);
++    used += (size_t)(host_start - url);
++    memcpy(dst, new_host, host_len);
++    dst += host_len;
++    used += host_len;
++    src = host_end;
++  }
++
++  *dst = '\0';
++  return out;
++}
++
+ /* Generate complete M3U playlist dynamically based on request headers
+  * Returns malloc'd string, caller must free
+  */
+@@ -1658,6 +1843,20 @@
+   *dst_ptr = '\0';
+ 
+   free(base_url);
++  if (config.rewrite_logo_host) {
++    const char *logo_host = NULL;
++    if (config.xff && x_forwarded_host && x_forwarded_host[0])
++      logo_host = x_forwarded_host;
++    else if (host_header && host_header[0])
++      logo_host = host_header;
++    if (logo_host) {
++      char *rewritten = m3u_rewrite_logo_hosts(result, logo_host);
++      if (rewritten) {
++        free(result);
++        result = rewritten;
++      }
++    }
++  }
+   return result;
+ }
+ 
