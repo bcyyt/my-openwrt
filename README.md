@@ -55,4 +55,4 @@ OTA 地址为 `https://gitee.com/bcyyt/my-openwrt/raw/main/packages/...`。
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
-| 2.3.65-r9 | 2026-10-29 | 当前包。apk 升级钩子也会检查并替换较新的 rtp2httpd 再重启。LuCI 更新 iptv-auth 时若 rtp2httpd 有新版本则一并替换并重启全部进程；仓库 rtp2httpd 3.17.2-r3；M3U 台标走本机 /logo/，rtp2httpd 可按请求 Host 改写台标主机；删除 logo_url_mode；OTA/台标/rtp2httpd 走 Gitee 网页 raw；curl 跟随 302；升级写回 ota_url 并清掉镜像残留；版本比较纳入 -rN |
+| 2.3.65-r10 | 2026-10-29 | 当前包。加固 LuCI/OTA 调用链（POSIX 单引号、http/https、M3U 属性转义、curl -f、mktemp）。apk 升级钩子也会检查并替换较新的 rtp2httpd 再重启。LuCI 更新 iptv-auth 时若 rtp2httpd 有新版本则一并替换并重启全部进程；仓库 rtp2httpd 3.17.2-r3；M3U 台标走本机 /logo/，rtp2httpd 可按请求 Host 改写台标主机；删除 logo_url_mode；OTA/台标/rtp2httpd 走 Gitee 网页 raw；curl 跟随 302；升级写回 ota_url 并清掉镜像残留；版本比较纳入 -rN |
