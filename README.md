@@ -55,4 +55,4 @@ OTA 地址为 `https://gitee.com/bcyyt/my-openwrt/raw/main/packages/...`。
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
-| 2.3.66-r1 | 2026-10-29 | 当前包。鉴权前向 EPG 入口 getencrypttoken.jsp 自动发现门户；失败沿用现 iptv_server。配置页新增「EPG 入口」。含 2.3.65-r10 加固：LuCI/OTA 调用链（POSIX 单引号、http/https、M3U 属性转义、curl -f、mktemp）；apk 升级钩子也会检查并替换较新的 rtp2httpd 再重启。LuCI 更新 iptv-auth 时若 rtp2httpd 有新版本则一并替换并重启全部进程；仓库 rtp2httpd 3.17.2-r3；M3U 台标走本机 /logo/，rtp2httpd 可按请求 Host 改写台标主机；删除 logo_url_mode；OTA/台标/rtp2httpd 走 Gitee 网页 raw；curl 跟随 302；升级写回 ota_url 并清掉镜像残留；版本比较纳入 -rN |
+| 2.3.66-r4 | 2026-10-29 | 当前包。上游 IPTV 口关闭 peerdns，DHCP DNS 只给本程序解析 EDS/EPG。EDS 走 /EDS/authurl 并跟随同机跳转，发现成功即写入 UCI，配置页显示 EPG 入口。含 r3：EDS 默认域名 esidt.scrmt.org.cn:8001，上游 DNS 解析后发现 EPG 入口和门户。StbIP 随上游接口 IPv4 自动更新。鉴权前向 EPG 入口 getencrypttoken.jsp 自动发现门户；失败沿用现 iptv_server。配置页新增 EDS / EPG 入口。含 2.3.65-r10 加固：LuCI/OTA 调用链（POSIX 单引号、http/https、M3U 属性转义、curl -f、mktemp）；apk 升级钩子也会检查并替换较新的 rtp2httpd 再重启。LuCI 更新 iptv-auth 时若 rtp2httpd 有新版本则一并替换并重启全部进程；仓库 rtp2httpd 3.17.2-r3；M3U 台标走本机 /logo/，rtp2httpd 可按请求 Host 改写台标主机；删除 logo_url_mode；OTA/台标/rtp2httpd 走 Gitee 网页 raw；curl 跟随 302；升级写回 ota_url 并清掉镜像残留；版本比较纳入 -rN |
