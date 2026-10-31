@@ -1,12 +1,12 @@
 {
-  "version": "2.3.68-r11",
+  "version": "2.3.68-r12",
   "date": "2026-10-31",
-  "changelog": "【2.3.68-r11】2026-10-31\n配置页取消全部必填，抓号并进配置页，抓到的账号写回配置。门户空列表不覆盖现网播放列表，空凭据不空转；抓号建桥失败回滚并开混杂，有密码不写一次性票，日志不写明文密码。\n\n【2.3.67-r1】2026-10-30\n修复 2.3.67 鉴权成功后因缺少函数而中断的问题，UserToken 恢复自动提取。\n\n【2.3.67】2026-10-30\n新增生成型鉴权：配置 ITV 密码后按挑战串现场生成 Authenticator；未配密码仍走重放。\n\n【2.3.66-r4】2026-10-29\n上游 IPTV 口关闭 peerdns，鉴权自行取该口 DNS。EDS 走机顶盒路径发现 EPG。OTA 与台标源改 Gitee。",
+  "changelog": "【2.3.68-r12】2026-10-31\n抓号启用时随机更换 IPTV 口 MAC，并从以太网源地址、URL、STBID 回填盒子 MAC。配置页取消全部必填，抓号并进配置页，抓到的账号写回配置。门户空列表不覆盖现网播放列表，空凭据不空转；抓号建桥失败回滚并开混杂，有密码不写一次性票，日志不写明文密码。\n\n【2.3.67-r1】2026-10-30\n修复 2.3.67 鉴权成功后因缺少函数而中断的问题，UserToken 恢复自动提取。\n\n【2.3.67】2026-10-30\n新增生成型鉴权：配置 ITV 密码后按挑战串现场生成 Authenticator；未配密码仍走重放。\n\n【2.3.66-r4】2026-10-29\n上游 IPTV 口关闭 peerdns，鉴权自行取该口 DNS。EDS 走机顶盒路径发现 EPG。OTA 与台标源改 Gitee。",
   "changelogs": [
     {
-      "version": "2.3.68-r11",
+      "version": "2.3.68-r12",
       "date": "2026-10-31",
-      "text": "配置页取消全部必填，抓号并进配置页，抓到的账号写回配置。门户空列表不覆盖现网播放列表，空凭据不空转；抓号建桥失败回滚并开混杂，有密码不写一次性票，日志不写明文密码。"
+      "text": "抓号启用时随机更换 IPTV 口 MAC，并从以太网源地址、URL、STBID 回填盒子 MAC。配置页取消全部必填，抓号并进配置页，抓到的账号写回配置。门户空列表不覆盖现网播放列表，空凭据不空转；抓号建桥失败回滚并开混杂，有密码不写一次性票，日志不写明文密码。"
     },
     {
       "version": "2.3.67-r1",
@@ -24,6 +24,6 @@
       "text": "上游 IPTV 口关闭 peerdns，鉴权自行取该口 DNS。EDS 走机顶盒路径发现 EPG。OTA 与台标源改 Gitee。"
     }
   ],
-  "url": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth-2.3.68-r11.apk",
+  "url": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth-2.3.68-r12.apk",
   "ipk_url": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth_2.3.68-r7_x86_64.ipk"
 }
