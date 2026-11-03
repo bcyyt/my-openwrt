@@ -1,0 +1,7 @@
+{
+  "version": "1.0.2",
+  "date": "2026-11-02",
+  "changelog": "1.0.2：系统日志页支持按类别清空（pppoe/dhcp/luci/ssh 互不影响，攻击记录保留）。",
+  "url_x86_64": "fwmanager-attack-1.0.2-x86_64",
+  "url_aarch64": "fwmanager-attack-1.0.2-aarch64"
+}

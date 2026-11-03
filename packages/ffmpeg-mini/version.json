@@ -1,0 +1,8 @@
+{
+  "version": "7.0.2",
+  "date": "2026-11-02",
+  "changelog": "精简静态 ffmpeg（x86_64/aarch64/armv7 musl，各约 6MB，原版约 80MB）：只保留 MPEG-TS/MP4/MKV/AVI/FLV 解封装、H.264/HEVC/MPEG-2/MPEG-4/VC-1/VP8/VP9 解码、JPEG 与原始灰度/YUV 输出，用于组播隐藏频道抽帧与台标色度比对。三个架构各自单包提供，入口脚本按 uname -m 选择；无网络协议与汇编优化。构建脚本 packaging/ffmpeg-mini/build.sh。",
+  "url_x86_64": "ffmpeg-mini-7.0.2-x86_64",
+  "url_aarch64": "ffmpeg-mini-7.0.2-aarch64",
+  "url_armv7": "ffmpeg-mini-7.0.2-armv7"
+}
