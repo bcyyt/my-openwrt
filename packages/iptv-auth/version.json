@@ -1,8 +1,13 @@
 {
-  "version": "2.3.70-r9",
+  "version": "2.3.70-r10",
   "date": "2026-11-04",
-  "changelog": "【2.3.70-r9】2026-11-04\n代码审计第二轮修复：在线更新按设备架构取包，未知架构或缺少本架构地址时明确报错并提示手动下载，不再回落到 x86_64 包；IPK 把 /etc/config/stbsniffer 列入 conffiles，opkg 升级不再覆盖抓号配置；抓到网口列表与设置校验排除承载默认路由的 WAN 物理口，避免误选上网口断网；删除抓号已并入配置页后遗留的独立 LuCI 页面与 ACL；去掉 stub 加载器里从未发布的 pyc 兜底分支。\n\n【2.3.70-r8】2026-11-03\n代码审计修复：台标身份统一净化，频道名里的 ../、绝对路径、子路径不再能逃出 /www/logo 或读取种子目录外文件；凤凰扫描的帧解析在剥完 VLAN 后先校验 IP 头长度，深层 VLAN 与短帧不再抛 IndexError/OSError 中断整轮扫描，抓包异常也只跳过单个包；启动脚本补齐 maxclients 与 logo_rewrite 的 local 声明；去掉 upstream_interface 被覆盖的死赋值；台标下载日志改为每轮都输出，全量跳过时也能看到结果。\n\n【2.3.70-r7】2026-11-03\n抓号器 stbsniffer 一并 Cython 化：只随包发布 stub 加载器与本架构 stbsniffer.abi3.so，明文逻辑不再进包；同时修复包内 stbsniffer 落后于源码的问题（补回 select/subprocess 依赖与常量表）。三架构统一；iptv-auth.py 与 iptv-auth-scan.py 编译为 Stable ABI(3.10+) 机器码，三架构各自出包，包内只装本架构 pylib-<arch>/ 与 ffmpeg、replayd，CLI 行为不变。\n\n【2.3.70-r4】2026-11-02\n按架构分包：x86_64、aarch64、armv7 各自出 APK 与 IPK，包内只带本架构的精简 ffmpeg 与 iptv-replayd，OTA 按设备 DISTRIB_ARCH 自动选对应包；新增 armv7 的 ffmpeg、replayd、rtp2httpd 制品。含 r3：rtp2httpd 更新成功后配置页不再整页刷新，避免访问令牌输入框被冲空；账号子页去掉真实配置占位符，默认门户/EPG 留空并移除无用 stbinfo；抓号监听网桥成员口，从 DNS esidt 回填 EDS。",
+  "changelog": "【2.3.70-r10】2026-11-04\nLuCI 去掉独立的「rtp2httpd 状态」子页，rtp2httpd 的运行状态并入「运行状态与日志」，状态页「快速访问」仍保留内置状态页直链。\n\n【2.3.70-r9】2026-11-04\n代码审计第二轮修复：在线更新按设备架构取包，未知架构或缺少本架构地址时明确报错并提示手动下载，不再回落到 x86_64 包；IPK 把 /etc/config/stbsniffer 列入 conffiles，opkg 升级不再覆盖抓号配置；抓到网口列表与设置校验排除承载默认路由的 WAN 物理口，避免误选上网口断网；删除抓号已并入配置页后遗留的独立 LuCI 页面与 ACL；去掉 stub 加载器里从未发布的 pyc 兜底分支。\n\n【2.3.70-r8】2026-11-03\n代码审计修复：台标身份统一净化，频道名里的 ../、绝对路径、子路径不再能逃出 /www/logo 或读取种子目录外文件；凤凰扫描的帧解析在剥完 VLAN 后先校验 IP 头长度，深层 VLAN 与短帧不再抛 IndexError/OSError 中断整轮扫描，抓包异常也只跳过单个包；启动脚本补齐 maxclients 与 logo_rewrite 的 local 声明；去掉 upstream_interface 被覆盖的死赋值；台标下载日志改为每轮都输出，全量跳过时也能看到结果。\n\n【2.3.70-r7】2026-11-03\n抓号器 stbsniffer 一并 Cython 化：只随包发布 stub 加载器与本架构 stbsniffer.abi3.so，明文逻辑不再进包；同时修复包内 stbsniffer 落后于源码的问题（补回 select/subprocess 依赖与常量表）。三架构统一；iptv-auth.py 与 iptv-auth-scan.py 编译为 Stable ABI(3.10+) 机器码，三架构各自出包，包内只装本架构 pylib-<arch>/ 与 ffmpeg、replayd，CLI 行为不变。",
   "changelogs": [
+    {
+      "version": "2.3.70-r10",
+      "date": "2026-11-04",
+      "text": "LuCI 去掉独立的「rtp2httpd 状态」子页，rtp2httpd 的运行状态并入「运行状态与日志」，状态页「快速访问」仍保留内置状态页直链。"
+    },
     {
       "version": "2.3.70-r9",
       "date": "2026-11-04",
@@ -17,19 +22,14 @@
       "version": "2.3.70-r7",
       "date": "2026-11-03",
       "text": "抓号器 stbsniffer 一并 Cython 化：只随包发布 stub 加载器与本架构 stbsniffer.abi3.so，明文逻辑不再进包；同时修复包内 stbsniffer 落后于源码的问题（补回 select/subprocess 依赖与常量表）。三架构统一；iptv-auth.py 与 iptv-auth-scan.py 编译为 Stable ABI(3.10+) 机器码，三架构各自出包，包内只装本架构 pylib-<arch>/ 与 ffmpeg、replayd，CLI 行为不变。"
-    },
-    {
-      "version": "2.3.70-r4",
-      "date": "2026-11-02",
-      "text": "按架构分包：x86_64、aarch64、armv7 各自出 APK 与 IPK，包内只带本架构的精简 ffmpeg 与 iptv-replayd，OTA 按设备 DISTRIB_ARCH 自动选对应包；新增 armv7 的 ffmpeg、replayd、rtp2httpd 制品。含 r3：rtp2httpd 更新成功后配置页不再整页刷新，避免访问令牌输入框被冲空；账号子页去掉真实配置占位符，默认门户/EPG 留空并移除无用 stbinfo；抓号监听网桥成员口，从 DNS esidt 回填 EDS。"
     }
   ],
-  "url_x86_64": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth-2.3.70-r9-x86_64.apk",
-  "ipk_url_x86_64": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth_2.3.70-r9_x86_64.ipk",
-  "url_aarch64": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth-2.3.70-r9-aarch64.apk",
-  "ipk_url_aarch64": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth_2.3.70-r9_aarch64.ipk",
-  "url_armv7": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth-2.3.70-r9-armv7.apk",
-  "ipk_url_armv7": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth_2.3.70-r9_armv7.ipk",
-  "url": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth-2.3.70-r9-x86_64.apk",
-  "ipk_url": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth_2.3.70-r9_x86_64.ipk"
+  "url_x86_64": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth-2.3.70-r10-x86_64.apk",
+  "ipk_url_x86_64": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth_2.3.70-r10_x86_64.ipk",
+  "url_aarch64": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth-2.3.70-r10-aarch64.apk",
+  "ipk_url_aarch64": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth_2.3.70-r10_aarch64.ipk",
+  "url_armv7": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth-2.3.70-r10-armv7.apk",
+  "ipk_url_armv7": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth_2.3.70-r10_armv7.ipk",
+  "url": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth-2.3.70-r10-x86_64.apk",
+  "ipk_url": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth_2.3.70-r10_x86_64.ipk"
 }
