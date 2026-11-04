@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # 防反编译加载器（由 build_cython_so.py 生成，请勿手工修改）
-# 优先按架构加载 Cython 编译模块（导入即运行主流程）；异常架构回退 pyc。
-import importlib.util, os, platform, sys
+# 按架构加载 Cython 编译模块；导入即运行主流程。
+import os, platform, sys
 _LIB = '/usr/lib/iptv-auth'
 
 
@@ -17,13 +17,4 @@ def _arch():
 
 
 sys.path.insert(0, os.path.join(_LIB, 'pylib-' + _arch()))
-try:
-    import iptv_auth_core  # noqa: F401 — 顶层即主流程（构建时已展开 __main__ guard）
-except ImportError:
-    _pyc = os.path.join(_LIB, 'pyc%d%d' % sys.version_info[:2], 'iptv_auth_core.pyc')
-    if not os.path.exists(_pyc):
-        raise
-    _spec = importlib.util.spec_from_file_location('iptv_auth_core', _pyc)
-    _mod = importlib.util.module_from_spec(_spec)
-    sys.modules['iptv_auth_core'] = _mod
-    _spec.loader.exec_module(_mod)
+import iptv_auth_core  # noqa: F401 — 顶层即主流程（构建时已展开 __main__ guard）
