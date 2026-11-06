@@ -1,8 +1,13 @@
 {
-  "version": "2.3.70-r13",
+  "version": "2.3.70-r14",
   "date": "2026-11-06",
-  "changelog": "【2.3.70-r13】2026-11-06\n修复 ARM（MT7530 等 DSA 交换芯片）平台抓号抓不到单播的问题。此前机顶盒与上游同桥时，已知单播交给交换芯片硬件二层直转、帧不进 CPU，tcpdump 只能看到泛洪的组播广播，DNS/HTTP 鉴权单播全部漏抓（x86 无交换芯片、全部过 CPU，故不受影响）。现启用端口镜像：给每个嗅探口 ingress 挂 tc mirred 镜像到 veth 对端，交换芯片将其卸载为硬件镜像（in_hw），在芯片内部复制全部单播，抓包口改为镜像 veth，从而完整捕获鉴权流量。镜像不能硬件卸载（软件桥，如 x86）时自动回退为直接抓 br-stbsniff，行为与旧版一致、无额外开销；缺少 tc/ip 工具时同样回退。镜像 veth 在停用抓号时随桥一并清理，端口归属与 MAC 照旧还原。\n\n【2.3.70-r12】2026-11-05\n修正 r11 的几个边界问题：oif 探针改为先确认所选优先级空闲、且仅在自己真正建出规则时才删除，杜绝误删用户手工策略路由；上游口还没拿到 DNS 时推迟关闭 peerdns，避免首装拨号期 resolv.auto 段被摘后无法恢复；上游口在本机不存在而只探测到单个 VLAN 子接口时给出醒目提示，便于核对是专线口还是旁路由/容器 VLAN；网卡中断改为绑定到最高频率的大核簇（读该 policy 的 affected_cpus，簇内多队列轮转），旧版轮转会把中断分散到小核；单播策略目的地址超过 16 个时提示截断；配置页上游接口占位符改为「留空自动探测」，状态页 cpufreq 在 cpu0 无节点时回退到 policy0。\n\n【2.3.70-r11】2026-11-05\nARM（MT7986 等）适配：上游接口不再固定 eth2，配置留空即自动探测带 IPv4、非虚拟、不承载默认路由的物理口（命中 VLAN 子接口时提示核对），逻辑名经 ifstatus l3_device 解析为真实 netdev；兼容 BusyBox 的 ip 命令，策略路由 oif 不可用时回落到按目的地址单播策略（探针选空闲 pref，不误删用户规则），默认路由查询改用显式前缀规避过滤失效；DNS 冷启动保护：取不到上游 DNS 时推迟关闭 peerdns，避免 resolv.auto 段被摘后无法恢复；抓号器同步按 netdev 探测，网卡中断绑定到高频大核簇，cpufreq 按 policy 逐簇处理异构大小核，缺失 ethtool 时跳过 UDP GRO。\n\n【2.3.70-r10】2026-11-04\nLuCI 去掉独立的「rtp2httpd 状态」子页，rtp2httpd 的运行状态并入「运行状态与日志」，状态页「快速访问」仍保留内置状态页直链。",
+  "changelog": "【2.3.70-r14】2026-11-07\n修复凤凰卫视补充频道扫描在 ARM 上反复全量重扫、CPU 长期满载的问题。根因有两点：一是活跃地址基线 last.json 只在整轮扫描全部结束时才写盘，而 ARM 上单轮耗时接近一小时、常被上一级 3600 秒超时打断，导致下一轮读不到基线、把 319 个活跃地址全部当成“新增”，每小时重跑一次全量抽帧；二是台标匹配用纯 Python 逐像素计算归一化互相关，单帧约 3.5 秒，317 个地址乘以两帧要占用近 40 分钟 CPU。现在活跃基线在探测结束即落盘，扫描进度（list_active 分块、discover 分组）写入 progress.json，被打断后从断点续跑、已抓取的帧直接复用不再重抓；两台现有地址都校验通过时直接跳过新增地址抽帧识别；台标匹配的均值方差改用积分图 O(1) 计算、分子保留单次点积，单帧降到约 1 秒，实测结果与旧实现完全一致。\n\n【2.3.70-r13】2026-11-06\n修复 ARM（MT7530 等 DSA 交换芯片）平台抓号抓不到单播的问题。此前机顶盒与上游同桥时，已知单播交给交换芯片硬件二层直转、帧不进 CPU，tcpdump 只能看到泛洪的组播广播，DNS/HTTP 鉴权单播全部漏抓（x86 无交换芯片、全部过 CPU，故不受影响）。现启用端口镜像：给每个嗅探口 ingress 挂 tc mirred 镜像到 veth 对端，交换芯片将其卸载为硬件镜像（in_hw），在芯片内部复制全部单播，抓包口改为镜像 veth，从而完整捕获鉴权流量。镜像不能硬件卸载（软件桥，如 x86）时自动回退为直接抓 br-stbsniff，行为与旧版一致、无额外开销；缺少 tc/ip 工具时同样回退。镜像 veth 在停用抓号时随桥一并清理，端口归属与 MAC 照旧还原。\n\n【2.3.70-r12】2026-11-05\n修正 r11 的几个边界问题：oif 探针改为先确认所选优先级空闲、且仅在自己真正建出规则时才删除，杜绝误删用户手工策略路由；上游口还没拿到 DNS 时推迟关闭 peerdns，避免首装拨号期 resolv.auto 段被摘后无法恢复；上游口在本机不存在而只探测到单个 VLAN 子接口时给出醒目提示，便于核对是专线口还是旁路由/容器 VLAN；网卡中断改为绑定到最高频率的大核簇（读该 policy 的 affected_cpus，簇内多队列轮转），旧版轮转会把中断分散到小核；单播策略目的地址超过 16 个时提示截断；配置页上游接口占位符改为「留空自动探测」，状态页 cpufreq 在 cpu0 无节点时回退到 policy0。\n\n【2.3.70-r11】2026-11-05\nARM（MT7986 等）适配：上游接口不再固定 eth2，配置留空即自动探测带 IPv4、非虚拟、不承载默认路由的物理口（命中 VLAN 子接口时提示核对），逻辑名经 ifstatus l3_device 解析为真实 netdev；兼容 BusyBox 的 ip 命令，策略路由 oif 不可用时回落到按目的地址单播策略（探针选空闲 pref，不误删用户规则），默认路由查询改用显式前缀规避过滤失效；DNS 冷启动保护：取不到上游 DNS 时推迟关闭 peerdns，避免 resolv.auto 段被摘后无法恢复；抓号器同步按 netdev 探测，网卡中断绑定到高频大核簇，cpufreq 按 policy 逐簇处理异构大小核，缺失 ethtool 时跳过 UDP GRO。",
   "changelogs": [
+    {
+      "version": "2.3.70-r14",
+      "date": "2026-11-07",
+      "text": "修复凤凰卫视补充频道扫描在 ARM 上反复全量重扫、CPU 长期满载的问题。根因有两点：一是活跃地址基线 last.json 只在整轮扫描全部结束时才写盘，而 ARM 上单轮耗时接近一小时、常被上一级 3600 秒超时打断，导致下一轮读不到基线、把 319 个活跃地址全部当成“新增”，每小时重跑一次全量抽帧；二是台标匹配用纯 Python 逐像素计算归一化互相关，单帧约 3.5 秒，317 个地址乘以两帧要占用近 40 分钟 CPU。现在活跃基线在探测结束即落盘，扫描进度（list_active 分块、discover 分组）写入 progress.json，被打断后从断点续跑、已抓取的帧直接复用不再重抓；两台现有地址都校验通过时直接跳过新增地址抽帧识别；台标匹配的均值方差改用积分图 O(1) 计算、分子保留单次点积，单帧降到约 1 秒，实测结果与旧实现完全一致。"
+    },
     {
       "version": "2.3.70-r13",
       "date": "2026-11-06",
@@ -17,19 +22,14 @@
       "version": "2.3.70-r11",
       "date": "2026-11-05",
       "text": "ARM（MT7986 等）适配：上游接口不再固定 eth2，配置留空即自动探测带 IPv4、非虚拟、不承载默认路由的物理口（命中 VLAN 子接口时提示核对），逻辑名经 ifstatus l3_device 解析为真实 netdev；兼容 BusyBox 的 ip 命令，策略路由 oif 不可用时回落到按目的地址单播策略（探针选空闲 pref，不误删用户规则），默认路由查询改用显式前缀规避过滤失效；DNS 冷启动保护：取不到上游 DNS 时推迟关闭 peerdns，避免 resolv.auto 段被摘后无法恢复；抓号器同步按 netdev 探测，网卡中断绑定到高频大核簇，cpufreq 按 policy 逐簇处理异构大小核，缺失 ethtool 时跳过 UDP GRO。"
-    },
-    {
-      "version": "2.3.70-r10",
-      "date": "2026-11-04",
-      "text": "LuCI 去掉独立的「rtp2httpd 状态」子页，rtp2httpd 的运行状态并入「运行状态与日志」，状态页「快速访问」仍保留内置状态页直链。"
     }
   ],
-  "url_x86_64": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth-2.3.70-r13-x86_64.apk",
-  "ipk_url_x86_64": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth_2.3.70-r13_x86_64.ipk",
-  "url_aarch64": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth-2.3.70-r13-aarch64.apk",
-  "ipk_url_aarch64": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth_2.3.70-r13_aarch64.ipk",
-  "url_armv7": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth-2.3.70-r13-armv7.apk",
-  "ipk_url_armv7": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth_2.3.70-r13_armv7.ipk",
-  "url": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth-2.3.70-r13-x86_64.apk",
-  "ipk_url": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth_2.3.70-r13_x86_64.ipk"
+  "url_x86_64": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth-2.3.70-r14-x86_64.apk",
+  "ipk_url_x86_64": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth_2.3.70-r14_x86_64.ipk",
+  "url_aarch64": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth-2.3.70-r14-aarch64.apk",
+  "ipk_url_aarch64": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth_2.3.70-r14_aarch64.ipk",
+  "url_armv7": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth-2.3.70-r14-armv7.apk",
+  "ipk_url_armv7": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth_2.3.70-r14_armv7.ipk",
+  "url": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth-2.3.70-r14-x86_64.apk",
+  "ipk_url": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth_2.3.70-r14_x86_64.ipk"
 }
