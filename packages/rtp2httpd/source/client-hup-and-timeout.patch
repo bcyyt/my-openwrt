@@ -1,0 +1,24 @@
+--- a/src/worker.c
++++ b/src/worker.c
+@@ -466,15 +466,17 @@
+             int socket_error = 0;
+             socklen_t errlen = sizeof(socket_error);
+             if (getsockopt(c->fd, SOL_SOCKET, SO_ERROR, &socket_error, &errlen) < 0 || socket_error != 0) {
+-              logger(LOG_DEBUG, "Client connection error: %s", strerror(socket_error ? socket_error : errno));
++              logger(LOG_INFO, "Client connection error: %s", strerror(socket_error ? socket_error : errno));
+               worker_close_and_free_connection(c);
+               continue;
+             }
+           }
+ 
+-          /* Handle disconnect events */
+-          if (events[e].events & (POLLER_HUP | POLLER_RDHUP)) {
+-            logger(LOG_DEBUG, "Client disconnected");
++          /* Full hangup means the client TCP session is dead. RDHUP alone is
++           * the client closing its write half after HTTP GET; keep sending
++           * the media stream until write fails or HUP arrives. */
++          if (events[e].events & POLLER_HUP) {
++            logger(LOG_INFO, "Client disconnected (HUP)");
+             worker_close_and_free_connection(c);
+             continue; /* Skip further processing for this connection */
+           }

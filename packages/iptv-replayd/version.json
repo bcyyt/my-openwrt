@@ -1,0 +1,8 @@
+{
+  "version": "1.0.25",
+  "date": "2026-11-10",
+  "changelog": "iptv-replayd：独立 C 回看 RTSP 代理（无 Python 依赖），静态 musl；1.0.25 修复三处握手问题（TEARDOWN 提前退出误进转发并误记会话档案、缓存源站连接失败未回退门户导致 TTL 内反复黑屏、阻塞 connect 不受 SO_SNDTIMEO 控制挂起可达 2 分钟）、连环 302 本端最多跟 3 跳不回传客户端、302 解析限定响应头部、握手未完成也合并一条日志保住排障可见性、stdout 接 FIFO 时防阻塞；1.0.24 握手过程不再逐条打日志（DESCRIBE/SETUP/PLAY 等响应码累积，握手完成时与目标地址、总耗时合并为一条）；1.0.23 握手改条件循环（PLAY 2xx 即完成，兼容 SETUP/PLAY 间 GET_PARAMETER 与 401 重试、TEARDOWN 提前退出）、302 源站按频道缓存 5 分钟（TTL+LRU，后续会话直连真实源站、失败自动回退）、握手期 OPTIONS 本地应答（会话内保活仍转发上游）、上游懒连接、任意阶段 302 本端拦截客户端无感；1.0.21 修首轮内部 DESCRIBE 后上游直接关闭仍误进入转发（空转到 keepalive 超时才回收）、S→C 转发线程改用 512KB 栈、getsockname 失败时原样回传响应（不再写出 rtsp://:554 空主机 URL）；1.0.9 按 Content-Length 读满整条 RTSP 消息（修外网分片握手卡死）、PLAY 200 尾随首帧不再丢失、keepalive 75s/15s×3 与转发 1 小时兜底超时清理死连接、并发会话上限 128、时移记点只累计流动时长（≤10s 间隔）；1.0.8 酷9暂停后重连时从上次播放点续播；1.0.2 将 programend 收敛到当前时刻前 2 秒。",
+  "url_x86_64": "iptv-replayd-1.0.25-x86_64",
+  "url_aarch64": "iptv-replayd-1.0.25-aarch64",
+  "url_armv7": "iptv-replayd-1.0.25-armv7"
+}

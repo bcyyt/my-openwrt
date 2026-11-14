@@ -1,0 +1,12 @@
+--- a/src/buffer_pool.h
++++ b/src/buffer_pool.h
+@@ -9,8 +9,8 @@
+ /* Buffer pool configuration - optimized for RTP packets with cache alignment */
+ #define BUFFER_POOL_ALIGNMENT 64
+-#define BUFFER_POOL_INITIAL_SIZE 128
+-#define BUFFER_POOL_EXPAND_SIZE 128
++#define BUFFER_POOL_INITIAL_SIZE 1024
++#define BUFFER_POOL_EXPAND_SIZE 1024
+ #define BUFFER_POOL_BUFFER_SIZE 1536
+ #define BUFFER_POOL_LOW_WATERMARK 32
+ #define BUFFER_POOL_HIGH_WATERMARK (BUFFER_POOL_INITIAL_SIZE * 3)
