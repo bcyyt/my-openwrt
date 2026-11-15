@@ -23,7 +23,7 @@
 
 每个软件包只保留最新一份 APK/IPK/二进制；`version.json`、台标、签名公钥和 rtp2httpd 对应源码始终随最新制品一起发布。
 
-`packages/rtp2httpd/` 分发的 `rtp2httpd-3.17.2-r4-x86_64`、`rtp2httpd-3.17.2-r4-aarch64`
+`packages/rtp2httpd/` 分发的 `rtp2httpd-3.17.2-r5-x86_64`、`rtp2httpd-3.17.2-r5-aarch64`
 是 rtp2httpd 3.17.2 的修改版，由 bcyyt 为 my-openwrt 构建并分发。
 
 - 上游项目：<https://github.com/stackia/rtp2httpd>，版本 v3.17.2
@@ -36,6 +36,7 @@
 `playlist.m3u` 时保留 `r2h-seek-mode` / `r2h-seek-offset` / `r2h-ifname`；
 `worker.c` 仅在 HUP 时断开客户端（忽略客户端 GET 后的写半关闭），`TCP_USER_TIMEOUT`
 保持上游 10s，连接错误日志由 DEBUG 调整为 INFO。
+aarch64 制品按 MT7986 (Cortex-A53) 定制编译：`-mcpu=cortex-a53+crypto -falign-functions=64`（由 `build.sh` 幂等注入）。
 生成 `playlist.m3u` 时可按 `--rewrite-logo-host` 把 `tvg-logo` 主机名改成请求 Host，端口保持不变。
 
 按 GPL-2.0 要求，修改后的完整源码随二进制在同一目录提供：`packages/rtp2httpd/source/`

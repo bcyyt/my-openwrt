@@ -1,6 +1,6 @@
 # rtp2httpd 修改版：著作权、许可证与致谢
 
-本目录分发的 `rtp2httpd-3.17.2-r4-x86_64`、`rtp2httpd-3.17.2-r4-aarch64` 是
+本目录分发的 `rtp2httpd-3.17.2-r5-x86_64`、`rtp2httpd-3.17.2-r5-aarch64` 是
 rtp2httpd 3.17.2 的修改版，由 bcyyt 为 my-openwrt 项目构建并分发。
 rtp2httpd 以 GNU General Public License v2.0 发布，许可全文见同目录 `LICENSE`。
 
@@ -12,7 +12,7 @@ rtp2httpd 以 GNU General Public License v2.0 发布，许可全文见同目录 
 - 现代化重构与维护：Stackie Jia <jsq2627@gmail.com>
 - 本修改版修改部分的著作权：Copyright (C) 2026 bcyyt <bcyyt@users.noreply.github.com>
 
-## 修改内容（3.17.2-r4）
+## 修改内容（3.17.2-r5，aarch64 按 MT7986 Cortex-A53 定制：-mcpu=cortex-a53+crypto -falign-functions=64）
 
 1. `src/buffer_pool.h`：`BUFFER_POOL_INITIAL_SIZE`、`BUFFER_POOL_EXPAND_SIZE` 由 128 调整为 1024。
 2. `src/m3u.c`：新增 `append_catchup_control_params()`，导出 `playlist.m3u` 时保留
@@ -49,7 +49,7 @@ cd rtp2httpd-3.17.2
 for p in buffer-pool-1024 catchup-keep-seek-mode client-hup-and-timeout logo-rewrite-host; do
   patch -p1 < ../source/$p.patch
 done
-RELEASE_VERSION=3.17.2-r4 TOOLCHAIN_PREFIX=x86_64-unknown-linux-musl bash scripts/build-static.sh
+RELEASE_VERSION=3.17.2-r5 TOOLCHAIN_PREFIX=x86_64-unknown-linux-musl bash scripts/build-static.sh
 ```
 
 （aarch64 同理换用 aarch64 工具链；与分发二进制逐字节一致的直接编译命令见 `source/SOURCE.md`。）
