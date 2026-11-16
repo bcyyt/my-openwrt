@@ -1,5 +1,11 @@
 {
   "version": "2.3.80-r5",
   "date": "2026-11-14",
+  "url_x86_64": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth-2.3.80-r5-x86_64.apk",
+  "ipk_url_x86_64": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth_2.3.80-r5_x86_64.ipk",
+  "url_aarch64": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth-2.3.80-r5-aarch64.apk",
+  "ipk_url_aarch64": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth_2.3.80-r5_aarch64.ipk",
+  "url_armv7": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth-2.3.80-r5-armv7.apk",
+  "ipk_url_armv7": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth_2.3.80-r5_armv7.ipk",
   "changelog": "【2.3.80-r5】2026-11-14\n修复关闭抓号后 IPTV 无法自动恢复：1) 撤桥后弹跳上游口链路重置运营商侧端口会话——桥建拆的端口翻转会使运营商 IPTV 端口进入保持态（DHCP 分钟级不应答、网关 ARP 长时间不回），弹跳后实测 10 秒内重新拿回地址（此前需 4 分钟以上甚至重启路由器）；2) 鉴权重启改用 setsid 自守护子进程——原后台子壳随 stop 的进程组清理被连带杀掉，鉴权重启从未真正发生；3) hotplug 兜底：上游口 ifup 时若鉴权服务不在运行则直接拉起。另按需求取消抓号自动关闭：字段持续解出并回填，由用户手动关闭开关（关闭即拆桥并自动重启鉴权，全流程实测 26 秒恢复 IPTV）。"
 }
