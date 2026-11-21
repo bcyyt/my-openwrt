@@ -1,11 +1,38 @@
 {
-  "version": "2.3.80-r5",
-  "date": "2026-11-14",
-  "url_x86_64": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth-2.3.80-r5-x86_64.apk",
-  "ipk_url_x86_64": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth_2.3.80-r5_x86_64.ipk",
-  "url_aarch64": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth-2.3.80-r5-aarch64.apk",
-  "ipk_url_aarch64": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth_2.3.80-r5_aarch64.ipk",
-  "url_armv7": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth-2.3.80-r5-armv7.apk",
-  "ipk_url_armv7": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth_2.3.80-r5_armv7.ipk",
-  "changelog": "【2.3.80-r5】2026-11-14\n修复关闭抓号后 IPTV 无法自动恢复：1) 撤桥后弹跳上游口链路重置运营商侧端口会话——桥建拆的端口翻转会使运营商 IPTV 端口进入保持态（DHCP 分钟级不应答、网关 ARP 长时间不回），弹跳后实测 10 秒内重新拿回地址（此前需 4 分钟以上甚至重启路由器）；2) 鉴权重启改用 setsid 自守护子进程——原后台子壳随 stop 的进程组清理被连带杀掉，鉴权重启从未真正发生；3) hotplug 兜底：上游口 ifup 时若鉴权服务不在运行则直接拉起。另按需求取消抓号自动关闭：字段持续解出并回填，由用户手动关闭开关（关闭即拆桥并自动重启鉴权，全流程实测 26 秒恢复 IPTV）。"
+  "version": "2.3.80-r10",
+  "date": "2026-11-20",
+  "changelog": "【2.3.80-r9】2026-11-20\n修复关闭抓号时的进程竞态：rc.common 的 stop() 先执行 stop_service()（拆桥：撤镜像→弹跳上游口→等 MAC 恢复，全程可达 20 秒+）再终止实例——期间嗅探进程因镜像口被删自行退出后，procd 的 respawn（5 秒）会把它按旧参数重新拉起，绑定已被删除的 stbsniff-cap，报『绑定接口失败: No such device』（r8 关抓号实测复现）。现在 stop_service 首先调用 procd_kill 终止实例并取消 respawn，再执行拆桥，消除竞态窗口。另注：r8 的策略记忆（/etc/stbsniffer-strategy.mem）与 T1 自证已在开源 PPE 实机验证一轮成功（T1 关学习+镜像聚合生效，STBID 破解 2.5 秒，记忆正确落盘）。\n\n【2.3.80-r8】2026-11-20\n抓号双平台自适应强化（开源 PPE / 闭源 PPE 通用）：1) T1 层新增自证降级——「驱动接受 learning off」不等于「硬件真的泛洪」，关学习+镜像聚合成效改由 ARP 试金石实证（以盒子 MAC 为源询问网关，网关的应答单播正是被硬件直转会消失的帧）：明确失效自动降级经典镜像（r5 路径），无法自证（首次抓号无 MAC 记录）则信任驱动声明（r6/r7 双平台实证路径）。自证所需盒子 MAC 在 uci 未回填时自动从嗅探状态文件兜底（DHCP 广播帧不受硬件直转影响，盲会话亦有记录）。2) 新增策略记忆：成功策略（learning/vlan/mirror）持久化 /etc/stbsniffer-strategy.mem（刻意不用 uci：init.d 的 procd reload 触发器会令会话内 commit 拆桥），下次开抓直接复用、免去逐层探测试错；本次失效则作废记忆并重走完整策略链。两类平台首次各自探测一次后，后续开抓秒进最优层。\n\n【2.3.80-r7】2026-11-15\n修复 PPE/其它平台抓号回归：r6 的 auto 策略链（关学习+镜像聚合→直抓）丢掉了经典镜像兜底层——平台缺少 ip-bridge 包或 bridge learning 标志不被驱动支持时直接落到仅广播可见的直抓，导致抓号失败（r5 纯镜像在这些平台长期可用）。r7 恢复逐层兜底：关学习+镜像聚合 → 经典镜像（r5 路径）→ 直抓；关学习层内镜像聚合失败时同样降级到经典镜像而非退化为单向捕获。另：ip-bridge 缺失时自动 apk 后台补装。\n\n【2.3.80-r6】2026-11-15\n抓号抓包层重构（T1 关学习+镜像聚合）：实测 mt7530 的 in_hw 镜像只能看到到达 CPU 的帧——新桥（FDB 空、全量洪泛）时全部可见，桥老化后单播被交换芯片硬件直转、连 DNS 都不可见；关闭端口 MAC 学习强制未知单播永久泛洪上 CPU 治愈盲区，但 DSA 软件桥不转发（ASIC 直接洪泛到对端口）导致单捕获口只见单向——叠加 tc 镜像聚合两口入向到单一捕获口（stbsniff-cap）实现双向完整可见（泛洪下软件 mirred 同样有效）。策略链 auto=关学习+镜像聚合→直抓降级，可 uci stbsniffer.main.strategy=auto|learning|vlan|mirror|plain 强制指定。另：建桥后弹跳上游口消除运营商保持态（此前盒子开机撞保持期会放弃注册只看组播）；镜像挂载需 clsact qdisc 先存在且端口有流量（0x88B5 poke 激活机制）；拆桥清杀镜像挂载循环。六字段全流程实测（mt7986/mt7530，断电重启→鉴权解出→DES 破解 2.4 秒）。新增依赖 ip-bridge。",
+  "changelogs": [
+    {
+      "version": "2.3.80-r10",
+      "date": "2026-11-21",
+      "text": "修复 PPE/无卸载平台的 T3 镜像空转噪音：rc=2（过滤器已生效、仅缺 in_hw 性能项）时原逻辑盲目进入 20 秒×30 轮延迟挂载循环，等一个不会到来的 in_hw——每轮打日志、满 10 分钟续期，且该状态被 r8 策略记忆固化为 mirror，每次开抓重演全程。r10 起 rc=2 先以 ARP 试金石实测单播可见性：通过即立即生效并记忆（软件镜像与 in_hw 完整性等价，仅性能差异），不通过才进入原延迟挂载循环（保留运营商保护期/线路恢复语义）；attach 循环内 rc=2 同样先验证再决定是否续跑。MTK in_hw（rc=0）路径不变。"
+    },
+    {
+      "version": "2.3.80-r9",
+      "date": "2026-11-20",
+      "text": "修复关闭抓号时的进程竞态：rc.common 的 stop() 先执行 stop_service()（拆桥：撤镜像→弹跳上游口→等 MAC 恢复，全程可达 20 秒+）再终止实例——期间嗅探进程因镜像口被删自行退出后，procd 的 respawn（5 秒）会把它按旧参数重新拉起，绑定已被删除的 stbsniff-cap，报『绑定接口失败: No such device』（r8 关抓号实测复现）。现在 stop_service 首先调用 procd_kill 终止实例并取消 respawn，再执行拆桥，消除竞态窗口。另注：r8 的策略记忆（/etc/stbsniffer-strategy.mem）与 T1 自证已在开源 PPE 实机验证一轮成功（T1 关学习+镜像聚合生效，STBID 破解 2.5 秒，记忆正确落盘）。"
+    },
+    {
+      "version": "2.3.80-r8",
+      "date": "2026-11-20",
+      "text": "抓号双平台自适应强化（开源 PPE / 闭源 PPE 通用）：1) T1 层新增自证降级——「驱动接受 learning off」不等于「硬件真的泛洪」，关学习+镜像聚合成效改由 ARP 试金石实证（以盒子 MAC 为源询问网关，网关的应答单播正是被硬件直转会消失的帧）：明确失效自动降级经典镜像（r5 路径），无法自证（首次抓号无 MAC 记录）则信任驱动声明（r6/r7 双平台实证路径）。自证所需盒子 MAC 在 uci 未回填时自动从嗅探状态文件兜底（DHCP 广播帧不受硬件直转影响，盲会话亦有记录）。2) 新增策略记忆：成功策略（learning/vlan/mirror）持久化 /etc/stbsniffer-strategy.mem（刻意不用 uci：init.d 的 procd reload 触发器会令会话内 commit 拆桥），下次开抓直接复用、免去逐层探测试错；本次失效则作废记忆并重走完整策略链。两类平台首次各自探测一次后，后续开抓秒进最优层。"
+    },
+    {
+      "version": "2.3.80-r7",
+      "date": "2026-11-15",
+      "text": "修复 PPE/其它平台抓号回归：r6 的 auto 策略链（关学习+镜像聚合→直抓）丢掉了经典镜像兜底层——平台缺少 ip-bridge 包或 bridge learning 标志不被驱动支持时直接落到仅广播可见的直抓，导致抓号失败（r5 纯镜像在这些平台长期可用）。r7 恢复逐层兜底：关学习+镜像聚合 → 经典镜像（r5 路径）→ 直抓；关学习层内镜像聚合失败时同样降级到经典镜像而非退化为单向捕获。另：ip-bridge 缺失时自动 apk 后台补装。"
+    },
+    {
+      "version": "2.3.80-r6",
+      "date": "2026-11-15",
+      "text": "抓号抓包层重构（T1 关学习+镜像聚合）：实测 mt7530 的 in_hw 镜像只能看到到达 CPU 的帧——新桥（FDB 空、全量洪泛）时全部可见，桥老化后单播被交换芯片硬件直转、连 DNS 都不可见；关闭端口 MAC 学习强制未知单播永久泛洪上 CPU 治愈盲区，但 DSA 软件桥不转发（ASIC 直接洪泛到对端口）导致单捕获口只见单向——叠加 tc 镜像聚合两口入向到单一捕获口（stbsniff-cap）实现双向完整可见（泛洪下软件 mirred 同样有效）。策略链 auto=关学习+镜像聚合→直抓降级，可 uci stbsniffer.main.strategy=auto|learning|vlan|mirror|plain 强制指定。另：建桥后弹跳上游口消除运营商保持态（此前盒子开机撞保持期会放弃注册只看组播）；镜像挂载需 clsact qdisc 先存在且端口有流量（0x88B5 poke 激活机制）；拆桥清杀镜像挂载循环。六字段全流程实测（mt7986/mt7530，断电重启→鉴权解出→DES 破解 2.4 秒）。新增依赖 ip-bridge。"
+    }
+  ],
+  "url_x86_64": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth-2.3.80-r9-x86_64.apk",
+  "ipk_url_x86_64": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth_2.3.80-r9_x86_64.ipk",
+  "url_aarch64": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth-2.3.80-r9-aarch64.apk",
+  "ipk_url_aarch64": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth_2.3.80-r9_aarch64.ipk",
+  "url_armv7": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth-2.3.80-r9-armv7.apk",
+  "ipk_url_armv7": "https://gitee.com/bcyyt/my-openwrt/raw/main/packages/iptv-auth/iptv-auth_2.3.80-r9_armv7.ipk"
 }
